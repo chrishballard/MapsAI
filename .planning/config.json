@@ -4,10 +4,11 @@
   "workflow": {
     "auto_commit": true,
     "testing": "both",
-    "commit_style": "conventional"
+    "commit_style": "conventional",
+    "research": true
   },
   "milestone": {
-    "current": 1,
-    "name": "MVP — Post Generation, Review Responses, Reporting"
+    "current": 2,
+    "name": "v1.1 — Onboarding & Optimization"
   }
 }

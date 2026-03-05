@@ -1,7 +1,7 @@
 # Requirements: MapsAI
 
 **Defined:** 2026-03-04
-**Core Value:** Every client's GBP is fully managed end-to-end — from initial optimization through ongoing posts, reviews, and reporting.
+**Core Value:** Every client's GBP is fully managed end-to-end -- from initial optimization through ongoing posts, reviews, and reporting.
 
 ## v1.1 Requirements
 
@@ -88,34 +88,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ONBRD-01 | — | Pending |
-| ONBRD-02 | — | Pending |
-| ONBRD-03 | — | Pending |
-| ONBRD-04 | — | Pending |
-| KWRD-01 | — | Pending |
-| KWRD-02 | — | Pending |
-| KWRD-03 | — | Pending |
-| KWRD-04 | — | Pending |
-| DESC-01 | — | Pending |
-| DESC-02 | — | Pending |
-| DESC-03 | — | Pending |
-| SRVC-01 | — | Pending |
-| SRVC-02 | — | Pending |
-| SRVC-03 | — | Pending |
-| SRVC-04 | — | Pending |
-| ATTR-01 | — | Pending |
-| ATTR-02 | — | Pending |
-| ATTR-03 | — | Pending |
-| PROF-01 | — | Pending |
-| PROF-02 | — | Pending |
-| REOPT-01 | — | Pending |
-| REOPT-02 | — | Pending |
+| ONBRD-01 | Phase 8 | Pending |
+| ONBRD-02 | Phase 8 | Pending |
+| ONBRD-03 | Phase 8 | Pending |
+| ONBRD-04 | Phase 12 | Pending |
+| KWRD-01 | Phase 9 | Pending |
+| KWRD-02 | Phase 9 | Pending |
+| KWRD-03 | Phase 9 | Pending |
+| KWRD-04 | Phase 9 | Pending |
+| DESC-01 | Phase 10 | Pending |
+| DESC-02 | Phase 10 | Pending |
+| DESC-03 | Phase 10 | Pending |
+| SRVC-01 | Phase 11 | Pending |
+| SRVC-02 | Phase 11 | Pending |
+| SRVC-03 | Phase 11 | Pending |
+| SRVC-04 | Phase 11 | Pending |
+| ATTR-01 | Phase 12 | Pending |
+| ATTR-02 | Phase 12 | Pending |
+| ATTR-03 | Phase 12 | Pending |
+| PROF-01 | Phase 12 | Pending |
+| PROF-02 | Phase 12 | Pending |
+| REOPT-01 | Phase 13 | Pending |
+| REOPT-02 | Phase 13 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after initial definition*
+*Last updated: 2026-03-04 after roadmap creation*
