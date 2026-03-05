@@ -40,7 +40,10 @@ Plans:
   2. User can edit, add, remove, and reorder keywords before saving (up to 10)
   3. User can set up to 3 target cities or service areas for the profile
   4. After saving keywords and cities, newly generated posts for that profile incorporate those keywords naturally
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 09-01-PLAN.md -- Backend: AI keyword generator, keywords/cities CRUD APIs, post generator integration
+- [ ] 09-02-PLAN.md -- Frontend: Keywords & Cities wizard step UI + wizard shell wiring
 
 ### Phase 10: Description Optimization
 **Goal**: User can generate an SEO-optimized business description and push it live to Google Business Profile
@@ -87,8 +90,8 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Wizard Shell & Data Foundation | 0/2 | Planning complete | - |
-| 9. Keywords & Cities | 0/? | Not started | - |
+| 8. Wizard Shell & Data Foundation | 2/2 | Complete | 2026-03-05 |
+| 9. Keywords & Cities | 0/2 | Planned | - |
 | 10. Description Optimization | 0/? | Not started | - |
 | 11. Service Optimization | 0/? | Not started | - |
 | 12. Attributes & Profile Settings | 0/? | Not started | - |
