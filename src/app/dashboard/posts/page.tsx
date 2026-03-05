@@ -2,6 +2,7 @@ import { FileText, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { PostFilters } from "./post-filters";
+import { PostActions, BulkApproveButton } from "./post-actions";
 
 const TYPE_BADGES: Record<string, { label: string; className: string }> = {
   WHATS_NEW: {
@@ -41,6 +42,17 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   },
 };
 
+function formatDate(date: Date | null | undefined): string {
+  if (!date) return "";
+  return new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 interface PostsPageProps {
   searchParams: Promise<{
     profileId?: string;
@@ -62,7 +74,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
     prisma.post.findMany({
       where,
       include: {
-        profile: { select: { name: true, category: true } },
+        profile: { select: { id: true, name: true, category: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -72,6 +84,22 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
       orderBy: { name: "asc" },
     }),
   ]);
+
+  // Count drafts per profile for bulk approve
+  const draftCounts = posts
+    .filter((p) => p.status === "DRAFT")
+    .reduce<Record<string, { count: number; name: string }>>(
+      (acc, post) => {
+        if (!acc[post.profileId]) {
+          acc[post.profileId] = { count: 0, name: post.profile.name };
+        }
+        acc[post.profileId].count++;
+        return acc;
+      },
+      {}
+    );
+
+  const totalDrafts = posts.filter((p) => p.status === "DRAFT").length;
 
   return (
     <div>
@@ -83,13 +111,23 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
             {profileId || status || type ? " (filtered)" : ""}
           </p>
         </div>
-        <Link
-          href="/dashboard/posts/generate"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors"
-        >
-          <Sparkles size={16} />
-          Generate Posts
-        </Link>
+        <div className="flex items-center gap-3">
+          {Object.entries(draftCounts).map(([pId, { count, name }]) => (
+            <BulkApproveButton
+              key={pId}
+              profileId={pId}
+              profileName={name}
+              draftCount={count}
+            />
+          ))}
+          <Link
+            href="/dashboard/posts/generate"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Sparkles size={16} />
+            Generate Posts
+          </Link>
+        </div>
       </div>
 
       <PostFilters
@@ -122,11 +160,16 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
             const typeBadge = TYPE_BADGES[post.type] || TYPE_BADGES.WHATS_NEW;
             const statusBadge =
               STATUS_BADGES[post.status] || STATUS_BADGES.DRAFT;
+            const isFailed = post.status === "FAILED";
 
             return (
               <div
                 key={post.id}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col"
+                className={`bg-white rounded-lg shadow-sm border p-4 flex flex-col ${
+                  isFailed
+                    ? "border-red-300 bg-red-50"
+                    : "border-gray-200"
+                }`}
               >
                 <div className="flex items-center justify-between mb-3">
                   <span
@@ -147,12 +190,34 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
                     : post.content}
                 </p>
 
+                {/* Status-specific info */}
+                {post.status === "SCHEDULED" && post.scheduledAt && (
+                  <p className="text-xs text-yellow-700 mb-2">
+                    Scheduled for {formatDate(post.scheduledAt)}
+                  </p>
+                )}
+                {post.status === "PUBLISHED" && post.publishedAt && (
+                  <p className="text-xs text-green-700 mb-2">
+                    Published on {formatDate(post.publishedAt)}
+                  </p>
+                )}
+                {post.status === "FAILED" && post.errorMessage && (
+                  <p
+                    className="text-xs text-red-600 mb-2 truncate"
+                    title={post.errorMessage}
+                  >
+                    Error: {post.errorMessage}
+                  </p>
+                )}
+
                 <div className="flex items-center justify-between text-xs text-gray-500 pt-3 border-t border-gray-100">
                   <span>{post.profile.name}</span>
                   <span>
                     {new Date(post.createdAt).toLocaleDateString()}
                   </span>
                 </div>
+
+                <PostActions postId={post.id} status={post.status} />
               </div>
             );
           })}
