@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Auth Models ---
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         String    @default("member")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- GBP Models ---
+
+model GoogleAccount {
+  id           String    @id @default(cuid())
+  googleEmail  String    @unique
+  accessToken  String
+  refreshToken String
+  tokenExpiry  DateTime
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  profiles     Profile[]
+}
+
+model Profile {
+  id              String         @id @default(cuid())
+  googleAccountId String
+  googleAccount   GoogleAccount  @relation(fields: [googleAccountId], references: [id], onDelete: Cascade)
+  locationName    String
+  name            String
+  placeId         String?
+  address         String?
+  phone           String?
+  category        String?
+  websiteUrl      String?
+  isConnected     Boolean        @default(true)
+  autoApproveReviews Boolean     @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  posts           Post[]
+  reviews         Review[]
+  dailyMetrics    DailyMetric[]
+  monthlyKeywords MonthlyKeyword[]
+  reports         Report[]
+}
+
+// --- Post Models ---
+
+enum PostStatus {
+  DRAFT
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum PostType {
+  WHATS_NEW
+  EVENT
+  OFFER
+}
+
+model Post {
+  id           String     @id @default(cuid())
+  profileId    String
+  profile      Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type         PostType   @default(WHATS_NEW)
+  content      String
+  callToAction String?
+  mediaUrl     String?
+  status       PostStatus @default(DRAFT)
+  scheduledAt  DateTime?
+  publishedAt  DateTime?
+  googlePostId String?
+  errorMessage String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+// --- Review Models ---
+
+enum ReviewResponseStatus {
+  PENDING
+  DRAFTED
+  APPROVED
+  PUBLISHED
+  FAILED
+}
+
+model Review {
+  id             String          @id @default(cuid())
+  profileId      String
+  profile        Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  googleReviewId String          @unique
+  reviewerName   String?
+  rating         Int
+  comment        String?
+  reviewDate     DateTime
+  response       ReviewResponse?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ReviewResponse {
+  id        String               @id @default(cuid())
+  reviewId  String               @unique
+  review    Review               @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  content   String
+  status    ReviewResponseStatus @default(DRAFTED)
+  publishedAt DateTime?
+  errorMessage String?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+// --- Analytics Models ---
+
+model DailyMetric {
+  id                      String   @id @default(cuid())
+  profileId               String
+  profile                 Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date                    DateTime @db.Date
+  impressionsSearchDesktop Int     @default(0)
+  impressionsSearchMobile  Int     @default(0)
+  impressionsMapsDesktop   Int     @default(0)
+  impressionsMapsMobile    Int     @default(0)
+  websiteClicks           Int      @default(0)
+  callClicks              Int      @default(0)
+  directionRequests       Int      @default(0)
+  conversations           Int      @default(0)
+  createdAt               DateTime @default(now())
+
+  @@unique([profileId, date])
+}
+
+model MonthlyKeyword {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  month     DateTime @db.Date
+  keyword   String
+  impressions Int    @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, month, keyword])
+}
+
+model Report {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  month     DateTime @db.Date
+  filePath  String?
+  createdAt DateTime @default(now())
+}
