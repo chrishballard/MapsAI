@@ -19,17 +19,17 @@ export async function generateKeywordSuggestions(profile: {
   category: string | null;
   address: string | null;
 }): Promise<{ keyword: string; reasoning: string }[]> {
-  const systemPrompt = `You are an expert local SEO strategist specializing in Google Business Profile optimization. Generate 8-10 highly specific, localized target keywords for the business described below.
+  const systemPrompt = `You are an expert local SEO strategist specializing in Google Business Profile optimization. Generate 8-10 service-focused target keywords for the business described below.
 
 Rules:
-- Keywords must be specific to this business type and location
-- Include location-qualified keywords (e.g., "emergency dentist in Springfield" not just "dentist")
-- Mix service-specific keywords with location-based keywords
-- Include "near me" variants for key services
-- Avoid generic phrases like "great service" or "best quality"
+- Keywords should describe services, specialties, and what customers search for
+- Do NOT include city names, locations, or "near me" in keywords — locations are handled separately
+- Examples of good keywords: "emergency brake repair", "oil change", "transmission diagnostic", "check engine light repair"
+- Examples of bad keywords: "auto repair Austin", "mechanic near me", "best quality service"
+- Mix broad service keywords with specific specialty keywords
 - Do NOT include the business name as a keyword
 - Each keyword should be something real customers would search on Google
-- Focus on keywords with local search intent`;
+- Focus on the specific services and specialties this type of business offers`;
 
   const userMessage = [
     `Business name: ${profile.name}`,

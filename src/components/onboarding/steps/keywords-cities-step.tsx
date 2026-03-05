@@ -35,11 +35,15 @@ export function KeywordsCitiesStep({
         ]);
         if (kwRes.ok) {
           const kwData = await kwRes.json();
-          setKeywords(kwData.keywords ?? []);
+          setKeywords(
+            (kwData.keywords ?? []).map((k: { keyword: string }) => k.keyword)
+          );
         }
         if (cityRes.ok) {
           const cityData = await cityRes.json();
-          setCities(cityData.cities ?? []);
+          setCities(
+            (cityData.cities ?? []).map((c: { city: string }) => c.city)
+          );
         }
       } finally {
         setLoading(false);
@@ -58,7 +62,7 @@ export function KeywordsCitiesStep({
       });
       if (res.ok) {
         const data = await res.json();
-        setSuggestions(data.suggestions ?? []);
+        setSuggestions(data.keywords ?? []);
       }
     } finally {
       setGenerating(false);
@@ -157,10 +161,10 @@ export function KeywordsCitiesStep({
                 className="flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
-                  <span className="font-medium text-sm">{s.keyword}</span>
-                  <span className="text-xs text-gray-400 ml-2">
+                  <span className="font-semibold text-sm text-gray-900">{s.keyword}</span>
+                  <p className="text-xs text-gray-500 mt-0.5">
                     {s.reasoning}
-                  </span>
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -211,7 +215,7 @@ export function KeywordsCitiesStep({
             }}
             placeholder="Add a keyword..."
             disabled={keywords.length >= 10}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 disabled:opacity-50"
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-900 flex-1 disabled:opacity-50"
           />
           <button
             type="button"
@@ -274,7 +278,7 @@ export function KeywordsCitiesStep({
             }}
             placeholder="Add a city..."
             disabled={cities.length >= 3}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1 disabled:opacity-50"
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-900 flex-1 disabled:opacity-50"
           />
           <button
             type="button"
