@@ -15,15 +15,16 @@ export async function generateDescription(profile: {
 }): Promise<string> {
   const systemPrompt = `You are an expert local SEO copywriter specializing in Google Business Profile descriptions. Write an SEO-optimized business description following these rules:
 
-- HARD LIMIT: 750 characters maximum
-- The first 250 characters are the most important — they appear in Google Search results
-- Naturally weave in the provided keywords throughout the description — do NOT keyword stuff
+- HARD LIMIT: Your description MUST be between 400 and 700 characters. Count carefully. Never exceed 700 characters.
+- The first 250 characters are the most important — they appear in Google Search results, so lead with the strongest value proposition
+- Naturally weave in the provided keywords throughout the description — do NOT keyword stuff or list them
 - Reference cities and service areas naturally where appropriate
 - Write in third person (use the business name or "the business", never "we" or "our")
 - Do NOT include phone numbers, URLs, or promotional language (e.g. "best", "#1", "call now")
 - Do NOT use ALL CAPS for emphasis
 - Focus on: what the business does, what makes it unique, and the areas it serves
-- Write in a professional, informative tone that builds trust`;
+- Write in a professional, informative tone that builds trust
+- Be concise. Aim for 500-650 characters.`;
 
   const userMessage = [
     `Business name: ${profile.name}`,

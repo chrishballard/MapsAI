@@ -247,7 +247,7 @@ export function DescriptionStep({
             onChange={(e) => setAiDescription(e.target.value)}
             rows={6}
             disabled={generating || pushing}
-            className={`w-full border rounded-md p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 ${
+            className={`w-full border rounded-md p-3 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 ${
               charCount > 750
                 ? "border-red-500"
                 : "border-gray-300"
