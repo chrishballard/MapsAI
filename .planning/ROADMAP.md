@@ -53,7 +53,10 @@ Plans:
   1. User can generate an AI business description that incorporates their stored keywords and cities (max 750 characters)
   2. User can review, edit, and approve the description before anything touches the live GBP
   3. After approval, the description is pushed to the live GBP and user sees clear success or failure feedback
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 10-01-PLAN.md -- Backend: AI description generator, GBP business info read/write, description CRUD + generate + push APIs
+- [ ] 10-02-PLAN.md -- Frontend: Description wizard step UI + wizard shell wiring
 
 ### Phase 11: Service Optimization
 **Goal**: User can discover available services for their business category and push AI-optimized service descriptions to GBP without losing existing services
@@ -92,7 +95,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 8. Wizard Shell & Data Foundation | 2/2 | Complete | 2026-03-05 |
 | 9. Keywords & Cities | 0/2 | Planned | - |
-| 10. Description Optimization | 0/? | Not started | - |
+| 10. Description Optimization | 0/2 | Planned | - |
 | 11. Service Optimization | 0/? | Not started | - |
 | 12. Attributes & Profile Settings | 0/? | Not started | - |
 | 13. Re-optimization | 0/? | Not started | - |
