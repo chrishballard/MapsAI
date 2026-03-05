@@ -26,7 +26,10 @@
   2. User sees a step indicator showing which step they are on and which steps are complete
   3. User can navigate back to completed steps without losing data
   4. User can close the browser, return later, and resume the wizard from where they left off
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 08-01-PLAN.md -- Database schema (5 new Prisma models) + onboarding progress API + un-onboarded profiles API
+- [ ] 08-02-PLAN.md -- Wizard shell UI with step indicator, navigation, and progress persistence
 
 ### Phase 9: Keywords & Cities
 **Goal**: User can configure target keywords and cities for a profile, and those keywords automatically improve all future AI-generated content
@@ -84,7 +87,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Wizard Shell & Data Foundation | 0/? | Not started | - |
+| 8. Wizard Shell & Data Foundation | 0/2 | Planning complete | - |
 | 9. Keywords & Cities | 0/? | Not started | - |
 | 10. Description Optimization | 0/? | Not started | - |
 | 11. Service Optimization | 0/? | Not started | - |
