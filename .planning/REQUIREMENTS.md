@@ -1,61 +1,121 @@
-# MapsAI — Requirements (Milestone 1: MVP)
+# Requirements: MapsAI
 
-## R1: Google Business Profile Connection
-- R1.1: OAuth 2.0 flow to connect a GBP account
-- R1.2: Store and refresh OAuth tokens securely
-- R1.3: List all locations under a connected account
-- R1.4: Support connecting multiple accounts (for managing 100-200 profiles)
-- R1.5: Display connection status per profile in dashboard
+**Defined:** 2026-03-04
+**Core Value:** Every client's GBP is fully managed end-to-end — from initial optimization through ongoing posts, reviews, and reporting.
 
-## R2: AI Post Generation
-- R2.1: Generate post drafts using Claude API based on business category, name, and context
-- R2.2: Support "What's New", "Event", and "Offer" post types
-- R2.3: Allow custom prompts/templates per business or category
-- R2.4: Batch-generate posts for a full month (4 posts per profile)
-- R2.5: Store drafts with status: draft, approved, scheduled, published, failed
+## v1.1 Requirements
 
-## R3: Post Approval & Scheduling
-- R3.1: Dashboard view of all pending drafts, filterable by profile
-- R3.2: Approve individual posts or bulk-approve all drafts for a profile/month
-- R3.3: On approval, auto-schedule posts evenly across the month (weekly cadence)
-- R3.4: Scheduled posts publish automatically via GBP API at their scheduled time
-- R3.5: Track publish status and handle failures with retry logic
+Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap phases.
 
-## R4: Review Management
-- R4.1: Poll for new reviews across all connected profiles (periodic sync)
-- R4.2: Display new reviews in dashboard with rating, text, reviewer info
-- R4.3: Auto-generate review response drafts using Claude API
-- R4.4: Response considers: review sentiment, star rating, business context
-- R4.5: Option to auto-publish responses or queue for human approval
-- R4.6: Publish approved responses via GBP API
-- R4.7: Track response status: pending, drafted, approved, published
+### Onboarding Wizard
 
-## R5: Analytics & Reporting
-- R5.1: Sync performance metrics from GBP Performance API (daily)
-- R5.2: Store metrics: impressions (search/maps), clicks, calls, direction requests
-- R5.3: Store monthly search keyword data
-- R5.4: Generate PDF report per profile with:
-  - Business info header
-  - Key metrics summary (current month vs previous month)
-  - Impressions trend chart
-  - Top search keywords
-  - Review summary (count, average rating, response rate)
-  - Posts published in period
-- R5.5: Bulk-generate reports for all profiles
-- R5.6: Download individual or bulk PDF reports
+- [ ] **ONBRD-01**: User can start onboarding wizard from an "Add Business" button and select from synced un-onboarded profiles
+- [ ] **ONBRD-02**: Wizard displays step indicator with progress and supports navigation between completed steps
+- [ ] **ONBRD-03**: Wizard state persists to database so user can resume across sessions
+- [ ] **ONBRD-04**: User can review a summary of all optimizations and mark onboarding complete
 
-## R6: Dashboard & Auth
-- R6.1: Simple login (email/password) for internal team
-- R6.2: Dashboard home: overview of all profiles with key stats
-- R6.3: Profile detail page: posts, reviews, metrics for single profile
-- R6.4: Navigation: Profiles, Posts, Reviews, Reports, Settings
-- R6.5: Settings: manage connected accounts, default AI prompts, team members
+### Keywords & Cities
 
-## Non-Requirements (Explicitly Out of Scope for MVP)
-- Client-facing portal / paywall
-- Q&A management (API deprecated)
-- Photo/media optimization
-- Competitor tracking
-- Multi-platform support (Yelp, Facebook, etc.)
-- White-labeling
-- Mobile app
+- [ ] **KWRD-01**: User can generate AI-suggested keywords (up to 10) based on business name, category, address, and existing GBP data
+- [ ] **KWRD-02**: User can edit, add, remove, and reorder AI-suggested keywords before saving
+- [ ] **KWRD-03**: User can set up to 3 target cities/service areas per profile
+- [ ] **KWRD-04**: Stored keywords and cities are injected into post generation prompts for all future AI-generated posts
+
+### Description Optimization
+
+- [ ] **DESC-01**: User can generate an AI SEO-optimized business description (max 750 chars) using stored keywords and cities
+- [ ] **DESC-02**: User can review, edit, and approve the AI-generated description before it pushes to GBP
+- [ ] **DESC-03**: Approved description is pushed to live GBP via API with success/failure feedback
+
+### Service Optimization
+
+- [ ] **SRVC-01**: System fetches available structured services for the profile's GBP category
+- [ ] **SRVC-02**: User can generate AI-optimized descriptions for each service incorporating target keywords
+- [ ] **SRVC-03**: User can approve service descriptions individually or in bulk before pushing to GBP
+- [ ] **SRVC-04**: Services push uses fetch-then-merge to preserve existing services not being optimized
+
+### Attributes
+
+- [ ] **ATTR-01**: System fetches available attributes dynamically based on business category (not hardcoded)
+- [ ] **ATTR-02**: User can view and toggle attribute values (boolean, enum, repeated enum, URL types)
+- [ ] **ATTR-03**: Updated attributes are pushed to GBP via API
+
+### Profile Settings
+
+- [ ] **PROF-01**: User can configure post frequency per profile (posts per month)
+- [ ] **PROF-02**: Post frequency setting is used by the existing scheduling system when generating posts
+
+### Re-optimization
+
+- [ ] **REOPT-01**: User can re-run description and service optimization from the profile detail page
+- [ ] **REOPT-02**: Re-optimization shows current live GBP content alongside the new AI suggestion for comparison
+
+## Future Requirements
+
+Deferred to future milestones. Tracked but not in current roadmap.
+
+### Media Management
+
+- **MEDIA-01**: User can upload business logo during onboarding and push to GBP via Media API
+- **MEDIA-02**: User can manage cover photos and additional media
+
+### Social Links
+
+- **SOCL-01**: User can store social profile links locally for reference
+- **SOCL-02**: System displays note that social links must be set manually in GBP (API limitation)
+
+### Drift Detection
+
+- **DRIFT-01**: System detects when Google auto-overwrites API-pushed optimizations
+- **DRIFT-02**: Dashboard alerts when GBP content has drifted from the optimized state
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Keyword search volume/difficulty data | Requires third-party API (SEMrush, Ahrefs); AI suggestions are sufficient |
+| Optimization score/gauge | Wizard step-by-step flow is sufficient; scores create false urgency |
+| Bulk onboarding (multiple profiles at once) | Each profile needs unique keywords/services; one-at-a-time is appropriate |
+| Auto-push without approval | Too risky for 100-200 client profiles; draft-first pattern required |
+| GBP category management | Changing primary category has major ranking implications; manual only |
+| Hours of operation management | Risk of corrupting hours across 200 profiles; factual data, not optimizable |
+| Photo/media optimization beyond logo | Complex domain; manual for now |
+| Social links via API | GBP API does not support social link writes as of March 2026 |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| ONBRD-01 | — | Pending |
+| ONBRD-02 | — | Pending |
+| ONBRD-03 | — | Pending |
+| ONBRD-04 | — | Pending |
+| KWRD-01 | — | Pending |
+| KWRD-02 | — | Pending |
+| KWRD-03 | — | Pending |
+| KWRD-04 | — | Pending |
+| DESC-01 | — | Pending |
+| DESC-02 | — | Pending |
+| DESC-03 | — | Pending |
+| SRVC-01 | — | Pending |
+| SRVC-02 | — | Pending |
+| SRVC-03 | — | Pending |
+| SRVC-04 | — | Pending |
+| ATTR-01 | — | Pending |
+| ATTR-02 | — | Pending |
+| ATTR-03 | — | Pending |
+| PROF-01 | — | Pending |
+| PROF-02 | — | Pending |
+| REOPT-01 | — | Pending |
+| REOPT-02 | — | Pending |
+
+**Coverage:**
+- v1.1 requirements: 22 total
+- Mapped to phases: 0
+- Unmapped: 22
+
+---
+*Requirements defined: 2026-03-04*
+*Last updated: 2026-03-04 after initial definition*
