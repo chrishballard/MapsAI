@@ -81,6 +81,7 @@ export function DescriptionStep({
 
   const generateDescription = async () => {
     setGenerating(true);
+    setPushError(null);
     try {
       const res = await fetch("/api/onboarding/description/generate", {
         method: "POST",
@@ -90,7 +91,12 @@ export function DescriptionStep({
       if (res.ok) {
         const data = await res.json();
         setAiDescription(data.description ?? "");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setPushError(data.error || "Failed to generate description");
       }
+    } catch {
+      setPushError("Network error during generation. Please try again.");
     } finally {
       setGenerating(false);
     }

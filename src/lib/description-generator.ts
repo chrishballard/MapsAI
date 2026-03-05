@@ -3,7 +3,7 @@ import { anthropic } from "./claude";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 const DescriptionSchema = z.object({
-  description: z.string().max(750),
+  description: z.string(),
 });
 
 export async function generateDescription(profile: {
