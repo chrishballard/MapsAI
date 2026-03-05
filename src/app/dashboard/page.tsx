@@ -1,17 +1,38 @@
-import { Building2, FileText, MessageSquare, BarChart3 } from "lucide-react";
+import { Building2, FileText, MessageSquare, BarChart3, Star } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 
 export default async function DashboardPage() {
-  const totalProfiles = await prisma.profile.count();
-  const connectedProfiles = await prisma.profile.count({
-    where: { isConnected: true },
-  });
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [totalProfiles, connectedProfiles, postsThisMonth, pendingReviews, reportsGenerated] =
+    await Promise.all([
+      prisma.profile.count(),
+      prisma.profile.count({ where: { isConnected: true } }),
+      prisma.post.count({ where: { createdAt: { gte: startOfMonth } } }),
+      prisma.reviewResponse.count({ where: { status: "DRAFTED" } }),
+      prisma.report.count(),
+    ]);
+
+  const [recentPosts, recentReviews] = await Promise.all([
+    prisma.post.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: { profile: { select: { name: true } } },
+    }),
+    prisma.review.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: { profile: { select: { name: true } } },
+    }),
+  ]);
 
   const stats = [
     { label: "Total Profiles", value: totalProfiles.toString(), icon: Building2 },
-    { label: "Posts This Month", value: "0", icon: FileText },
-    { label: "Pending Reviews", value: "0", icon: MessageSquare },
-    { label: "Reports Generated", value: "0", icon: BarChart3 },
+    { label: "Posts This Month", value: postsThisMonth.toString(), icon: FileText },
+    { label: "Pending Reviews", value: pendingReviews.toString(), icon: MessageSquare },
+    { label: "Reports Generated", value: reportsGenerated.toString(), icon: BarChart3 },
   ];
 
   const hasProfiles = totalProfiles > 0;
@@ -43,6 +64,98 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Recent Activity */}
+      {hasProfiles && (recentPosts.length > 0 || recentReviews.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Recent Posts */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-medium text-gray-900">Recent Posts</h2>
+            </div>
+            {recentPosts.length === 0 ? (
+              <div className="px-6 py-4 text-sm text-gray-500">No posts yet.</div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {recentPosts.map((post) => (
+                  <Link
+                    key={post.id}
+                    href="/dashboard/posts"
+                    className="block px-6 py-3 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {post.profile.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {post.type.replace("_", " ")} &middot;{" "}
+                          {post.createdAt.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          post.status === "PUBLISHED"
+                            ? "bg-green-100 text-green-700"
+                            : post.status === "DRAFT"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {post.status}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Reviews */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-medium text-gray-900">Recent Reviews</h2>
+            </div>
+            {recentReviews.length === 0 ? (
+              <div className="px-6 py-4 text-sm text-gray-500">No reviews yet.</div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {recentReviews.map((review) => (
+                  <Link
+                    key={review.id}
+                    href="/dashboard/reviews"
+                    className="block px-6 py-3 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {review.profile.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {review.reviewerName || "Anonymous"} &middot;{" "}
+                          {review.reviewDate.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                        <span className="text-sm font-medium text-gray-700">
+                          {review.rating}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
         <Building2 size={48} className="text-gray-300 mx-auto mb-4" />

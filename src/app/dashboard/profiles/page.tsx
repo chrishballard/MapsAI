@@ -1,4 +1,5 @@
 import { Building2, RefreshCw, Plus } from "lucide-react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ResyncButton } from "./resync-button";
 
@@ -75,7 +76,12 @@ export default async function ProfilesPage() {
               {profiles.map((profile) => (
                 <tr key={profile.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                    {profile.name}
+                    <Link
+                      href={`/dashboard/profiles/${profile.id}`}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {profile.name}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {profile.address || "—"}
