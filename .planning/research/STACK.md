@@ -1,163 +1,330 @@
 # Technology Stack
 
-**Project:** MapsAI
+**Project:** MapsAI - Milestone v1.1 (Onboarding & Optimization)
 **Researched:** 2026-03-04
+**Scope:** Stack additions/changes for GBP write operations, media upload, wizard UI, and AI keyword generation
 
-## Recommended Stack
+## Existing Stack (DO NOT CHANGE)
 
-### Core Framework
+Already validated and shipping. Listed for reference only:
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Next.js | 14+ (App Router) | Full-stack framework | Single codebase for API routes + React frontend. Server Actions for form handling. API routes for webhooks/external calls. Google API client libraries work natively in Node.js. |
-| TypeScript | 5.x | Type safety | Non-negotiable for a project managing external API data with complex shapes |
+| Technology | Version | Status |
+|------------|---------|--------|
+| Next.js (App Router) | 16.1.6 | Shipping |
+| TypeScript | 5.x | Shipping |
+| PostgreSQL + Prisma | 7.4.2 | Shipping |
+| BullMQ + Redis | 5.70.2 | Shipping |
+| @anthropic-ai/sdk | 0.78.0 | Shipping |
+| googleapis | 171.4.0 | Shipping |
+| NextAuth.js | 4.24.13 | Shipping |
+| Tailwind CSS | 4.x | Shipping |
+| Zod | 4.3.6 | Shipping |
+| Lucide React | 0.577.0 | Shipping |
+| @react-pdf/renderer | 4.3.2 | Shipping |
 
-**Why Next.js over alternatives:**
-- **vs Express:** Express requires separate frontend setup. Next.js gives you API routes + React in one project. For an internal dashboard tool, this is the right tradeoff.
-- **vs FastAPI (Python):** Python has equivalent Google API support, but you'd need a separate frontend framework. The AI integration (Claude SDK) works equally well in both. Staying in one language wins.
-- **vs Remix/SvelteKit:** Next.js has the largest ecosystem and most examples for Google API integration. Not worth the risk of a smaller community for marginal DX gains.
+## New Stack Additions
 
-### Database
+### No New Dependencies Required
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| PostgreSQL | 15+ | Primary database | Relational data (profiles, posts, reviews, users) with strong JSON support for API response caching. Scheduling/queue metadata fits relational model perfectly. |
-| Prisma | 5.x | ORM | Type-safe database access, excellent migration system, good Next.js integration |
-| Redis | 7.x | Queue backend + caching | Required by BullMQ for job queues. Also useful for caching GBP API responses to avoid rate limits. |
+The milestone's core features are achievable with zero new npm packages. Here is why:
 
-**Why PostgreSQL over alternatives:**
-- **vs SQLite:** SQLite cannot handle concurrent writes from web server + background worker processes. With BullMQ running alongside the web app, you need a real database server.
-- **vs MongoDB:** The data is inherently relational (profiles have posts, posts have approvals, profiles have reviews). MongoDB would require manual join logic. PostgreSQL's JSONB columns handle any semi-structured API data.
+**GBP API write operations** use `googleapis` (already installed at v171.4.0) via `google.mybusinessbusinessinformation({ version: 'v1' })` -- the same client already used for location reads in `src/lib/google-locations.ts`. Write operations (patch descriptions, services, attributes) are different methods on the same client.
 
-### AI Integration
+**Media/logo upload** uses the v4 API endpoint (`accounts.locations.media`) which is still active (not deprecated). The `googleapis` package exposes this via `google.mybusiness({ version: 'v4' })` for the media create/upload methods, or direct HTTP requests via the OAuth2 client (pattern already used in `src/lib/google-posts.ts`).
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| @anthropic-ai/sdk | latest | Claude API access | Official TypeScript SDK. Use Claude Sonnet for cost-effective post generation and review responses. |
+**Multi-step wizard** is a UI pattern, not a library. React `useState` for step tracking + existing Zod for per-step validation + existing Tailwind for styling. No form library needed for the wizard's scope (a few text fields per step, not a complex nested form).
 
-**Usage pattern:** Claude Sonnet (not Opus) for all text generation. Posts and review responses are short-form content where Sonnet excels. Estimated cost: negligible at 100-200 profiles generating a few posts/week each.
+**AI keyword generation** uses the existing `@anthropic-ai/sdk` with Claude Sonnet. No third-party keyword API needed -- the PROJECT.md explicitly defers keyword volume data.
 
-**Prompt architecture:**
-- System prompts per use case (post generation, review response)
-- Include business context (category, location, tone preferences) in each call
-- Store generated content as drafts with `status: 'pending_approval'`
+**File upload handling** uses Next.js built-in `Request.formData()` in API routes. No multer or formidable needed -- Next.js App Router handles multipart form data natively.
 
-### PDF Generation
+### One Recommended Addition: sharp
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| Puppeteer | latest | HTML-to-PDF conversion | Render React components or HTML templates to PDF. Professional quality output with charts, tables, branding. Most flexible approach. |
-
-**Why Puppeteer over alternatives:**
-- **vs jsPDF:** jsPDF requires manual coordinate-based layout. Painful for complex reports with charts and tables.
-- **vs PDFKit:** Same problem as jsPDF -- programmatic layout. Good for simple documents, bad for reports.
-- **vs @react-pdf/renderer:** Decent option but limited CSS support. Puppeteer lets you use full CSS/HTML which you already know.
-- **vs WeasyPrint (Python):** Would require a Python service. Not worth the operational complexity.
-
-**Pattern:** Build report pages as regular HTML/React pages with a `?format=pdf` query param. Puppeteer visits the page and saves as PDF. This means you can also view reports in-browser.
-
-### Queue & Scheduling
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| BullMQ | 5.x | Job queue + scheduling | Redis-backed, supports delayed jobs, cron repeating jobs, retries, rate limiting. The standard for Node.js background jobs. |
-
-**Why BullMQ over alternatives:**
-- **vs node-cron:** node-cron is just a cron scheduler -- no persistence, no retries, no job tracking. If the process restarts, scheduled jobs are lost.
-- **vs Agenda:** Agenda uses MongoDB as its backend. Since we're using PostgreSQL, adding MongoDB just for job scheduling is unnecessary overhead. BullMQ + Redis is lighter.
-- **vs pg-boss:** pg-boss uses PostgreSQL as the queue backend (no Redis needed). Viable alternative if you want to avoid Redis, but BullMQ has better documentation, larger community, and built-in rate limiting which is critical for GBP API calls.
-
-**Queue design:**
-- `post-publish` queue: Scheduled posts with delayed execution
-- `review-check` queue: Repeating cron job to poll for new reviews
-- `review-respond` queue: AI-generated response drafts
-- `report-generate` queue: Scheduled PDF report generation
-- Rate limiter on all GBP API queues to respect Google's quotas
-
-### Hosting & Infrastructure
-
-| Technology | Purpose | Why |
-|------------|---------|-----|
-| Railway | App hosting (web + worker) | Supports multiple services (web server + background worker) from one repo. Built-in PostgreSQL and Redis add-ons. Cron jobs supported. Simple deploys from GitHub. |
-
-**Why Railway over alternatives:**
-- **vs Vercel:** Vercel is optimized for serverless/edge functions with a 10-second (free) or 60-second (pro) execution limit. Background jobs, long-running workers, and persistent connections to Redis don't fit the serverless model. Vercel is wrong for this project.
-- **vs Render:** Render is a strong alternative. Similar to Railway but slightly more complex setup for multiple services. Either works -- Railway has slightly better DX for monorepo multi-service deploys.
-- **vs Self-hosted (VPS):** Unnecessary operational burden for an internal tool. Railway abstracts away server management.
-- **vs Fly.io:** Good option but more complex networking setup. Railway is simpler for this scale.
-
-**Railway setup:**
-- Service 1: Next.js web app
-- Service 2: BullMQ worker process
-- Add-on: PostgreSQL
-- Add-on: Redis
-- Estimated cost: ~$10-20/month at this scale
-
-### Frontend Libraries
-
-| Library | Purpose | Why |
-|---------|---------|-----|
-| Tailwind CSS | Styling | Fast development for internal tools. No need for a component library. |
-| shadcn/ui | UI components | Copy-paste components built on Radix. Not a dependency -- just source code you own. Tables, forms, dialogs, etc. |
-| TanStack Table | Data tables | Profile lists, post queues, review lists all need sortable/filterable tables |
-| Recharts | Charts for reports | Simple React charting for dashboard metrics and PDF reports |
-| next-auth (Auth.js) | Authentication | Google OAuth for team login. Simple setup with Next.js. |
-
-### Google API
-
-| Library | Purpose | Why |
-|---------|---------|-----|
-| googleapis | GBP API client | Official Google API Node.js client. Covers Business Profile API, OAuth2, and all other Google APIs from one package. |
-
-## Alternatives Considered
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Framework | Next.js | FastAPI + React | Two codebases, two deployments, more complexity |
-| Framework | Next.js | Express + React | Same problem, plus no SSR/file-based routing benefits |
-| Database | PostgreSQL | MongoDB | Data is relational; MongoDB adds unnecessary complexity |
-| Database | PostgreSQL | SQLite | Cannot handle concurrent web + worker process writes |
-| Queue | BullMQ | pg-boss | Viable but smaller community; BullMQ rate limiting is critical for API calls |
-| Queue | BullMQ | node-cron | No persistence, no retries, no job tracking |
-| PDF | Puppeteer | @react-pdf/renderer | Limited CSS support; Puppeteer uses full HTML/CSS |
-| Hosting | Railway | Vercel | Serverless model incompatible with background workers |
-| ORM | Prisma | Drizzle | Prisma has better migration tooling and more documentation |
-
-## Installation
+| sharp | ^0.33.x | Server-side image processing | Resize/validate logos before GBP upload. GBP requires logos at 720x720px, JPG/PNG, 10KB-5MB. sharp is already a transitive dependency of Next.js (used by `next/image`) so it adds near-zero bundle weight. |
 
 ```bash
-# Core framework
-npx create-next-app@latest mapsai --typescript --tailwind --app --src-dir
-
-# Database
-npm install prisma @prisma/client
-npm install -D prisma
-
-# Queue & Redis
-npm install bullmq ioredis
-
-# AI
-npm install @anthropic-ai/sdk
-
-# Google APIs
-npm install googleapis
-
-# PDF
-npm install puppeteer
-
-# UI
-npx shadcn-ui@latest init
-npm install @tanstack/react-table recharts
-
-# Auth
-npm install next-auth
-
-# Dev tools
-npm install -D @types/node
+npm install sharp
 ```
+
+**Why sharp:**
+- GBP logo requirements: 720x720px square, JPG or PNG, 10KB-5MB
+- Users will upload arbitrary images -- resizing server-side prevents API rejection
+- Already bundled with Next.js as an optional dependency for `next/image` optimization
+- No alternative needed -- sharp is the universal standard for Node.js image processing
+
+## GBP API Integration Details
+
+### API Endpoints for Write Operations
+
+All write operations use the OAuth scope `https://www.googleapis.com/auth/business.manage` which is already configured in `src/lib/google.ts`.
+
+#### 1. Update Business Description
+
+**API:** `mybusinessbusinessinformation.v1` (already used for reads)
+**Method:** `locations.patch`
+**Endpoint:** `PATCH https://mybusinessbusinessinformation.googleapis.com/v1/locations/{locationId}?updateMask=profile.description`
+
+```typescript
+// Uses existing google client pattern from src/lib/google-locations.ts
+const mybusinessbusinessinformation = google.mybusinessbusinessinformation({
+  version: "v1",
+  auth: oauth2Client,
+});
+
+await mybusinessbusinessinformation.locations.patch({
+  name: `locations/${locationId}`,
+  updateMask: "profile.description",
+  requestBody: {
+    profile: {
+      description: "AI-generated SEO description here",
+    },
+  },
+});
+```
+
+**Confidence:** HIGH -- same API client used for existing location reads. `locations.patch` is documented at [locations/patch reference](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch).
+
+#### 2. Update Services
+
+**API:** `mybusinessbusinessinformation.v1`
+**Method:** `locations.patch` with `updateMask=serviceItems`
+**Constraint:** Must replace the entire service list -- individual service updates are not supported.
+
+```typescript
+await mybusinessbusinessinformation.locations.patch({
+  name: `locations/${locationId}`,
+  updateMask: "serviceItems",
+  requestBody: {
+    serviceItems: [
+      {
+        freeFormServiceItem: {
+          category: { displayName: "Plumbing", categoryId: "gcid:plumber" },
+          label: { displayName: "Drain cleaning", description: "AI-optimized description" },
+        },
+      },
+    ],
+  },
+});
+```
+
+Two service item formats exist:
+- **StructuredServiceItem** -- uses Google's predefined `serviceTypeId` (query available services via `categories.batchGet` with `view=FULL`)
+- **FreeFormServiceItem** -- custom label with description text (more flexible, use this for AI-generated descriptions)
+
+**Confidence:** HIGH -- documented at [services guide](https://developers.google.com/my-business/content/services).
+
+#### 3. Update Attributes
+
+**API:** `mybusinessbusinessinformation.v1`
+**Method:** `locations.updateAttributes`
+**Endpoint:** `PATCH https://mybusinessbusinessinformation.googleapis.com/v1/locations/{locationId}/attributes?attributeMask=attr1,attr2`
+
+```typescript
+// First: discover available attributes for the business category
+const available = await mybusinessbusinessinformation.attributes.list({
+  parent: `locations/${locationId}`,
+});
+
+// Then: update specific attributes
+await mybusinessbusinessinformation.locations.updateAttributes({
+  name: `locations/${locationId}/attributes`,
+  attributeMask: "has_wheelchair_accessible_entrance,wi_fi",
+  requestBody: {
+    attributes: [
+      { name: "locations/{id}/attributes/has_wheelchair_accessible_entrance", values: [true] },
+      { name: "locations/{id}/attributes/wi_fi", values: ["paid"] },
+    ],
+  },
+});
+```
+
+**Key constraint:** Available attributes vary by business category and region. Must query `attributes.list` first to know what's settable.
+
+**Confidence:** HIGH -- documented at [attributes guide](https://developers.google.com/my-business/content/attributes).
+
+#### 4. Upload Logo/Media
+
+**API:** Google My Business v4 (NOT mybusinessbusinessinformation v1 -- media lives in v4)
+**Status:** v4 media endpoints are still active (not on deprecation schedule as of March 2026)
+
+Two upload methods:
+
+**Method A: Upload from URL (simpler, if image is already hosted)**
+```typescript
+const oauth2Client = await createGoogleClient(googleAccountId);
+const url = `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media`;
+
+await oauth2Client.request({
+  url,
+  method: "POST",
+  data: {
+    mediaFormat: "PHOTO",
+    locationAssociation: { category: "LOGO" },
+    sourceUrl: "https://example.com/logo.jpg",
+  },
+});
+```
+
+**Method B: Upload from bytes (for user-uploaded files)**
+```typescript
+// Step 1: Get upload reference
+const startRes = await oauth2Client.request({
+  url: `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media:startUpload`,
+  method: "POST",
+});
+const resourceName = startRes.data.resourceName;
+
+// Step 2: Upload binary data
+await oauth2Client.request({
+  url: `https://mybusiness.googleapis.com/upload/v1/media/${resourceName}?upload_type=media`,
+  method: "POST",
+  headers: { "Content-Type": "image/jpeg" },
+  body: imageBuffer,
+});
+
+// Step 3: Create media item linking to uploaded data
+await oauth2Client.request({
+  url: `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media`,
+  method: "POST",
+  data: {
+    mediaFormat: "PHOTO",
+    locationAssociation: { category: "LOGO" },
+    dataRef: { resourceName },
+  },
+});
+```
+
+**Media categories:** `LOGO`, `COVER`, `ADDITIONAL`
+
+**Confidence:** HIGH -- v4 media endpoints confirmed active. Documented at [upload media guide](https://developers.google.com/my-business/content/upload-photos).
+
+#### 5. Social Profile Links
+
+**API status:** Social links are NOT available in the GBP API as a writable field.
+
+The `mybusinessbusinessinformation.v1` Location resource schema does not include `socialProfiles`, `moreUrls`, or any social link fields. Social links were added to the GBP web dashboard in 2023 but have not been exposed as API-writable fields.
+
+**Recommendation:** Store social links in the local database (Prisma) for reference/display in the app, but do NOT attempt to push them to GBP via API. This is a manual GBP dashboard task. Flag this clearly in the UI: "Social links must be updated manually in Google Business Profile."
+
+**Confidence:** MEDIUM -- could not find social links in any v1 API schema documentation. Multiple community posts confirm this limitation. Worth re-checking periodically as Google may add it.
+
+## Wizard UI Pattern (No Library Needed)
+
+The onboarding wizard is 4-5 steps with simple forms. This does NOT warrant `react-hook-form` or a wizard library.
+
+**Pattern: useState + Zod per-step validation**
+
+```typescript
+// Wizard state
+const [step, setStep] = useState(1);
+const [data, setData] = useState<WizardData>({});
+
+// Per-step Zod schemas (already have Zod 4.3.6)
+const Step1Schema = z.object({ profileId: z.string() });
+const Step2Schema = z.object({ keywords: z.array(z.string()).max(10) });
+// etc.
+```
+
+**Why NOT react-hook-form:**
+- Each wizard step has 2-5 fields max
+- No deeply nested forms, no dynamic field arrays, no complex validation
+- Adding react-hook-form for simple forms adds learning overhead without payoff
+- Zod handles validation, React state handles the rest
+
+**Why NOT a wizard library (react-step-wizard, etc.):**
+- These libraries add routing/animation concerns we do not need
+- The wizard is a single page with conditional rendering, not multi-page navigation
+- Custom step indicator + conditional rendering is ~30 lines of code
+
+## File Upload in Next.js App Router
+
+Next.js 16 handles multipart form data natively in API routes:
+
+```typescript
+// src/app/api/upload-logo/route.ts
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get("logo") as File;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  // Resize with sharp
+  const resized = await sharp(buffer)
+    .resize(720, 720, { fit: "cover" })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  // Upload to GBP via v4 media API
+  // ...
+}
+```
+
+No multer, no formidable, no busboy. Native `Request.formData()` is sufficient.
+
+## Database Schema Additions
+
+New Prisma models needed (no new database technology):
+
+```prisma
+// Add to existing Profile model
+model Profile {
+  // ... existing fields ...
+  keywords        String[]    @default([])     // AI-suggested target keywords (up to 10)
+  targetCities    String[]    @default([])     // Target cities (up to 3)
+  seoDescription  String?     @db.Text         // AI-generated SEO description
+  onboardedAt     DateTime?                     // Null = not yet onboarded
+  postFrequency   Int         @default(3)      // Posts per week
+  socialLinks     Json?                         // { facebook, instagram, etc. } stored locally only
+}
+
+// New model for service descriptions
+model ServiceDescription {
+  id          String   @id @default(cuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  serviceName String
+  description String   @db.Text
+  isApproved  Boolean  @default(false)
+  isPushed    Boolean  @default(false)   // Pushed to GBP
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+```
+
+## What NOT to Add
+
+| Do Not Add | Why |
+|------------|-----|
+| react-hook-form | Wizard forms are simple; useState + Zod is sufficient |
+| react-step-wizard | 30 lines of custom code replaces an entire library |
+| multer / formidable | Next.js App Router handles FormData natively |
+| @google-cloud/storage | Not needed; logos upload directly to GBP, not to cloud storage |
+| Any keyword volume API (SEMrush, Ahrefs, etc.) | PROJECT.md explicitly defers this; AI suggestions are enough |
+| A separate image upload service | sharp + direct GBP media upload is sufficient |
+| shadcn/ui (if not already installed) | Already using Tailwind + Lucide; adding shadcn mid-project for a few components is churn |
+
+## Integration Points with Existing Code
+
+| New Feature | Integrates With | How |
+|-------------|----------------|-----|
+| GBP description update | `src/lib/google-locations.ts` | Add `updateLocationDescription()` using same `mybusinessbusinessinformation` client |
+| GBP service update | `src/lib/google-locations.ts` | Add `updateLocationServices()` using same client |
+| GBP attribute update | `src/lib/google-locations.ts` | Add `updateLocationAttributes()` using same client |
+| Logo upload | `src/lib/google-posts.ts` | Follow same `oauth2Client.request()` pattern for v4 API calls |
+| AI keyword generation | `@anthropic-ai/sdk` | New prompt template; feed business name, category, city into Claude |
+| AI description generation | `@anthropic-ai/sdk` | New prompt template; include keywords in system prompt |
+| Keywords into post generation | Existing prompt templates | Add keywords/cities to post generation prompts |
+| Onboarding wizard | `src/app/dashboard/` | New route: `src/app/dashboard/onboarding/page.tsx` |
+| Re-optimization | `src/app/dashboard/` | Add buttons to existing profile detail page |
 
 ## Sources
 
-- Training data knowledge (May 2025 cutoff) -- all technologies listed are mature and stable
-- Confidence: HIGH for core stack choices, MEDIUM for exact version numbers
-- Note: Verify Google Business Profile API access requirements at https://developers.google.com/my-business before starting Phase 1
+- [GBP API locations.patch](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch) -- HIGH confidence
+- [GBP API attributes guide](https://developers.google.com/my-business/content/attributes) -- HIGH confidence
+- [GBP API services guide](https://developers.google.com/my-business/content/services) -- HIGH confidence
+- [GBP API media upload guide](https://developers.google.com/my-business/content/upload-photos) -- HIGH confidence
+- [GBP API deprecation schedule](https://developers.google.com/my-business/content/sunset-dates) -- HIGH confidence (v4 media still active)
+- [GBP API Location resource schema](https://developers.google.com/my-business/reference/businessinformation/rpc/google.mybusiness.businessinformation.v1) -- HIGH confidence
+- [googleapis npm Node.js client](https://googleapis.dev/nodejs/googleapis/latest/mybusinessbusinessinformation/classes/Mybusinessbusinessinformation.html) -- HIGH confidence
+- [Next.js file upload patterns](https://www.pronextjs.dev/next-js-file-uploads-server-side-solutions) -- MEDIUM confidence
