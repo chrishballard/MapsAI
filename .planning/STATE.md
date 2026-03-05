@@ -1,57 +1,40 @@
 # MapsAI — Project State
 
-## Current Status
-- **Milestone**: 1 (MVP)
-- **Phase**: 7 (plan 01 complete)
-- **Next Action**: Human verification of Phase 7 polish
-- **Last Session**: 2026-03-05T05:34:47Z
-- **Stopped At**: Completed 07-01-PLAN.md (awaiting human verification checkpoint)
+## Current Position
 
-## Completed
-- [x] Project initialization
-- [x] Research: Google APIs
-- [x] Research: Tech stack
-- [x] Research: Competitor analysis
-- [x] PROJECT.md created
-- [x] REQUIREMENTS.md created
-- [x] ROADMAP.md created
-- [x] Phase 1 PLAN.md created
-- [x] Phase 1 executed (scaffolding, auth, dashboard, deployment config)
-- [x] Phase 2 PLAN.md created
-- [x] Phase 2 executed (Google OAuth, profile sync, profiles UI, disconnect, resync, dashboard stats)
-- [x] Phase 3 PLAN.md created
-- [x] Phase 3 executed (Claude API integration, prompt templates, post generation API, posts dashboard)
-- [x] Phase 5 PLAN.md created
-- [x] Phase 5 executed (GBP review sync, AI response generation, approval workflow, reviews dashboard)
-- [x] Phase 6 PLAN.md created
-- [x] Phase 6 executed (GBP metrics sync, keyword tracking, PDF report generation, reports dashboard)
-- [x] Phase 7 PLAN.md created
-- [x] Phase 7 executed (live dashboard, profile detail, prompt templates, unified worker, Docker)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-04 — Milestone v1.1 started
 
-## Decisions Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-03-04 | Next.js + TypeScript | Full-stack, single codebase, strong Google API support |
-| 2026-03-04 | PostgreSQL + Prisma | Relational scheduling data, type-safe queries |
-| 2026-03-04 | BullMQ + Redis | Reliable job scheduling with retries |
-| 2026-03-04 | Claude API for AI | Already in Vineyard Growth ecosystem |
-| 2026-03-04 | Railway for hosting | Native Postgres/Redis, background workers, affordable |
-| 2026-03-04 | Draft-first workflow | Posts and reviews start as drafts for team approval |
-| 2026-03-04 | claude-sonnet-4-5 for post generation | Cost-efficient (~$3/month for 200 profiles) vs Opus at 15x cost |
-| 2026-03-04 | Structured outputs with zodOutputFormat | Guaranteed typed JSON from Claude, no parsing bugs |
-| 2026-03-05 | PostFilters as separate client component | Keep posts page as server component for direct Prisma access |
-| 2026-03-05 | URL searchParams for filter state | Shareable/bookmarkable filtered views without client state |
-| 2026-03-05 | Sentiment-aware review response system prompt | Rating-specific guidelines (warm for 5-star, empathetic for 1-star) |
-| 2026-03-05 | Review sync worker concurrency 1 | Avoid GBP API rate limits during periodic sync |
-| 2026-03-05 | UpsertJobScheduler for review sync | 30-min repeatable BullMQ scheduler, idempotent initialization |
-| 2026-03-05 | Lazy dynamic import for chartjs-node-canvas | Turbopack cannot handle freshRequire pattern, use await import() |
-| 2026-03-05 | On-demand PDF generation at download time | Simpler than file storage, always uses fresh data |
-| 2026-03-05 | Rolling 7-day metrics sync window | GBP API has 1-3 day data lag, 7-day window catches delayed data |
-| 2026-03-05 | Unified worker imports standalone files | Each worker auto-starts on import, simplest approach |
-| 2026-03-05 | Dockerfile copies full node_modules for workers | Workers need tsx and all deps, standalone build insufficient |
+## Project Reference
+
+See: .planning/PROJECT.md (updated 2026-03-04)
+
+**Core value:** Every client's GBP is fully managed end-to-end — from initial optimization through ongoing posts, reviews, and reporting.
+**Current focus:** Milestone v1.1 — Onboarding & Optimization
+
+## Accumulated Context
+
+### From Milestone 1 (MVP)
+- Phase 1-7 complete: auth, GBP OAuth, posts, reviews, reports, polish
+- Profiles already sync from Google via OAuth
+- Post generation uses Claude with prompt templates
+- BullMQ workers handle publishing, review sync, metrics sync
+- Dashboard has profile detail pages, live stats
+- Keywords stored per profile will feed into existing post generation
+- GBP API integration established for posts, reviews, metrics
+
+### Key Technical Decisions
+- claude-sonnet-4-5 for AI generation (cost-efficient)
+- Structured outputs with zodOutputFormat
+- URL searchParams for filter state
+- On-demand PDF generation
+- Unified worker imports standalone files
+- Dockerfile copies full node_modules for workers
 
 ## Known Risks
-- Google OAuth setup requires manual Google Cloud Console configuration
-- GBP API access may require Google approval for production use
-- Performance metrics have 1-3 day lag
-- ANTHROPIC_API_KEY must be set in environment for post generation
+- GBP API for updating descriptions/services may have different rate limits than read operations
+- Service descriptions API may require specific field formats
+- Attributes API endpoint structure needs research
+- Logo upload requires media handling (file storage or direct GBP media API)
