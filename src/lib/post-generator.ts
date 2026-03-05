@@ -7,6 +7,8 @@ interface ProfileInput {
   name: string;
   category: string | null;
   address: string | null;
+  keywords?: string[];
+  cities?: string[];
 }
 
 export async function generateMonthlyPosts(
@@ -19,8 +21,17 @@ export async function generateMonthlyPosts(
     `Business name: ${profile.name}`,
     profile.category ? `Category: ${profile.category}` : null,
     profile.address ? `Address: ${profile.address}` : null,
+    profile.keywords?.length
+      ? `\nTarget keywords (naturally incorporate 1-3 per post): ${profile.keywords.join(", ")}`
+      : null,
+    profile.cities?.length
+      ? `Target cities/service areas: ${profile.cities.join(", ")}`
+      : null,
     "",
     "Generate 4 varied monthly Google Business Profile posts for this business.",
+    profile.keywords?.length
+      ? "Naturally weave the target keywords into the posts — do not force them or list them."
+      : null,
   ]
     .filter(Boolean)
     .join("\n");

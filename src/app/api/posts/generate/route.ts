@@ -53,12 +53,25 @@ export async function POST(request: Request) {
         continue;
       }
 
+      const [keywordRecords, cityRecords] = await Promise.all([
+        prisma.profileKeyword.findMany({
+          where: { profileId: profile.id },
+          orderBy: { sortOrder: "asc" },
+        }),
+        prisma.profileCity.findMany({
+          where: { profileId: profile.id },
+          orderBy: { sortOrder: "asc" },
+        }),
+      ]);
+
       const customPrompt = profile.promptTemplate?.prompt;
       const generated = await generateMonthlyPosts(
         {
           name: profile.name,
           category: profile.category,
           address: profile.address,
+          keywords: keywordRecords.map((k) => k.keyword),
+          cities: cityRecords.map((c) => c.city),
         },
         customPrompt ?? undefined
       );
