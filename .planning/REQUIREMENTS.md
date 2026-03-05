@@ -9,9 +9,9 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Onboarding Wizard
 
-- [ ] **ONBRD-01**: User can start onboarding wizard from an "Add Business" button and select from synced un-onboarded profiles
+- [x] **ONBRD-01**: User can start onboarding wizard from an "Add Business" button and select from synced un-onboarded profiles
 - [ ] **ONBRD-02**: Wizard displays step indicator with progress and supports navigation between completed steps
-- [ ] **ONBRD-03**: Wizard state persists to database so user can resume across sessions
+- [x] **ONBRD-03**: Wizard state persists to database so user can resume across sessions
 - [ ] **ONBRD-04**: User can review a summary of all optimizations and mark onboarding complete
 
 ### Keywords & Cities
@@ -88,9 +88,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ONBRD-01 | Phase 8 | Pending |
+| ONBRD-01 | Phase 8 | Complete |
 | ONBRD-02 | Phase 8 | Pending |
-| ONBRD-03 | Phase 8 | Pending |
+| ONBRD-03 | Phase 8 | Complete |
 | ONBRD-04 | Phase 12 | Pending |
 | KWRD-01 | Phase 9 | Pending |
 | KWRD-02 | Phase 9 | Pending |
