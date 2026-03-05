@@ -77,6 +77,7 @@ export async function syncLocationsForAccount(googleAccountId: string) {
           create: {
             googleAccountId,
             locationName: location.name,
+            accountResourceName: account.name,
             name: location.title || "Unnamed Location",
             address: formatAddress(location.storefrontAddress),
             phone: location.phoneNumbers?.primaryPhone || null,
@@ -86,6 +87,7 @@ export async function syncLocationsForAccount(googleAccountId: string) {
             isConnected: true,
           },
           update: {
+            accountResourceName: account.name,
             name: location.title || "Unnamed Location",
             address: formatAddress(location.storefrontAddress),
             phone: location.phoneNumbers?.primaryPhone || null,

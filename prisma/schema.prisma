@@ -45,8 +45,9 @@ model Profile {
   id              String         @id @default(cuid())
   googleAccountId String
   googleAccount   GoogleAccount  @relation(fields: [googleAccountId], references: [id], onDelete: Cascade)
-  locationName    String
-  name            String
+  locationName         String
+  accountResourceName  String?
+  name                 String
   placeId         String?
   address         String?
   phone           String?
