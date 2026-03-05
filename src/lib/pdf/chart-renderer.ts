@@ -1,11 +1,23 @@
-import { ChartJSNodeCanvas } from "chartjs-node-canvas";
 import type { ChartConfiguration } from "chart.js";
 
-const chartCanvas = new ChartJSNodeCanvas({
-  width: 600,
-  height: 300,
-  backgroundColour: "white",
-});
+// Lazy-load chartjs-node-canvas to avoid Next.js bundler issues with dynamic requires
+let chartCanvasInstance: InstanceType<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any
+> | null = null;
+
+async function getChartCanvas() {
+  if (chartCanvasInstance) return chartCanvasInstance;
+
+  // Dynamic import to avoid Turbopack bundling issues
+  const { ChartJSNodeCanvas } = await import("chartjs-node-canvas");
+  chartCanvasInstance = new ChartJSNodeCanvas({
+    width: 600,
+    height: 300,
+    backgroundColour: "white",
+  });
+  return chartCanvasInstance;
+}
 
 interface DailyChartData {
   date: string;
@@ -16,6 +28,8 @@ interface DailyChartData {
 export async function renderImpressionsChart(
   dailyData: DailyChartData[]
 ): Promise<Buffer> {
+  const chartCanvas = await getChartCanvas();
+
   const sorted = [...dailyData].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
