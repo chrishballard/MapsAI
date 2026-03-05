@@ -15,6 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { StepIndicator, WIZARD_STEPS } from "./step-indicator";
+import { KeywordsCitiesStep } from "./steps/keywords-cities-step";
 
 interface WizardShellProps {
   profileId: string;
@@ -151,7 +152,13 @@ export function WizardShell({
         onStepClick={goToStep}
       />
 
-      <div className="min-h-[400px] bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-6 flex flex-col items-center justify-center text-center">
+      <div
+        className={`min-h-[400px] bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-6${
+          currentStep !== 1
+            ? " flex flex-col items-center justify-center text-center"
+            : ""
+        }`}
+      >
         {currentStep === 0 ? (
           <div className="flex flex-col items-center gap-3">
             <CheckCircle2 className="w-12 h-12 text-green-500" />
@@ -162,6 +169,11 @@ export function WizardShell({
               Profile selected: {profileName}
             </p>
           </div>
+        ) : currentStep === 1 ? (
+          <KeywordsCitiesStep
+            profileId={profileId}
+            onComplete={completeCurrentStep}
+          />
         ) : (
           <div className="flex flex-col items-center gap-3">
             <StepIcon className="w-12 h-12 text-gray-300" />
@@ -188,14 +200,16 @@ export function WizardShell({
             </button>
           )}
         </div>
-        <button
-          type="button"
-          onClick={completeCurrentStep}
-          className="flex items-center gap-1 bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 text-sm"
-        >
-          {isLastStep ? "Complete Onboarding" : "Continue"}
-          {!isLastStep && <ChevronRight className="w-4 h-4" />}
-        </button>
+        {currentStep !== 1 && (
+          <button
+            type="button"
+            onClick={completeCurrentStep}
+            className="flex items-center gap-1 bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 text-sm"
+          >
+            {isLastStep ? "Complete Onboarding" : "Continue"}
+            {!isLastStep && <ChevronRight className="w-4 h-4" />}
+          </button>
+        )}
       </div>
     </div>
   );
