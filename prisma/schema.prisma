@@ -61,6 +61,8 @@ model Profile {
   dailyMetrics    DailyMetric[]
   monthlyKeywords MonthlyKeyword[]
   reports         Report[]
+
+  @@unique([googleAccountId, locationName])
 }
 
 // --- Post Models ---
