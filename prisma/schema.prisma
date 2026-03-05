@@ -63,6 +63,11 @@ model Profile {
   dailyMetrics    DailyMetric[]
   monthlyKeywords MonthlyKeyword[]
   reports         Report[]
+  onboardingProgress OnboardingProgress?
+  keywords           ProfileKeyword[]
+  cities             ProfileCity[]
+  descriptions       ProfileDescription[]
+  services           ProfileService[]
 
   @@unique([googleAccountId, locationName])
 }
@@ -189,4 +194,70 @@ model Report {
   month     DateTime @db.Date
   filePath  String?
   createdAt DateTime @default(now())
+}
+
+// --- Onboarding & Optimization Models ---
+
+model OnboardingProgress {
+  id              String    @id @default(cuid())
+  profileId       String    @unique
+  profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  currentStep     Int       @default(0)
+  completedSteps  Int[]     @default([])
+  isComplete      Boolean   @default(false)
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ProfileKeyword {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  keyword   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, keyword])
+}
+
+model ProfileCity {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  city      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, city])
+}
+
+model ProfileDescription {
+  id          String    @id @default(cuid())
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content     String    @db.Text
+  isApproved  Boolean   @default(false)
+  isPushed    Boolean   @default(false)
+  pushedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ProfileService {
+  id              String    @id @default(cuid())
+  profileId       String
+  profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  serviceName     String
+  description     String?   @db.Text
+  isStructured    Boolean   @default(true)
+  isApproved      Boolean   @default(false)
+  isPushed        Boolean   @default(false)
+  pushedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([profileId, serviceName])
 }
