@@ -10,7 +10,7 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 ### Onboarding Wizard
 
 - [x] **ONBRD-01**: User can start onboarding wizard from an "Add Business" button and select from synced un-onboarded profiles
-- [ ] **ONBRD-02**: Wizard displays step indicator with progress and supports navigation between completed steps
+- [x] **ONBRD-02**: Wizard displays step indicator with progress and supports navigation between completed steps
 - [x] **ONBRD-03**: Wizard state persists to database so user can resume across sessions
 - [ ] **ONBRD-04**: User can review a summary of all optimizations and mark onboarding complete
 
@@ -23,9 +23,9 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Description Optimization
 
-- [ ] **DESC-01**: User can generate an AI SEO-optimized business description (max 750 chars) using stored keywords and cities
-- [ ] **DESC-02**: User can review, edit, and approve the AI-generated description before it pushes to GBP
-- [ ] **DESC-03**: Approved description is pushed to live GBP via API with success/failure feedback
+- [x] **DESC-01**: User can generate an AI SEO-optimized business description (max 750 chars) using stored keywords and cities
+- [x] **DESC-02**: User can review, edit, and approve the AI-generated description before it pushes to GBP
+- [x] **DESC-03**: Approved description is pushed to live GBP via API with success/failure feedback
 
 ### Service Optimization
 
@@ -89,16 +89,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ONBRD-01 | Phase 8 | Complete |
-| ONBRD-02 | Phase 8 | Pending |
+| ONBRD-02 | Phase 8 | Complete |
 | ONBRD-03 | Phase 8 | Complete |
 | ONBRD-04 | Phase 12 | Pending |
 | KWRD-01 | Phase 9 | Pending |
 | KWRD-02 | Phase 9 | Pending |
 | KWRD-03 | Phase 9 | Pending |
 | KWRD-04 | Phase 9 | Pending |
-| DESC-01 | Phase 10 | Pending |
-| DESC-02 | Phase 10 | Pending |
-| DESC-03 | Phase 10 | Pending |
+| DESC-01 | Phase 10 | Complete |
+| DESC-02 | Phase 10 | Complete |
+| DESC-03 | Phase 10 | Complete |
 | SRVC-01 | Phase 11 | Pending |
 | SRVC-02 | Phase 11 | Pending |
 | SRVC-03 | Phase 11 | Pending |
