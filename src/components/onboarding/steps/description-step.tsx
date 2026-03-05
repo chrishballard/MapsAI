@@ -51,10 +51,10 @@ export function DescriptionStep({
 
         if (descRes.ok) {
           const descData = await descRes.json();
-          setCurrentGBPDescription(descData.currentDescription ?? null);
-          if (descData.savedDescription) {
-            setSavedDescription(descData.savedDescription);
-            setAiDescription(descData.savedDescription.content);
+          setCurrentGBPDescription(descData.currentGBPDescription ?? null);
+          if (descData.description) {
+            setSavedDescription(descData.description);
+            setAiDescription(descData.description.content);
           }
         }
 
