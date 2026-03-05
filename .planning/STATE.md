@@ -2,10 +2,10 @@
 
 ## Current Status
 - **Milestone**: 1 (MVP)
-- **Phase**: 5 (plan 01 complete)
-- **Next Action**: Plan Phase 6
-- **Last Session**: 2026-03-05T05:09:49Z
-- **Stopped At**: Completed 05-01-PLAN.md
+- **Phase**: 6 (plan 01 complete)
+- **Next Action**: Plan Phase 7
+- **Last Session**: 2026-03-05T05:27:26Z
+- **Stopped At**: Completed 06-01-PLAN.md (awaiting human verification checkpoint)
 
 ## Completed
 - [x] Project initialization
@@ -23,6 +23,8 @@
 - [x] Phase 3 executed (Claude API integration, prompt templates, post generation API, posts dashboard)
 - [x] Phase 5 PLAN.md created
 - [x] Phase 5 executed (GBP review sync, AI response generation, approval workflow, reviews dashboard)
+- [x] Phase 6 PLAN.md created
+- [x] Phase 6 executed (GBP metrics sync, keyword tracking, PDF report generation, reports dashboard)
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -40,6 +42,9 @@
 | 2026-03-05 | Sentiment-aware review response system prompt | Rating-specific guidelines (warm for 5-star, empathetic for 1-star) |
 | 2026-03-05 | Review sync worker concurrency 1 | Avoid GBP API rate limits during periodic sync |
 | 2026-03-05 | UpsertJobScheduler for review sync | 30-min repeatable BullMQ scheduler, idempotent initialization |
+| 2026-03-05 | Lazy dynamic import for chartjs-node-canvas | Turbopack cannot handle freshRequire pattern, use await import() |
+| 2026-03-05 | On-demand PDF generation at download time | Simpler than file storage, always uses fresh data |
+| 2026-03-05 | Rolling 7-day metrics sync window | GBP API has 1-3 day data lag, 7-day window catches delayed data |
 
 ## Known Risks
 - Google OAuth setup requires manual Google Cloud Console configuration
