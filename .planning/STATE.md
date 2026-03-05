@@ -2,10 +2,10 @@
 
 ## Current Status
 - **Milestone**: 1 (MVP)
-- **Phase**: 6 (plan 01 complete)
-- **Next Action**: Plan Phase 7
-- **Last Session**: 2026-03-05T05:27:26Z
-- **Stopped At**: Completed 06-01-PLAN.md (awaiting human verification checkpoint)
+- **Phase**: 7 (plan 01 complete)
+- **Next Action**: Human verification of Phase 7 polish
+- **Last Session**: 2026-03-05T05:34:47Z
+- **Stopped At**: Completed 07-01-PLAN.md (awaiting human verification checkpoint)
 
 ## Completed
 - [x] Project initialization
@@ -25,6 +25,8 @@
 - [x] Phase 5 executed (GBP review sync, AI response generation, approval workflow, reviews dashboard)
 - [x] Phase 6 PLAN.md created
 - [x] Phase 6 executed (GBP metrics sync, keyword tracking, PDF report generation, reports dashboard)
+- [x] Phase 7 PLAN.md created
+- [x] Phase 7 executed (live dashboard, profile detail, prompt templates, unified worker, Docker)
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -45,10 +47,11 @@
 | 2026-03-05 | Lazy dynamic import for chartjs-node-canvas | Turbopack cannot handle freshRequire pattern, use await import() |
 | 2026-03-05 | On-demand PDF generation at download time | Simpler than file storage, always uses fresh data |
 | 2026-03-05 | Rolling 7-day metrics sync window | GBP API has 1-3 day data lag, 7-day window catches delayed data |
+| 2026-03-05 | Unified worker imports standalone files | Each worker auto-starts on import, simplest approach |
+| 2026-03-05 | Dockerfile copies full node_modules for workers | Workers need tsx and all deps, standalone build insufficient |
 
 ## Known Risks
 - Google OAuth setup requires manual Google Cloud Console configuration
 - GBP API access may require Google approval for production use
 - Performance metrics have 1-3 day lag
-- Weekend timeline is aggressive — Phase 7 may slip
 - ANTHROPIC_API_KEY must be set in environment for post generation
