@@ -1,12 +1,19 @@
-import { Settings, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { DisconnectButton } from "./disconnect-button";
+import { PromptTemplates } from "./prompt-templates";
 
 export default async function SettingsPage() {
-  const googleAccounts = await prisma.googleAccount.findMany({
+  const [googleAccounts, promptTemplates] = await Promise.all([
+    prisma.googleAccount.findMany({
     include: { _count: { select: { profiles: true } } },
     orderBy: { createdAt: "desc" },
-  });
+  }),
+    prisma.promptTemplate.findMany({
+      include: { profile: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   return (
     <div>
@@ -69,6 +76,10 @@ export default async function SettingsPage() {
               ))}
             </div>
           )}
+        </div>
+        {/* AI Prompt Templates */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <PromptTemplates templates={promptTemplates} />
         </div>
       </div>
     </div>
