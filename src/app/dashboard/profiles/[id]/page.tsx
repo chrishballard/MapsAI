@@ -12,6 +12,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { ReoptimizeSection } from "./reoptimize-section";
 
 export default async function ProfileDetailPage({
   params,
@@ -30,7 +31,7 @@ export default async function ProfileDetailPage({
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [totalPosts, draftPosts, reviewCount, reviews, recentPosts, recentReviews, metricsAgg] =
+  const [totalPosts, draftPosts, reviewCount, reviews, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
     await Promise.all([
       prisma.post.count({ where: { profileId: id } }),
       prisma.post.count({ where: { profileId: id, status: "DRAFT" } }),
@@ -61,6 +62,10 @@ export default async function ProfileDetailPage({
           callClicks: true,
           directionRequests: true,
         },
+      }),
+      prisma.onboardingProgress.findUnique({
+        where: { profileId: id },
+        select: { isComplete: true },
       }),
     ]);
 
@@ -319,6 +324,14 @@ export default async function ProfileDetailPage({
               <p className="text-xs text-gray-500">Directions</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Re-optimize Section (only for onboarded profiles) */}
+      {onboardingProgress?.isComplete && (
+        <div className="mt-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Re-optimize</h2>
+          <ReoptimizeSection profileId={id} />
         </div>
       )}
     </div>
