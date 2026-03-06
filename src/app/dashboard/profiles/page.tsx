@@ -5,7 +5,10 @@ import { ResyncButton } from "./resync-button";
 
 export default async function ProfilesPage() {
   const profiles = await prisma.profile.findMany({
-    include: { googleAccount: { select: { googleEmail: true } } },
+    include: {
+      googleAccount: { select: { googleEmail: true } },
+      onboardingProgress: { select: { isComplete: true, completedSteps: true } },
+    },
     orderBy: { name: "asc" },
   });
 
@@ -68,6 +71,9 @@ export default async function ProfilesPage() {
                   Google Account
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">
+                  Onboarding
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">
                   Status
                 </th>
               </tr>
@@ -91,6 +97,21 @@ export default async function ProfilesPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {profile.googleAccount.googleEmail}
+                  </td>
+                  <td className="px-4 py-3">
+                    {profile.onboardingProgress ? (
+                      profile.onboardingProgress.isComplete ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          Complete
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                          {profile.onboardingProgress.completedSteps.length} / 7 steps
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-gray-400">Not started</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span
