@@ -56,20 +56,44 @@ export async function generateDescription(profile: {
     return parsed.description;
   };
 
-  let description = await callClaude([{ role: "user", content: userMessage }]);
+  const messages: { role: "user" | "assistant"; content: string }[] = [
+    { role: "user", content: userMessage },
+  ];
 
-  // If under 700 or over 750, retry once with feedback on the actual count
-  if (description.length < 700 || description.length > 750) {
+  let description = await callClaude(messages);
+
+  // Retry up to 2 times with exact character count feedback
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (description.length >= 700 && description.length <= 750) break;
+
     const feedback = description.length < 700
-      ? `That description is only ${description.length} characters. Please expand it to be between 720-745 characters. Add more detail about services, expertise, or service areas. Do not exceed 750 characters.`
-      : `That description is ${description.length} characters which exceeds the 750 limit. Please shorten it to 720-745 characters while keeping the most important content.`;
+      ? `That description is only ${description.length} characters. I need 720-745 characters. Please expand it with more detail about services, expertise, or service areas.`
+      : `That description is ${description.length} characters, exceeding the 750 limit. Please shorten it to exactly 720-745 characters while keeping the most important content.`;
 
-    description = await callClaude([
-      { role: "user", content: userMessage },
+    messages.push(
       { role: "assistant", content: JSON.stringify({ description }) },
       { role: "user", content: feedback },
-    ]);
+    );
+    description = await callClaude(messages);
+  }
+
+  // Deterministic fallback: if still over 750, truncate at last sentence boundary
+  if (description.length > 750) {
+    description = truncateToSentence(description, 750);
   }
 
   return description;
+}
+
+function truncateToSentence(text: string, maxLength: number): string {
+  const truncated = text.slice(0, maxLength);
+  // Find the last sentence-ending punctuation
+  const lastPeriod = truncated.lastIndexOf(".");
+  const lastExclaim = truncated.lastIndexOf("!");
+  const lastEnd = Math.max(lastPeriod, lastExclaim);
+  if (lastEnd > maxLength * 0.6) {
+    return truncated.slice(0, lastEnd + 1);
+  }
+  // Fallback: just hard-truncate at 750
+  return truncated;
 }
