@@ -350,10 +350,24 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
     const customNames = savedServices
       .filter((s) => !s.isStructured)
       .map((s) => s.serviceName);
+
+    // Merge saved service names into available services so they appear as checkboxes
+    // even when GBP returns no structured services for the category
+    const availableNames = new Set(availableServices.map((a) => a.displayName));
+    const mergedAvailable = [...availableServices];
+    for (const name of structuredNames) {
+      if (!availableNames.has(name)) {
+        mergedAvailable.push({ serviceTypeId: `saved-${name}`, displayName: name });
+      }
+    }
+    setAvailableServices(mergedAvailable);
+
     setCheckedServices(new Set(structuredNames));
     setCustomServices(customNames);
     setSvcShowSelection(true);
     setSvcShowCards(false);
+    setSvcError(null);
+    setSvcPushSuccess(false);
   };
 
   // --- Computed ---
