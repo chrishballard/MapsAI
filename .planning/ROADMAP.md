@@ -93,7 +93,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User can trigger re-optimization of description and/or services from the profile detail page
   2. User sees current live GBP content side-by-side with the new AI suggestion before deciding to approve
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 13-01-PLAN.md -- Backend: Re-optimization API endpoints for description and services (generate + push)
+- [ ] 13-02-PLAN.md -- Frontend: ReoptimizeSection component on profile detail page with side-by-side comparison
 
 ## Progress
 
@@ -104,7 +107,7 @@ Plans:
 | 10. Description Optimization | 2/2 | Complete   | 2026-03-05 |
 | 11. Service Optimization | 2/2 | Complete | 2026-03-05 |
 | 12. Attributes & Profile Settings | 2/2 | Complete    | 2026-03-06 |
-| 13. Re-optimization | 0/? | Not started | - |
+| 13. Re-optimization | 0/2 | Planned | - |
 
 ## Coverage Map
 
