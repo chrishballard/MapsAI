@@ -47,8 +47,8 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Re-optimization
 
-- [ ] **REOPT-01**: User can re-run description and service optimization from the profile detail page
-- [ ] **REOPT-02**: Re-optimization shows current live GBP content alongside the new AI suggestion for comparison
+- [x] **REOPT-01**: User can re-run description and service optimization from the profile detail page
+- [x] **REOPT-02**: Re-optimization shows current live GBP content alongside the new AI suggestion for comparison
 
 ## Future Requirements
 
@@ -108,8 +108,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ATTR-03 | Phase 12 | Complete |
 | PROF-01 | Phase 12 | Complete |
 | PROF-02 | Phase 12 | Complete |
-| REOPT-01 | Phase 13 | Pending |
-| REOPT-02 | Phase 13 | Pending |
+| REOPT-01 | Phase 13 | Complete |
+| REOPT-02 | Phase 13 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 22 total
