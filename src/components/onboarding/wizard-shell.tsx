@@ -18,6 +18,9 @@ import { StepIndicator, WIZARD_STEPS } from "./step-indicator";
 import { KeywordsCitiesStep } from "./steps/keywords-cities-step";
 import { DescriptionStep } from "./steps/description-step";
 import { ServicesStep } from "./steps/services-step";
+import { AttributesStep } from "./steps/attributes-step";
+import { SettingsStep } from "./steps/settings-step";
+import { ReviewStep } from "./steps/review-step";
 
 interface WizardShellProps {
   profileId: string;
@@ -30,13 +33,13 @@ interface WizardShellProps {
 }
 
 const STEP_CONFIG = [
-  { icon: Search, name: "Select Profile", phase: "Phase 8" },
-  { icon: MapPin, name: "Keywords & Cities", phase: "Phase 9" },
-  { icon: FileText, name: "Description", phase: "Phase 10" },
-  { icon: Wrench, name: "Services", phase: "Phase 11" },
-  { icon: SlidersHorizontal, name: "Attributes", phase: "Phase 12" },
-  { icon: Settings, name: "Settings", phase: "Phase 12" },
-  { icon: CheckCircle2, name: "Review & Complete", phase: "Phase 13" },
+  { icon: Search, name: "Select Profile" },
+  { icon: MapPin, name: "Keywords & Cities" },
+  { icon: FileText, name: "Description" },
+  { icon: Wrench, name: "Services" },
+  { icon: SlidersHorizontal, name: "Attributes" },
+  { icon: Settings, name: "Settings" },
+  { icon: CheckCircle2, name: "Review & Complete" },
 ];
 
 export function WizardShell({
@@ -98,7 +101,7 @@ export function WizardShell({
   }, []);
 
   const goToStep = (step: number) => {
-    if (completedSteps.includes(step) || step === currentStep) {
+    if (step <= currentStep || completedSteps.includes(step)) {
       setCurrentStep(step);
       persistProgress(step, completedSteps, false);
     }
@@ -114,7 +117,7 @@ export function WizardShell({
     if (isLastStep) {
       setCompletedSteps(newCompleted);
       await persistProgress(currentStep, newCompleted, true);
-      router.push("/dashboard/onboarding?completed=true");
+      router.push("/dashboard");
       return;
     }
 
@@ -131,9 +134,6 @@ export function WizardShell({
       persistProgress(prevStep, completedSteps, false);
     }
   };
-
-  const StepIcon = STEP_CONFIG[currentStep]?.icon ?? Search;
-  const isLastStep = currentStep === WIZARD_STEPS.length - 1;
 
   return (
     <div>
@@ -156,7 +156,7 @@ export function WizardShell({
 
       <div
         className={`min-h-[400px] bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-6${
-          currentStep !== 1 && currentStep !== 2 && currentStep !== 3
+          currentStep === 0
             ? " flex flex-col items-center justify-center text-center"
             : ""
         }`}
@@ -186,17 +186,23 @@ export function WizardShell({
             profileId={profileId}
             onComplete={completeCurrentStep}
           />
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <StepIcon className="w-12 h-12 text-gray-300" />
-            <h3 className="text-lg font-semibold text-gray-900">
-              {STEP_CONFIG[currentStep].name}
-            </h3>
-            <p className="text-sm text-gray-400">
-              Coming in {STEP_CONFIG[currentStep].phase}
-            </p>
-          </div>
-        )}
+        ) : currentStep === 4 ? (
+          <AttributesStep
+            profileId={profileId}
+            onComplete={completeCurrentStep}
+          />
+        ) : currentStep === 5 ? (
+          <SettingsStep
+            profileId={profileId}
+            onComplete={completeCurrentStep}
+          />
+        ) : currentStep === 6 ? (
+          <ReviewStep
+            profileId={profileId}
+            onComplete={completeCurrentStep}
+            onGoToStep={goToStep}
+          />
+        ) : null}
       </div>
 
       <div className="flex justify-between mt-6">
@@ -212,14 +218,14 @@ export function WizardShell({
             </button>
           )}
         </div>
-        {currentStep !== 1 && currentStep !== 2 && currentStep !== 3 && (
+        {currentStep === 0 && (
           <button
             type="button"
             onClick={completeCurrentStep}
             className="flex items-center gap-1 bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 text-sm"
           >
-            {isLastStep ? "Complete Onboarding" : "Continue"}
-            {!isLastStep && <ChevronRight className="w-4 h-4" />}
+            Continue
+            <ChevronRight className="w-4 h-4" />
           </button>
         )}
       </div>
