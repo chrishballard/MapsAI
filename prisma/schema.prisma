@@ -55,6 +55,7 @@ model Profile {
   websiteUrl      String?
   isConnected     Boolean        @default(true)
   autoApproveReviews Boolean     @default(false)
+  postFrequency      Int         @default(4)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   posts           Post[]
