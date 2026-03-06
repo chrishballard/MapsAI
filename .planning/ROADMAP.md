@@ -81,7 +81,10 @@ Plans:
   2. Updated attributes are pushed to GBP with success/failure feedback
   3. User can set a post frequency (posts per month) and the scheduling system uses it for future post generation
   4. User can review a summary of all optimizations made and mark onboarding complete
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 12-01-PLAN.md -- Backend: GBP attribute fetch/push APIs, settings CRUD, summary/complete endpoints, Prisma migration
+- [ ] 12-02-PLAN.md -- Frontend: Attributes, Settings, and Review wizard steps (4, 5, 6) + wizard shell wiring
 
 ### Phase 13: Re-optimization
 **Goal**: User can re-run optimization for any previously onboarded profile and compare new suggestions against what is currently live
@@ -100,7 +103,7 @@ Plans:
 | 9. Keywords & Cities | 0/2 | Planned | - |
 | 10. Description Optimization | 2/2 | Complete   | 2026-03-05 |
 | 11. Service Optimization | 2/2 | Complete | 2026-03-05 |
-| 12. Attributes & Profile Settings | 0/? | Not started | - |
+| 12. Attributes & Profile Settings | 0/2 | Planned | - |
 | 13. Re-optimization | 0/? | Not started | - |
 
 ## Coverage Map
