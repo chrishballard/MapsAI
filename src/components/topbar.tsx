@@ -2,13 +2,17 @@
 
 import { signOut, useSession } from "next-auth/react";
 import { LogOut } from "lucide-react";
+import { BusinessSelector } from "./business-selector";
 
 export function Topbar() {
   const { data: session } = useSession();
 
   return (
     <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-6">
-      <div />
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-gray-500">Viewing:</span>
+        <BusinessSelector />
+      </div>
       <div className="flex items-center gap-4">
         {session?.user && (
           <span className="text-sm text-gray-600">{session.user.email}</span>

@@ -21,7 +21,7 @@ export default async function OnboardingPage({
     where: {
       isConnected: true,
       OR: [
-        { onboardingProgress: null },
+        { onboardingProgress: { is: null } },
         { onboardingProgress: { isComplete: false } },
       ],
     },

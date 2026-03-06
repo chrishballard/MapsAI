@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ReviewFilters } from "./review-filters";
 import { ReviewActions, SyncButton, BulkApproveButton } from "./review-actions";
+import { getSelectedProfileId } from "@/lib/selected-profile";
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   DRAFTED: {
@@ -60,7 +61,11 @@ interface ReviewsPageProps {
 
 export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   const params = await searchParams;
-  const { profileId, rating, responseStatus } = params;
+  const selectedProfileId = await getSelectedProfileId();
+  const { profileId: filterProfileId, rating, responseStatus } = params;
+
+  // Use the global business selector, but allow page-level filter to override
+  const profileId = filterProfileId || selectedProfileId;
 
   const where: Prisma.ReviewWhereInput = {};
   if (profileId) where.profileId = profileId;
@@ -114,7 +119,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
 
       <ReviewFilters
         profiles={profiles}
-        currentProfileId={profileId}
+        currentProfileId={profileId || undefined}
         currentRating={rating}
         currentResponseStatus={responseStatus}
       />

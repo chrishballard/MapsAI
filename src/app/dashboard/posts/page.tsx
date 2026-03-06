@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { PostFilters } from "./post-filters";
 import { PostActions, BulkApproveButton } from "./post-actions";
+import { getSelectedProfileId } from "@/lib/selected-profile";
 
 const TYPE_BADGES: Record<string, { label: string; className: string }> = {
   WHATS_NEW: {
@@ -63,7 +64,11 @@ interface PostsPageProps {
 
 export default async function PostsPage({ searchParams }: PostsPageProps) {
   const params = await searchParams;
-  const { profileId, status, type } = params;
+  const selectedProfileId = await getSelectedProfileId();
+  const { profileId: filterProfileId, status, type } = params;
+
+  // Use the global business selector, but allow page-level filter to override
+  const profileId = filterProfileId || selectedProfileId;
 
   const where: Record<string, string> = {};
   if (profileId) where.profileId = profileId;
@@ -132,7 +137,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
 
       <PostFilters
         profiles={profiles}
-        currentProfileId={profileId}
+        currentProfileId={profileId || undefined}
         currentStatus={status}
         currentType={type}
       />

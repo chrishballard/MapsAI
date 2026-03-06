@@ -13,7 +13,7 @@ export async function GET() {
     where: {
       isConnected: true,
       OR: [
-        { onboardingProgress: null },
+        { onboardingProgress: { is: null } },
         { onboardingProgress: { isComplete: false } },
       ],
     },

@@ -1,17 +1,25 @@
 import { BarChart3 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { GenerateForm, DownloadButton } from "./report-actions";
+import { getSelectedProfileId } from "@/lib/selected-profile";
 
 export default async function ReportsPage() {
+  const selectedProfileId = await getSelectedProfileId();
+  const profileFilter = selectedProfileId ? { profileId: selectedProfileId } : {};
+
   // Fetch reports with profile info
   const reports = await prisma.report.findMany({
+    where: profileFilter,
     include: { profile: true },
     orderBy: { createdAt: "desc" },
   });
 
   // Fetch connected profiles for the generate form
   const profiles = await prisma.profile.findMany({
-    where: { isConnected: true },
+    where: {
+      isConnected: true,
+      ...(selectedProfileId ? { id: selectedProfileId } : {}),
+    },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

@@ -5,7 +5,8 @@
     "auto_commit": true,
     "testing": "both",
     "commit_style": "conventional",
-    "research": true
+    "research": true,
+    "_auto_chain_active": false
   },
   "milestone": {
     "current": 2,
