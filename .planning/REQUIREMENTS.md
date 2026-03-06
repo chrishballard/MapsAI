@@ -16,10 +16,10 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Keywords & Cities
 
-- [ ] **KWRD-01**: User can generate AI-suggested keywords (up to 10) based on business name, category, address, and existing GBP data
-- [ ] **KWRD-02**: User can edit, add, remove, and reorder AI-suggested keywords before saving
-- [ ] **KWRD-03**: User can set up to 3 target cities/service areas per profile
-- [ ] **KWRD-04**: Stored keywords and cities are injected into post generation prompts for all future AI-generated posts
+- [x] **KWRD-01**: User can generate AI-suggested keywords (up to 10) based on business name, category, address, and existing GBP data
+- [x] **KWRD-02**: User can edit, add, remove, and reorder AI-suggested keywords before saving
+- [x] **KWRD-03**: User can set up to 3 target cities/service areas per profile
+- [x] **KWRD-04**: Stored keywords and cities are injected into post generation prompts for all future AI-generated posts
 
 ### Description Optimization
 
@@ -29,10 +29,10 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Service Optimization
 
-- [ ] **SRVC-01**: System fetches available structured services for the profile's GBP category
-- [ ] **SRVC-02**: User can generate AI-optimized descriptions for each service incorporating target keywords
-- [ ] **SRVC-03**: User can approve service descriptions individually or in bulk before pushing to GBP
-- [ ] **SRVC-04**: Services push uses fetch-then-merge to preserve existing services not being optimized
+- [x] **SRVC-01**: System fetches available structured services for the profile's GBP category
+- [x] **SRVC-02**: User can generate AI-optimized descriptions for each service incorporating target keywords
+- [x] **SRVC-03**: User can approve service descriptions individually or in bulk before pushing to GBP
+- [x] **SRVC-04**: Services push uses fetch-then-merge to preserve existing services not being optimized
 
 ### Attributes
 
@@ -92,17 +92,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ONBRD-02 | Phase 8 | Complete |
 | ONBRD-03 | Phase 8 | Complete |
 | ONBRD-04 | Phase 12 | Complete |
-| KWRD-01 | Phase 9 | Pending |
-| KWRD-02 | Phase 9 | Pending |
-| KWRD-03 | Phase 9 | Pending |
-| KWRD-04 | Phase 9 | Pending |
+| KWRD-01 | Phase 9 | Complete |
+| KWRD-02 | Phase 9 | Complete |
+| KWRD-03 | Phase 9 | Complete |
+| KWRD-04 | Phase 9 | Complete |
 | DESC-01 | Phase 10 | Complete |
 | DESC-02 | Phase 10 | Complete |
 | DESC-03 | Phase 10 | Complete |
-| SRVC-01 | Phase 11 | Pending |
-| SRVC-02 | Phase 11 | Pending |
-| SRVC-03 | Phase 11 | Pending |
-| SRVC-04 | Phase 11 | Pending |
+| SRVC-01 | Phase 11 | Complete |
+| SRVC-02 | Phase 11 | Complete |
+| SRVC-03 | Phase 11 | Complete |
+| SRVC-04 | Phase 11 | Complete |
 | ATTR-01 | Phase 12 | Complete |
 | ATTR-02 | Phase 12 | Complete |
 | ATTR-03 | Phase 12 | Complete |
