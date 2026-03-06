@@ -75,8 +75,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Session Continuity
 
-**Next action:** Plan and execute Phase 12 (Attributes & Profile Settings)
+**Last session:** Phase 12 context gathered (attributes grouped by category, native controls, post frequency dropdown with presets, checklist review summary)
+**Next action:** Plan Phase 12 (Attributes & Profile Settings)
 **Key files:**
+- .planning/phases/12-attributes-profile-settings/12-CONTEXT.md -- phase context
 - .planning/ROADMAP.md -- phase structure and success criteria
 - .planning/REQUIREMENTS.md -- requirement definitions and traceability
 - .planning/research/SUMMARY.md -- technical research findings
