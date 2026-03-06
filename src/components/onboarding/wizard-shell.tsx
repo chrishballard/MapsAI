@@ -17,6 +17,7 @@ import {
 import { StepIndicator, WIZARD_STEPS } from "./step-indicator";
 import { KeywordsCitiesStep } from "./steps/keywords-cities-step";
 import { DescriptionStep } from "./steps/description-step";
+import { ServicesStep } from "./steps/services-step";
 
 interface WizardShellProps {
   profileId: string;
@@ -155,7 +156,7 @@ export function WizardShell({
 
       <div
         className={`min-h-[400px] bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-6${
-          currentStep !== 1 && currentStep !== 2
+          currentStep !== 1 && currentStep !== 2 && currentStep !== 3
             ? " flex flex-col items-center justify-center text-center"
             : ""
         }`}
@@ -177,6 +178,11 @@ export function WizardShell({
           />
         ) : currentStep === 2 ? (
           <DescriptionStep
+            profileId={profileId}
+            onComplete={completeCurrentStep}
+          />
+        ) : currentStep === 3 ? (
+          <ServicesStep
             profileId={profileId}
             onComplete={completeCurrentStep}
           />
@@ -206,7 +212,7 @@ export function WizardShell({
             </button>
           )}
         </div>
-        {currentStep !== 1 && currentStep !== 2 && (
+        {currentStep !== 1 && currentStep !== 2 && currentStep !== 3 && (
           <button
             type="button"
             onClick={completeCurrentStep}
