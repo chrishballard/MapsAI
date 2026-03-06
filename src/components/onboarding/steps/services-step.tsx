@@ -168,15 +168,17 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
       const genData = await genRes.json();
 
       // Map generated descriptions to ServiceItem objects
-      const availableSet = new Set(
-        availableServices.map((a) => a.displayName)
-      );
+      // Services from the available/checked list are "structured"; AI-suggested extras are "custom"
+      const selectedSet = new Set([
+        ...Array.from(checkedServices),
+        ...customServices,
+      ]);
       const newServices: ServiceItem[] = (
         genData.services as { serviceName: string; description: string }[]
       ).map((s) => ({
         serviceName: s.serviceName,
         description: s.description,
-        isStructured: availableSet.has(s.serviceName),
+        isStructured: selectedSet.has(s.serviceName),
         isApproved: false,
         isPushed: false,
         pushedAt: null,

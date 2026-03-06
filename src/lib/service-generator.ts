@@ -19,10 +19,15 @@ export async function generateServiceDescriptions(params: {
   cities: string[];
   serviceNames: string[];
 }): Promise<{ serviceName: string; description: string }[]> {
+  const targetCount = 15;
+  const needMore = params.serviceNames.length < targetCount;
+
   const systemPrompt = `You are an expert local SEO copywriter specializing in Google Business Profile service descriptions. Write compelling, SEO-optimized descriptions for each service listed below.
 
+${needMore ? `IMPORTANT: The user has provided fewer than ${targetCount} services. You MUST suggest additional relevant services for this business category to reach exactly ${targetCount} total services. Add services that a typical "${params.category || "business"}" would offer. Return all ${targetCount} services (the provided ones + your suggestions).` : ""}
+
 Rules:
-- Write a unique description for each service in the provided list
+- Write a unique description for each service${needMore ? ` — return exactly ${targetCount} services total` : ""}
 - Each description should be 200-300 characters
 - Naturally incorporate the provided target keywords where relevant — do NOT force every keyword into every description
 - Reference target cities/service areas naturally where appropriate

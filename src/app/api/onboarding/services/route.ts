@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [savedServices, availableServices] = await Promise.all([
+  const [savedServices, gbpServices, keywords] = await Promise.all([
     prisma.profileService.findMany({
       where: { profileId },
       orderBy: { createdAt: "asc" },
@@ -43,7 +43,20 @@ export async function GET(request: NextRequest) {
       googleAccountId: profile.googleAccountId,
       locationName: profile.locationName,
     }),
+    prisma.profileKeyword.findMany({
+      where: { profileId },
+      orderBy: { sortOrder: "asc" },
+    }),
   ]);
+
+  // Fall back to keywords as service suggestions when GBP returns nothing
+  const availableServices =
+    gbpServices.length > 0
+      ? gbpServices
+      : keywords.map((k) => ({
+          serviceTypeId: k.keyword.toLowerCase().replace(/\s+/g, "_"),
+          displayName: k.keyword,
+        }));
 
   return NextResponse.json({
     services: savedServices,
