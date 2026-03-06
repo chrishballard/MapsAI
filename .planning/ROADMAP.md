@@ -67,7 +67,10 @@ Plans:
   2. User can generate AI-optimized descriptions for selected services that incorporate target keywords
   3. User can approve service descriptions individually or in bulk before pushing
   4. After pushing, existing services that were not being optimized are still present on the live GBP (no data loss)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 11-01-PLAN.md -- Backend: AI batch service generator, GBP service read/write (fetch-merge-push), service CRUD + generate + push APIs
+- [ ] 11-02-PLAN.md -- Frontend: Services wizard step UI with card-based approve/push + wizard shell wiring
 
 ### Phase 12: Attributes & Profile Settings
 **Goal**: User can manage GBP attributes, configure post frequency, and complete the onboarding wizard
@@ -96,7 +99,7 @@ Plans:
 | 8. Wizard Shell & Data Foundation | 2/2 | Complete | 2026-03-05 |
 | 9. Keywords & Cities | 0/2 | Planned | - |
 | 10. Description Optimization | 2/2 | Complete   | 2026-03-05 |
-| 11. Service Optimization | 0/? | Not started | - |
+| 11. Service Optimization | 1/2 | In Progress | - |
 | 12. Attributes & Profile Settings | 0/? | Not started | - |
 | 13. Re-optimization | 0/? | Not started | - |
 
