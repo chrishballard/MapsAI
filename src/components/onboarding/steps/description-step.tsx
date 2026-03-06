@@ -145,9 +145,11 @@ export function DescriptionStep({
 
   const charCount = aiDescription.length;
   const charColor =
-    charCount > 750
+    charCount > 700
       ? "text-red-600"
-      : "text-green-600";
+      : charCount > 600
+        ? "text-yellow-600"
+        : "text-green-600";
 
   if (loading) {
     return (
