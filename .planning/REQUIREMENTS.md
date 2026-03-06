@@ -12,7 +12,7 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 - [x] **ONBRD-01**: User can start onboarding wizard from an "Add Business" button and select from synced un-onboarded profiles
 - [x] **ONBRD-02**: Wizard displays step indicator with progress and supports navigation between completed steps
 - [x] **ONBRD-03**: Wizard state persists to database so user can resume across sessions
-- [ ] **ONBRD-04**: User can review a summary of all optimizations and mark onboarding complete
+- [x] **ONBRD-04**: User can review a summary of all optimizations and mark onboarding complete
 
 ### Keywords & Cities
 
@@ -36,14 +36,14 @@ Requirements for Milestone v1.1: Onboarding & Optimization. Each maps to roadmap
 
 ### Attributes
 
-- [ ] **ATTR-01**: System fetches available attributes dynamically based on business category (not hardcoded)
-- [ ] **ATTR-02**: User can view and toggle attribute values (boolean, enum, repeated enum, URL types)
-- [ ] **ATTR-03**: Updated attributes are pushed to GBP via API
+- [x] **ATTR-01**: System fetches available attributes dynamically based on business category (not hardcoded)
+- [x] **ATTR-02**: User can view and toggle attribute values (boolean, enum, repeated enum, URL types)
+- [x] **ATTR-03**: Updated attributes are pushed to GBP via API
 
 ### Profile Settings
 
-- [ ] **PROF-01**: User can configure post frequency per profile (posts per month)
-- [ ] **PROF-02**: Post frequency setting is used by the existing scheduling system when generating posts
+- [x] **PROF-01**: User can configure post frequency per profile (posts per month)
+- [x] **PROF-02**: Post frequency setting is used by the existing scheduling system when generating posts
 
 ### Re-optimization
 
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ONBRD-01 | Phase 8 | Complete |
 | ONBRD-02 | Phase 8 | Complete |
 | ONBRD-03 | Phase 8 | Complete |
-| ONBRD-04 | Phase 12 | Pending |
+| ONBRD-04 | Phase 12 | Complete |
 | KWRD-01 | Phase 9 | Pending |
 | KWRD-02 | Phase 9 | Pending |
 | KWRD-03 | Phase 9 | Pending |
@@ -103,11 +103,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRVC-02 | Phase 11 | Pending |
 | SRVC-03 | Phase 11 | Pending |
 | SRVC-04 | Phase 11 | Pending |
-| ATTR-01 | Phase 12 | Pending |
-| ATTR-02 | Phase 12 | Pending |
-| ATTR-03 | Phase 12 | Pending |
-| PROF-01 | Phase 12 | Pending |
-| PROF-02 | Phase 12 | Pending |
+| ATTR-01 | Phase 12 | Complete |
+| ATTR-02 | Phase 12 | Complete |
+| ATTR-03 | Phase 12 | Complete |
+| PROF-01 | Phase 12 | Complete |
+| PROF-02 | Phase 12 | Complete |
 | REOPT-01 | Phase 13 | Pending |
 | REOPT-02 | Phase 13 | Pending |
 
