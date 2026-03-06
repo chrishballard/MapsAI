@@ -15,7 +15,7 @@ interface GBPAttribute {
   displayName: string;
   groupDisplayName: string;
   valueType: "BOOL" | "ENUM" | "REPEATED_ENUM" | "URL";
-  values: unknown[];
+  currentValue: unknown;
   valueMetadata?: Array<{ value: string; displayName: string }>;
 }
 
@@ -47,24 +47,18 @@ function parseAttribute(attr: GBPAttribute): AttributeState {
 
   switch (attr.valueType) {
     case "BOOL":
-      return { ...base, boolValue: attr.values[0] === true };
+      return { ...base, boolValue: attr.currentValue === true };
     case "ENUM":
-      return { ...base, enumValue: (attr.values[0] as string) ?? "" };
-    case "REPEATED_ENUM":
+      return { ...base, enumValue: (attr.currentValue as string) ?? "" };
+    case "REPEATED_ENUM": {
+      const repeated = attr.currentValue as { setValues?: string[]; unsetValues?: string[] } | null;
       return {
         ...base,
-        repeatedEnumValues: (attr.values as string[]) ?? [],
+        repeatedEnumValues: repeated?.setValues ?? [],
       };
-    case "URL": {
-      const v = attr.values[0];
-      const uri =
-        typeof v === "string"
-          ? v
-          : typeof v === "object" && v !== null && "uri" in v
-            ? (v as { uri: string }).uri
-            : "";
-      return { ...base, urlValue: uri };
     }
+    case "URL":
+      return { ...base, urlValue: (attr.currentValue as string) ?? "" };
     default:
       return base;
   }
