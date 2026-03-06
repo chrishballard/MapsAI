@@ -2,7 +2,7 @@
 
 ## What This Is
 
-MapsAI is an internal AI-powered tool for Vineyard Growth that manages 100-200 Google Business Profiles. It handles post generation, review responses, analytics reporting, and profile optimization — replacing Page by Merchant ($10k/month) at ~$150-200/month.
+MapsAI is an internal AI-powered tool for Vineyard Growth that manages 100-200 Google Business Profiles end-to-end — from initial onboarding and SEO optimization through ongoing posts, reviews, and reporting. Replaces Page by Merchant ($10k/month) at ~$150-200/month.
 
 ## Core Value
 
@@ -12,38 +12,33 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 ### Validated
 
-<!-- Shipped and confirmed valuable (Milestone 1 MVP) -->
-
-- [x] AUTH: Team login with email/password
-- [x] GBP: OAuth connection, profile sync, multi-account support
-- [x] POSTS: AI post generation, approval workflow, auto-publishing via BullMQ
-- [x] REVIEWS: Review sync, AI response generation, approval/auto-publish
-- [x] REPORTS: GBP metrics sync, keyword tracking, PDF report generation
-- [x] DASH: Dashboard with live stats, profile detail pages, sidebar nav
-- [x] SETTINGS: Prompt templates, connected accounts management
-- [x] DEPLOY: Unified worker, Docker deployment config
+- ✓ AUTH: Team login with email/password — v1.0
+- ✓ GBP: OAuth connection, profile sync, multi-account support — v1.0
+- ✓ POSTS: AI post generation, approval workflow, auto-publishing via BullMQ — v1.0
+- ✓ REVIEWS: Review sync, AI response generation, approval/auto-publish — v1.0
+- ✓ REPORTS: GBP metrics sync, keyword tracking, PDF report generation — v1.0
+- ✓ DASH: Dashboard with live stats, profile detail pages, sidebar nav — v1.0
+- ✓ SETTINGS: Prompt templates, connected accounts management — v1.0
+- ✓ DEPLOY: Unified worker, Docker deployment config — v1.0
+- ✓ ONBRD: Guided onboarding wizard with 7-step flow, progress persistence — v1.1
+- ✓ KWRD: AI keyword suggestions (up to 10), target cities (up to 3) — v1.1
+- ✓ DESC: AI SEO business descriptions with approve-then-push to GBP — v1.1
+- ✓ SRVC: AI service descriptions with category discovery and fetch-merge-push — v1.1
+- ✓ ATTR: Dynamic GBP attribute management (bool, enum, repeated enum, URL) — v1.1
+- ✓ PROF: Configurable post frequency, used by scheduling system — v1.1
+- ✓ REOPT: On-demand re-optimization with live-vs-suggested comparison — v1.1
 
 ### Active
 
-<!-- Milestone v1.1: Onboarding & Optimization -->
-
-- [ ] Guided onboarding wizard for new business profiles
-- [ ] AI-suggested target keywords per profile (up to 10)
-- [ ] Target cities per profile (up to 3)
-- [ ] AI-generated SEO business description (approve → push to GBP)
-- [ ] AI-optimized service descriptions (approve individually/bulk → push to GBP)
-- [ ] GBP attributes management
-- [ ] Social profile links management
-- [ ] Logo upload during onboarding
-- [ ] Configurable post frequency per profile
-- [ ] Re-optimization from profile page (re-run description/services anytime)
-- [ ] Keywords and cities feed into post generation and all AI content
+(None — next milestone not yet planned)
 
 ### Out of Scope
 
 - Client-facing portal / paywall — deferred to future SaaS milestone
 - Q&A management — API deprecated (Nov 2025)
 - Photo/media optimization — manual for now
+- Logo upload — deferred (complex media API)
+- Social links via API — GBP API does not support writes
 - Competitor tracking — not core to management
 - Multi-platform support (Yelp, Facebook) — GBP only
 - White-labeling — internal tool
@@ -53,18 +48,17 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 ## Context
 
-- Existing MVP handles ongoing management (posts, reviews, reports)
-- Missing the initial onboarding/optimization step that PBM provides
-- Keywords are the connective thread: they inform descriptions, services, and ongoing posts
-- Target cities geo-modify keyword strategy for local SEO
-- GBP API supports updating descriptions, services, and attributes programmatically
-- Onboarding wizard replaces PBM's "Add Business" → "Optimize Profile" → "Automate Everything" flow
+- **v1.0 MVP** shipped: ongoing management (posts, reviews, reports)
+- **v1.1 Onboarding** shipped: guided optimization wizard, AI keywords/descriptions/services, re-optimization
+- 129 TypeScript files, ~41k LOC
+- GBP API access application submitted (pending approval for write operations)
+- No sidebar link to onboarding page yet (users navigate directly)
 
 ## Constraints
 
 - **GBP API**: OAuth per account, posts publish immediately, 1-3 day metrics lag
-- **GBP API**: Q&A deprecated, no video support in posts
-- **GBP API**: Service descriptions and attributes require specific API endpoints
+- **GBP API**: Q&A deprecated, no video support in posts, no social link writes
+- **GBP API**: 10 edits/min/profile rate limit — consolidate writes
 - **Scale**: 100-200 profiles, onboarding is one-time per profile but re-optimization is on-demand
 - **AI Cost**: Claude Sonnet for generation keeps costs at ~$3/month for 200 profiles
 
@@ -90,19 +84,10 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 | Claude Sonnet for AI generation | Cost-efficient (~$3/month for 200 profiles) | ✓ Good |
 | Draft-first workflow | Posts and reviews start as drafts for team approval | ✓ Good |
 | Railway for hosting | Native Postgres/Redis, background workers | ✓ Good |
-| AI keyword suggestions (no volume data) | Simpler, avoids third-party keyword API dependency | — Pending |
-
-## Current Milestone: v1.1 Onboarding & Optimization
-
-**Goal:** Add guided onboarding wizard and AI-powered profile optimization so new client GBPs are fully set up and SEO-optimized from day one.
-
-**Target features:**
-- Multi-step onboarding wizard (select profile → configure → optimize → automate)
-- AI keyword suggestions and target city configuration
-- AI-generated business descriptions and service descriptions pushed to GBP
-- Attributes and social profile management
-- Re-optimization capability from profile page
-- Keywords/cities integrated into existing post generation
+| AI keyword suggestions (no volume data) | Simpler, avoids third-party keyword API dependency | ✓ Good |
+| Direct GBP API calls for user-initiated writes | No queue needed for interactive onboarding actions | ✓ Good |
+| Fetch-merge-push for services | Preserves existing GBP services not being optimized | ✓ Good |
+| Dynamic attribute fetching per category | No hardcoded attribute lists to maintain | ✓ Good |
 
 ---
-*Last updated: 2026-03-04 after Milestone v1.1 started*
+*Last updated: 2026-03-06 after v1.1 milestone completed*
