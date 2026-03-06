@@ -73,7 +73,8 @@ export async function POST(request: Request) {
           keywords: keywordRecords.map((k) => k.keyword),
           cities: cityRecords.map((c) => c.city),
         },
-        customPrompt ?? undefined
+        customPrompt ?? undefined,
+        profile.postFrequency ?? 4
       );
 
       // Save generated posts as DRAFT

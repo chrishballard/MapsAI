@@ -13,7 +13,8 @@ interface ProfileInput {
 
 export async function generateMonthlyPosts(
   profile: ProfileInput,
-  customPrompt?: string
+  customPrompt?: string,
+  postCount: number = 4
 ): Promise<BatchPosts> {
   const systemPrompt = customPrompt || getDefaultPrompt(profile.category);
 
@@ -28,7 +29,7 @@ export async function generateMonthlyPosts(
       ? `Target cities/service areas: ${profile.cities.join(", ")}`
       : null,
     "",
-    "Generate 4 varied monthly Google Business Profile posts for this business.",
+    `Generate ${postCount} varied monthly Google Business Profile posts for this business.`,
     profile.keywords?.length
       ? "Naturally weave the target keywords into the posts — do not force them or list them."
       : null,
