@@ -107,7 +107,7 @@ Plans:
 | 10. Description Optimization | 2/2 | Complete   | 2026-03-05 |
 | 11. Service Optimization | 2/2 | Complete | 2026-03-05 |
 | 12. Attributes & Profile Settings | 2/2 | Complete    | 2026-03-06 |
-| 13. Re-optimization | 2/2 | Complete   | 2026-03-06 |
+| 13. Re-optimization | 2/2 | Complete    | 2026-03-06 |
 
 ## Coverage Map
 
