@@ -4,7 +4,7 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 FROM base AS builder
 WORKDIR /app
