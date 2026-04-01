@@ -1,7 +1,7 @@
 FROM node:22-alpine AS base
 
 FROM base AS deps
-RUN apk add --no-cache libc6-compat cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev
+RUN apk add --no-cache libc6-compat cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev python3 make g++ pkgconf
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
