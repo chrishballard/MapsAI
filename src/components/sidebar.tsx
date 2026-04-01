@@ -9,11 +9,14 @@ import {
   BarChart3,
   Settings,
   LayoutDashboard,
+  ChevronRight,
+  Sparkles,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/profiles", label: "Profiles", icon: Building2 },
+  { href: "/dashboard/profiles", label: "Businesses", icon: Building2 },
   { href: "/dashboard/posts", label: "Posts", icon: FileText },
   { href: "/dashboard/reviews", label: "Reviews", icon: MessageSquare },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
@@ -24,13 +27,22 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-gray-900 text-white min-h-screen flex flex-col">
-      <div className="p-6 border-b border-gray-800">
-        <h1 className="text-xl font-bold">MapsAI</h1>
-        <p className="text-gray-400 text-xs mt-1">GBP Management</p>
+    <aside className="w-64 border-r border-zinc-200 bg-white flex flex-col h-screen sticky top-0">
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
+            R
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-zinc-900">
+            Rankmaps
+          </h1>
+        </div>
+        <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">
+          AI Local SEO
+        </p>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 px-3 space-y-1">
         {navItems.map((item) => {
           const isActive =
             item.href === "/dashboard"
@@ -42,18 +54,47 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group",
                 isActive
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-gray-800 hover:text-white"
-              }`}
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+              )}
             >
-              <Icon size={18} />
+              <Icon
+                className={cn(
+                  "w-5 h-5 transition-colors",
+                  isActive
+                    ? "text-brand-600"
+                    : "text-zinc-400 group-hover:text-zinc-600"
+                )}
+              />
               {item.label}
+              {isActive && <ChevronRight className="w-4 h-4 ml-auto" />}
             </Link>
           );
         })}
       </nav>
+
+      <div className="p-4 mt-auto">
+        <div className="bg-zinc-900 rounded-xl p-4 text-white relative overflow-hidden group cursor-pointer">
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand-500/20 rounded-full blur-2xl transition-all group-hover:scale-150" />
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-brand-400" />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-400">
+                Pro Plan
+              </span>
+            </div>
+            <p className="text-sm font-medium mb-3">
+              Unlock advanced AI features
+            </p>
+            <button className="w-full bg-white text-zinc-900 text-xs font-bold py-2 rounded-lg hover:bg-zinc-100 transition-colors">
+              Upgrade Now
+            </button>
+          </div>
+        </div>
+      </div>
     </aside>
   );
 }

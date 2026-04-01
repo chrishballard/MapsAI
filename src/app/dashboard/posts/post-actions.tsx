@@ -87,7 +87,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handleApprove}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 border border-green-300 rounded-md hover:bg-green-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors disabled:opacity-50"
         >
           <Check size={14} />
           {loading ? "Approving..." : "Approve"}
@@ -95,7 +95,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handleDelete}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
         >
           <Trash2 size={14} />
           Delete
@@ -110,7 +110,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handleRetry}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-orange-700 border border-orange-300 rounded-md hover:bg-orange-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
         >
           <RotateCcw size={14} />
           {loading ? "Retrying..." : "Retry"}
@@ -172,7 +172,7 @@ export function BulkApproveButton({
     <button
       onClick={handleBulkApprove}
       disabled={loading}
-      className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+      className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
     >
       <CheckCheck size={16} />
       {loading ? "Approving..." : `Approve All (${draftCount})`}

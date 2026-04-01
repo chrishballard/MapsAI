@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   fetchCurrentServices,
+  fetchStructuredServices,
+  fetchCategoryId,
   pushServicesToGBP,
 } from "@/lib/google-business-info";
 
@@ -52,11 +54,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Step 2: Fetch current services from GBP (full list for merge)
-  const currentGBP = await fetchCurrentServices({
-    googleAccountId: profile.googleAccountId,
-    locationName: profile.locationName,
-  });
+  // Step 2: Fetch current services, structured service type IDs, and category ID from GBP
+  const [currentGBP, structuredServices, categoryId] = await Promise.all([
+    fetchCurrentServices({
+      googleAccountId: profile.googleAccountId,
+      locationName: profile.locationName,
+    }),
+    fetchStructuredServices({
+      googleAccountId: profile.googleAccountId,
+      locationName: profile.locationName,
+    }),
+    fetchCategoryId({
+      googleAccountId: profile.googleAccountId,
+      locationName: profile.locationName,
+    }),
+  ]);
+
+  // Build displayName -> serviceTypeId lookup (case-insensitive)
+  const typeIdMap = new Map<string, string>();
+  for (const s of structuredServices) {
+    typeIdMap.set(s.displayName.toLowerCase(), s.serviceTypeId);
+  }
 
   // Step 3: Store pre-push snapshot
   console.log(
@@ -68,35 +86,31 @@ export async function POST(request: NextRequest) {
     })
   );
 
-  // Step 4: Merge logic
-  const mergedServiceItems = [...(currentGBP.serviceItems as Record<string, unknown>[])];
+  // Step 4: Build service items list from approved services only (replace, don't merge)
+  const mergedServiceItems: Record<string, unknown>[] = [];
+  const seenFreeFormNames = new Set<string>();
 
   for (const service of approvedServices) {
-    if (service.isStructured) {
-      // Find existing structured service with matching serviceTypeId
-      const existingIndex = mergedServiceItems.findIndex((item) => {
-        const structured = (item as Record<string, unknown>)
-          .structuredServiceItem as Record<string, unknown> | undefined;
-        return structured?.serviceTypeId === service.serviceName;
-      });
+    // Look up the real serviceTypeId from the GBP structured services (case-insensitive)
+    const serviceTypeId = typeIdMap.get(service.serviceName.toLowerCase());
 
-      const newItem = {
+    if (serviceTypeId) {
+      // Structured service with a real GBP serviceTypeId
+      mergedServiceItems.push({
         structuredServiceItem: {
-          serviceTypeId: service.serviceName,
+          serviceTypeId,
           description: service.description || undefined,
         },
-      };
-
-      if (existingIndex >= 0) {
-        mergedServiceItems[existingIndex] = newItem;
-      } else {
-        mergedServiceItems.push(newItem);
-      }
+      });
     } else {
-      // Free-form / custom service
+      // Free-form service — deduplicate by display name
+      const nameKey = service.serviceName.toLowerCase();
+      if (seenFreeFormNames.has(nameKey)) continue;
+      seenFreeFormNames.add(nameKey);
+
       mergedServiceItems.push({
         freeFormServiceItem: {
-          category: profile.category || "General",
+          category: categoryId || profile.category || "General",
           label: {
             displayName: service.serviceName,
             description: service.description || undefined,
@@ -107,6 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Step 5: Push merged list to GBP
+  console.log("[SERVICE_PUSH] Sending to GBP:", JSON.stringify(mergedServiceItems, null, 2));
   const pushResult = await pushServicesToGBP({
     googleAccountId: profile.googleAccountId,
     locationName: profile.locationName,

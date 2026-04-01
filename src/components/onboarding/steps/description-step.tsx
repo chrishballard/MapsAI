@@ -145,16 +145,16 @@ export function DescriptionStep({
 
   const charCount = aiDescription.length;
   const charColor =
-    charCount > 700
+    charCount > 750
       ? "text-red-600"
-      : charCount > 600
+      : charCount > 700
         ? "text-yellow-600"
-        : "text-green-600";
+        : "text-emerald-600";
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -163,13 +163,13 @@ export function DescriptionStep({
     <div className="space-y-6">
       {/* Success Banner */}
       {pushSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-green-800">
+            <p className="text-sm font-medium text-emerald-800">
               Description successfully pushed to Google Business Profile
             </p>
-            <p className="text-xs text-green-600 mt-0.5">
+            <p className="text-xs text-emerald-600 mt-0.5">
               Advancing to next step...
             </p>
           </div>
@@ -195,18 +195,18 @@ export function DescriptionStep({
 
       {/* Section 1: Current GBP Description */}
       <div>
-        <h3 className="text-base font-semibold text-gray-900">
+        <h3 className="text-base font-semibold text-foreground">
           Current Description
         </h3>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-muted-foreground mb-3">
           Currently on your Google Business Profile
         </p>
         {currentGBPDescription ? (
-          <div className="bg-gray-50 rounded-lg p-4 text-gray-600 italic text-sm">
+          <div className="bg-muted/50 rounded-lg p-4 text-muted-foreground italic text-sm">
             {currentGBPDescription}
           </div>
         ) : (
-          <p className="text-sm text-gray-400 italic">
+          <p className="text-sm text-zinc-400 italic">
             No description currently set on your Google Business Profile
           </p>
         )}
@@ -215,14 +215,14 @@ export function DescriptionStep({
       {/* Section 2: AI-Recommended Description */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900">
+          <h3 className="text-base font-semibold text-foreground">
             Recommended Description
           </h3>
           <button
             type="button"
             onClick={generateDescription}
             disabled={generating}
-            className="flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
+            className="flex items-center gap-1.5 border border-border text-foreground hover:bg-zinc-50 disabled:opacity-50 rounded-lg px-3 py-1.5 text-sm"
           >
             {generating ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -235,11 +235,11 @@ export function DescriptionStep({
 
         {generating && !aiDescription ? (
           <div className="space-y-2">
-            <div className="animate-pulse bg-gray-200 rounded h-4 w-full" />
-            <div className="animate-pulse bg-gray-200 rounded h-4 w-5/6" />
-            <div className="animate-pulse bg-gray-200 rounded h-4 w-4/6" />
-            <div className="animate-pulse bg-gray-200 rounded h-4 w-full" />
-            <div className="animate-pulse bg-gray-200 rounded h-4 w-3/6" />
+            <div className="animate-pulse bg-zinc-200 rounded h-4 w-full" />
+            <div className="animate-pulse bg-zinc-200 rounded h-4 w-5/6" />
+            <div className="animate-pulse bg-zinc-200 rounded h-4 w-4/6" />
+            <div className="animate-pulse bg-zinc-200 rounded h-4 w-full" />
+            <div className="animate-pulse bg-zinc-200 rounded h-4 w-3/6" />
           </div>
         ) : (
           <textarea
@@ -247,10 +247,10 @@ export function DescriptionStep({
             onChange={(e) => setAiDescription(e.target.value)}
             rows={6}
             disabled={generating || pushing}
-            className={`w-full border rounded-md p-3 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 ${
+            className={`w-full border rounded-lg p-3 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 ${
               charCount > 750
                 ? "border-red-500"
-                : "border-gray-300"
+                : "border-border"
             }`}
           />
         )}
@@ -271,8 +271,8 @@ export function DescriptionStep({
 
         {/* First-250 indicator */}
         <div className="flex items-center gap-1 mt-1">
-          <Info className="w-3 h-3 text-gray-400" />
-          <span className="text-xs text-gray-400">
+          <Info className="w-3 h-3 text-zinc-400" />
+          <span className="text-xs text-zinc-400">
             First 250 characters visible in Google Search
           </span>
         </div>
@@ -280,7 +280,7 @@ export function DescriptionStep({
         {/* Keyword Coverage */}
         {keywords.length > 0 && (
           <div className="mt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">
+            <p className="text-sm font-medium text-foreground mb-2">
               Keyword Coverage
             </p>
             <div className="flex flex-wrap gap-2">
@@ -293,8 +293,8 @@ export function DescriptionStep({
                     key={kw}
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
                       found
-                        ? "bg-green-50 text-green-700"
-                        : "bg-gray-100 text-gray-500"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-zinc-100 text-muted-foreground"
                     }`}
                   >
                     {found && <CheckCircle2 className="w-3 h-3" />}
@@ -311,12 +311,12 @@ export function DescriptionStep({
       <div>
         {savedDescription?.isPushed ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-green-600">
+            <div className="flex items-center gap-2 text-emerald-600">
               <CheckCircle2 className="w-5 h-5" />
               <span className="text-sm font-medium">
                 Pushed to Google
                 {savedDescription.pushedAt && (
-                  <span className="text-gray-400 font-normal ml-1">
+                  <span className="text-zinc-400 font-normal ml-1">
                     on{" "}
                     {new Date(savedDescription.pushedAt).toLocaleDateString()}
                   </span>
@@ -326,7 +326,7 @@ export function DescriptionStep({
             <button
               type="button"
               onClick={onComplete}
-              className="w-full border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md py-2.5 font-medium text-sm"
+              className="w-full border border-border text-foreground hover:bg-zinc-50 rounded-lg py-2.5 font-medium text-sm"
             >
               Continue
             </button>
@@ -339,7 +339,7 @@ export function DescriptionStep({
               disabled={
                 !aiDescription.trim() || charCount > 750 || pushing
               }
-              className="w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-lg py-2.5 font-medium text-sm"
             >
               {pushing ? (
                 <span className="flex items-center justify-center gap-2">
@@ -356,7 +356,7 @@ export function DescriptionStep({
             <button
               type="button"
               onClick={handleSkip}
-              className="w-full text-gray-500 underline text-sm py-1"
+              className="w-full text-muted-foreground underline text-sm py-1"
             >
               Skip for Now
             </button>

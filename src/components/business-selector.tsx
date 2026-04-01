@@ -22,8 +22,12 @@ export function BusinessSelector() {
 
   useEffect(() => {
     fetch("/api/profiles")
-      .then((r) => r.json())
-      .then((data) => setProfiles(data.profiles || []));
+      .then((r) => {
+        if (!r.ok) return { profiles: [] };
+        return r.json();
+      })
+      .then((data) => setProfiles(data.profiles || []))
+      .catch(() => setProfiles([]));
 
     // Read initial selection from cookie
     const match = document.cookie.match(/(?:^|; )selectedProfileId=([^;]*)/);
@@ -72,28 +76,28 @@ export function BusinessSelector() {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:border-gray-400 transition-colors min-w-[220px]"
+        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg hover:border-brand-300 transition-colors min-w-[220px]"
       >
-        <Building2 size={16} className="text-gray-400 shrink-0" />
-        <span className="text-sm font-medium text-gray-700 truncate">
+        <Building2 size={16} className="text-zinc-400 shrink-0" />
+        <span className="text-sm font-medium text-foreground truncate">
           {selectedProfile ? selectedProfile.name : "All Businesses"}
         </span>
-        <ChevronDown size={14} className="text-gray-400 ml-auto shrink-0" />
+        <ChevronDown size={14} className="text-zinc-400 ml-auto shrink-0" />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           {/* Search */}
-          <div className="p-2 border-b border-gray-100">
+          <div className="p-2 border-b border-border">
             <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
               <input
                 ref={searchRef}
                 type="text"
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-50 focus:border-brand-300"
               />
             </div>
           </div>
@@ -101,21 +105,21 @@ export function BusinessSelector() {
           {/* All Businesses option */}
           <button
             onClick={() => select(null)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 transition-colors border-b border-border"
           >
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-              <Building2 size={14} className="text-blue-600" />
+            <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center shrink-0">
+              <Building2 size={14} className="text-brand-600" />
             </div>
-            <span className="text-sm font-medium text-gray-700">All Businesses</span>
+            <span className="text-sm font-medium text-foreground">All Businesses</span>
             {!selectedId && (
-              <Check size={16} className="text-blue-600 ml-auto" />
+              <Check size={16} className="text-brand-600 ml-auto" />
             )}
           </button>
 
           {/* Profile list */}
           <div className="max-h-64 overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-gray-500 text-center">
+              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 No businesses found
               </div>
             ) : (
@@ -123,23 +127,23 @@ export function BusinessSelector() {
                 <button
                   key={profile.id}
                   onClick={() => select(profile.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 transition-colors"
                 >
-                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center shrink-0">
-                    <Building2 size={14} className="text-gray-500" />
+                  <div className="w-8 h-8 bg-zinc-100 rounded-full flex items-center justify-center shrink-0">
+                    <Building2 size={14} className="text-muted-foreground" />
                   </div>
                   <div className="text-left min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {profile.name}
                     </p>
                     {profile.address && (
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-muted-foreground truncate">
                         {profile.address}
                       </p>
                     )}
                   </div>
                   {selectedId === profile.id && (
-                    <Check size={16} className="text-blue-600 shrink-0" />
+                    <Check size={16} className="text-brand-600 shrink-0" />
                   )}
                 </button>
               ))

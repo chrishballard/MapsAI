@@ -49,14 +49,8 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
-  // Fall back to keywords as service suggestions when GBP returns nothing
-  const availableServices =
-    gbpServices.length > 0
-      ? gbpServices
-      : keywords.map((k) => ({
-          serviceTypeId: k.keyword.toLowerCase().replace(/\s+/g, "_"),
-          displayName: k.keyword,
-        }));
+  // Only use actual GBP structured services — no fake serviceTypeIds
+  const availableServices = gbpServices;
 
   return NextResponse.json({
     services: savedServices,

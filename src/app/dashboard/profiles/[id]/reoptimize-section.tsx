@@ -373,7 +373,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   // --- Computed ---
 
   const descCharCount = aiDescription.length;
-  const descCharColor = descCharCount > 750 ? "text-red-600" : "text-green-600";
+  const descCharColor = descCharCount > 750 ? "text-red-600" : "text-emerald-600";
 
   const approvedCount = savedServices.filter((s) => s.isApproved).length;
   const unapprovedCount = savedServices.filter(
@@ -385,7 +385,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -404,7 +404,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   return (
     <div className="space-y-4">
       {/* Section 1: Description Re-optimization */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg border border-border card-shadow">
         <button
           type="button"
           onClick={() => setDescExpanded(!descExpanded)}
@@ -412,15 +412,15 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         >
           <div className="flex items-center gap-2">
             {descExpanded ? (
-              <ChevronDown size={18} className="text-gray-400" />
+              <ChevronDown size={18} className="text-zinc-400" />
             ) : (
-              <ChevronRight size={18} className="text-gray-400" />
+              <ChevronRight size={18} className="text-zinc-400" />
             )}
-            <h3 className="text-base font-semibold text-gray-900">
+            <h3 className="text-base font-semibold text-foreground">
               Description
             </h3>
             {savedDescription?.isPushed && (
-              <span className="bg-green-100 text-green-700 text-xs rounded-full px-2 py-0.5">
+              <span className="bg-emerald-50 text-emerald-700 text-xs rounded-full px-2 py-0.5">
                 Pushed
               </span>
             )}
@@ -433,7 +433,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 generateDescription();
               }}
               disabled={descGenerating}
-              className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
+              className="flex items-center gap-1.5 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
             >
               {descGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -449,9 +449,9 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
           <div className="px-6 pb-6 space-y-4">
             {/* Success Banner */}
             {descPushSuccess && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
-                <p className="text-sm font-medium text-green-800">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+                <p className="text-sm font-medium text-emerald-800">
                   Description successfully pushed to Google Business Profile
                 </p>
               </div>
@@ -479,11 +479,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
             {/* Loading skeleton during generation */}
             {descGenerating && (
               <div className="space-y-2">
-                <div className="animate-pulse bg-gray-200 rounded h-4 w-full" />
-                <div className="animate-pulse bg-gray-200 rounded h-4 w-5/6" />
-                <div className="animate-pulse bg-gray-200 rounded h-4 w-4/6" />
-                <div className="animate-pulse bg-gray-200 rounded h-4 w-full" />
-                <div className="animate-pulse bg-gray-200 rounded h-4 w-3/6" />
+                <div className="animate-pulse bg-zinc-200 rounded h-4 w-full" />
+                <div className="animate-pulse bg-zinc-200 rounded h-4 w-5/6" />
+                <div className="animate-pulse bg-zinc-200 rounded h-4 w-4/6" />
+                <div className="animate-pulse bg-zinc-200 rounded h-4 w-full" />
+                <div className="animate-pulse bg-zinc-200 rounded h-4 w-3/6" />
               </div>
             )}
 
@@ -493,12 +493,12 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* LEFT: Current Live */}
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
+                    <p className="text-sm font-medium text-foreground mb-2">
                       Current (Live on Google)
                     </p>
-                    <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 italic min-h-[120px]">
+                    <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground italic min-h-[120px]">
                       {currentGBPDescription || (
-                        <span className="text-gray-400">
+                        <span className="text-zinc-400">
                           No description currently set
                         </span>
                       )}
@@ -507,7 +507,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
 
                   {/* RIGHT: AI Suggestion */}
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
+                    <p className="text-sm font-medium text-foreground mb-2">
                       AI Suggestion
                     </p>
                     <textarea
@@ -515,10 +515,10 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       onChange={(e) => setAiDescription(e.target.value)}
                       rows={5}
                       disabled={descPushing}
-                      className={`w-full border rounded-md p-3 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 min-h-[120px] ${
+                      className={`w-full border rounded-md p-3 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 min-h-[120px] ${
                         descCharCount > 750
                           ? "border-red-500"
-                          : "border-gray-300"
+                          : "border-border"
                       }`}
                     />
                   </div>
@@ -539,7 +539,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 {/* Keyword Coverage */}
                 {keywords.length > 0 && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
+                    <p className="text-sm font-medium text-foreground mb-2">
                       Keyword Coverage
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -552,8 +552,8 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                             key={kw}
                             className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
                               found
-                                ? "bg-green-50 text-green-700"
-                                : "bg-gray-100 text-gray-500"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-zinc-100 text-muted-foreground"
                             }`}
                           >
                             {found && <CheckCircle2 className="w-3 h-3" />}
@@ -575,7 +575,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       descCharCount > 750 ||
                       descPushing
                     }
-                    className="flex items-center gap-2 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 rounded-md px-4 py-2 text-sm font-medium"
+                    className="flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-4 py-2 text-sm font-medium"
                   >
                     {descPushing ? (
                       <>
@@ -593,7 +593,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     type="button"
                     onClick={generateDescription}
                     disabled={descGenerating}
-                    className="flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-md px-3 py-2 text-sm"
+                    className="flex items-center gap-1.5 border border-border text-foreground hover:bg-muted/50 disabled:opacity-50 rounded-md px-3 py-2 text-sm"
                   >
                     <RotateCcw className="w-4 h-4" />
                     Regenerate
@@ -606,27 +606,27 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
             {!descGenerating && !descShowComparison && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">
+                  <p className="text-sm font-medium text-foreground mb-2">
                     Current (Live on Google)
                   </p>
-                  <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 italic min-h-[80px]">
+                  <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground italic min-h-[80px]">
                     {currentGBPDescription || (
-                      <span className="text-gray-400">
+                      <span className="text-zinc-400">
                         No description currently set
                       </span>
                     )}
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">
+                  <p className="text-sm font-medium text-foreground mb-2">
                     Last Saved Description
                   </p>
-                  <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 italic min-h-[80px]">
+                  <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground italic min-h-[80px]">
                     {savedDescription ? (
                       <>
                         {savedDescription.content}
                         {savedDescription.isPushed && savedDescription.pushedAt && (
-                          <p className="text-xs text-gray-400 mt-2 not-italic">
+                          <p className="text-xs text-zinc-400 mt-2 not-italic">
                             Pushed on{" "}
                             {new Date(
                               savedDescription.pushedAt
@@ -635,7 +635,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         )}
                       </>
                     ) : (
-                      <span className="text-gray-400">
+                      <span className="text-zinc-400">
                         No saved description
                       </span>
                     )}
@@ -648,7 +648,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
       </div>
 
       {/* Section 2: Services Re-optimization */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg border border-border card-shadow">
         <button
           type="button"
           onClick={() => setSvcExpanded(!svcExpanded)}
@@ -656,13 +656,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         >
           <div className="flex items-center gap-2">
             {svcExpanded ? (
-              <ChevronDown size={18} className="text-gray-400" />
+              <ChevronDown size={18} className="text-zinc-400" />
             ) : (
-              <ChevronRight size={18} className="text-gray-400" />
+              <ChevronRight size={18} className="text-zinc-400" />
             )}
-            <h3 className="text-base font-semibold text-gray-900">Services</h3>
+            <h3 className="text-base font-semibold text-foreground">Services</h3>
             {savedServices.length > 0 && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-muted-foreground">
                 ({savedServices.length} services)
               </span>
             )}
@@ -675,7 +675,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 startServiceReoptimize();
               }}
               disabled={svcGenerating}
-              className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
+              className="flex items-center gap-1.5 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
             >
               {svcGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -691,9 +691,9 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
           <div className="px-6 pb-6 space-y-4">
             {/* Success Banner */}
             {svcPushSuccess && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
-                <p className="text-sm font-medium text-green-800">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+                <p className="text-sm font-medium text-emerald-800">
                   Services successfully pushed to Google Business Profile
                 </p>
               </div>
@@ -720,8 +720,8 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
             {svcGenerating && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                  <p className="text-sm text-gray-600">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">
                     Generating descriptions for {totalSelected} services...
                   </p>
                 </div>
@@ -729,14 +729,14 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                   (_, i) => (
                     <div
                       key={i}
-                      className="bg-white border border-gray-200 rounded-lg p-4"
+                      className="bg-white border border-border rounded-lg p-4"
                     >
                       <div className="animate-pulse space-y-3">
-                        <div className="h-4 bg-gray-200 rounded w-1/3" />
+                        <div className="h-4 bg-zinc-200 rounded w-1/3" />
                         <div className="space-y-2">
-                          <div className="h-3 bg-gray-200 rounded w-full" />
-                          <div className="h-3 bg-gray-200 rounded w-5/6" />
-                          <div className="h-3 bg-gray-200 rounded w-4/6" />
+                          <div className="h-3 bg-zinc-200 rounded w-full" />
+                          <div className="h-3 bg-zinc-200 rounded w-5/6" />
+                          <div className="h-3 bg-zinc-200 rounded w-4/6" />
                         </div>
                       </div>
                     </div>
@@ -750,12 +750,12 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <Wrench className="w-5 h-5 text-gray-700" />
-                    <h4 className="text-sm font-semibold text-gray-900">
+                    <Wrench className="w-5 h-5 text-foreground" />
+                    <h4 className="text-sm font-semibold text-foreground">
                       Available Services
                     </h4>
                   </div>
-                  <p className="text-sm text-gray-500 mb-3">
+                  <p className="text-sm text-muted-foreground mb-3">
                     Select the services to re-optimize with AI-generated
                     descriptions.
                   </p>
@@ -765,22 +765,22 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       {availableServices.map((svc) => (
                         <label
                           key={svc.serviceTypeId}
-                          className="flex items-center gap-3 p-3 rounded-md border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                          className="flex items-center gap-3 p-3 rounded-md border border-border hover:bg-muted/50 cursor-pointer"
                         >
                           <input
                             type="checkbox"
                             checked={checkedServices.has(svc.displayName)}
                             onChange={() => toggleService(svc.displayName)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-brand-50"
                           />
-                          <span className="text-sm text-gray-900">
+                          <span className="text-sm text-foreground">
                             {svc.displayName}
                           </span>
                         </label>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-400 italic">
+                    <p className="text-sm text-zinc-400 italic">
                       No structured services found for this business category.
                       Add custom services below.
                     </p>
@@ -789,7 +789,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
 
                 {/* Custom Service Input */}
                 <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-1">
+                  <h4 className="text-sm font-medium text-foreground mb-1">
                     Add a custom service
                   </h4>
                   <div className="flex gap-2">
@@ -804,13 +804,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         }
                       }}
                       placeholder="e.g., Emergency Board-Up Service"
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-900 flex-1"
+                      className="border border-border rounded-md px-3 py-1.5 text-sm text-foreground flex-1"
                     />
                     <button
                       type="button"
                       onClick={addCustomService}
                       disabled={!customServiceInput.trim()}
-                      className="flex items-center gap-1 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
+                      className="flex items-center gap-1 border border-border text-foreground hover:bg-muted/50 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
                     >
                       <Plus className="w-4 h-4" />
                       Add
@@ -822,13 +822,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       {customServices.map((name) => (
                         <span
                           key={name}
-                          className="bg-gray-100 text-gray-700 rounded-full px-3 py-1.5 text-sm flex items-center gap-1.5"
+                          className="bg-zinc-100 text-foreground rounded-full px-3 py-1.5 text-sm flex items-center gap-1.5"
                         >
                           {name}
                           <button
                             type="button"
                             onClick={() => removeCustomService(name)}
-                            className="text-gray-400 hover:text-red-500"
+                            className="text-zinc-400 hover:text-red-500"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -843,12 +843,12 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                   type="button"
                   onClick={generateServices}
                   disabled={totalSelected === 0}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
                 >
                   <Sparkles className="w-4 h-4" />
                   Generate Descriptions
                   {totalSelected > 0 && (
-                    <span className="text-blue-200">({totalSelected})</span>
+                    <span className="text-brand-200">({totalSelected})</span>
                   )}
                 </button>
               </div>
@@ -859,7 +859,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
               <div className="space-y-4">
                 {/* Running Counter */}
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     {approvedCount} of {savedServices.length} services approved
                   </p>
                 </div>
@@ -868,24 +868,24 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 {savedServices.map((service, index) => (
                   <div
                     key={service.serviceName}
-                    className={`bg-white border border-gray-200 rounded-lg p-4${
+                    className={`bg-white border border-border rounded-lg p-4${
                       service.isPushed
-                        ? " border-l-4 border-l-blue-500"
+                        ? " border-l-4 border-l-primary"
                         : service.isApproved
-                        ? " border-l-4 border-l-green-500"
+                        ? " border-l-4 border-l-emerald-500"
                         : ""
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium text-foreground">
                         {service.serviceName}
                       </span>
                       {service.isStructured ? (
-                        <span className="bg-blue-100 text-blue-700 text-xs rounded-full px-2 py-0.5">
+                        <span className="bg-brand-100 text-primary text-xs rounded-full px-2 py-0.5">
                           Structured
                         </span>
                       ) : (
-                        <span className="bg-gray-100 text-gray-600 text-xs rounded-full px-2 py-0.5">
+                        <span className="bg-zinc-100 text-muted-foreground text-xs rounded-full px-2 py-0.5">
                           Custom
                         </span>
                       )}
@@ -898,16 +898,16 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       }
                       rows={3}
                       disabled={service.isPushed}
-                      className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50"
+                      className="w-full border border-border rounded-md p-2 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 disabled:bg-muted/50"
                     />
 
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-zinc-400 mt-1">
                       {service.description.length} characters
                     </p>
 
                     <div className="mt-2">
                       {service.isPushed ? (
-                        <div className="flex items-center gap-1.5 text-blue-600 text-sm">
+                        <div className="flex items-center gap-1.5 text-primary text-sm">
                           <CheckCircle2 className="w-4 h-4" />
                           <span>
                             Pushed on{" "}
@@ -920,14 +920,14 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         </div>
                       ) : service.isApproved ? (
                         <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1.5 text-green-600 text-sm">
+                          <span className="flex items-center gap-1.5 text-emerald-600 text-sm">
                             <CheckCircle2 className="w-4 h-4" />
                             Approved
                           </span>
                           <button
                             type="button"
                             onClick={() => unapproveService(index)}
-                            className="text-gray-400 text-xs underline hover:text-gray-600"
+                            className="text-zinc-400 text-xs underline hover:text-muted-foreground"
                           >
                             Undo
                           </button>
@@ -936,7 +936,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         <button
                           type="button"
                           onClick={() => approveService(index)}
-                          className="flex items-center gap-1.5 bg-green-50 text-green-700 border border-green-200 rounded px-3 py-1 text-sm hover:bg-green-100"
+                          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100"
                         >
                           <CheckCircle2 className="w-4 h-4" />
                           Approve
@@ -952,7 +952,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     <button
                       type="button"
                       onClick={approveAll}
-                      className="w-full bg-green-50 text-green-700 border border-green-200 rounded-md px-4 py-2 text-sm font-medium hover:bg-green-100"
+                      className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-100"
                     >
                       Approve All Remaining ({unapprovedCount})
                     </button>
@@ -962,7 +962,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     type="button"
                     onClick={pushServices}
                     disabled={approvedCount === 0 || svcPushing}
-                    className="w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
+                    className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
                   >
                     {svcPushing ? (
                       <span className="flex items-center justify-center gap-2">
@@ -983,7 +983,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
               !svcShowCards &&
               currentGBPServices.length === 0 &&
               savedServices.length === 0 && (
-                <p className="text-sm text-gray-400 italic">
+                <p className="text-sm text-zinc-400 italic">
                   No services found. Click &quot;Re-optimize&quot; to select and
                   generate service descriptions.
                 </p>
@@ -994,16 +994,16 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
               !svcShowCards &&
               currentGBPServices.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">
+                  <p className="text-sm font-medium text-foreground mb-2">
                     Currently Live on Google
                   </p>
                   <div className="space-y-1">
                     {currentGBPServices.map((svc) => (
                       <div
                         key={svc.serviceTypeId}
-                        className="flex items-center gap-2 text-sm text-gray-600 py-1"
+                        className="flex items-center gap-2 text-sm text-muted-foreground py-1"
                       >
-                        <Wrench className="w-3.5 h-3.5 text-gray-400" />
+                        <Wrench className="w-3.5 h-3.5 text-zinc-400" />
                         {svc.displayName}
                       </div>
                     ))}

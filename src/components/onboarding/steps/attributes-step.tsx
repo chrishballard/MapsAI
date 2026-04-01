@@ -197,7 +197,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -205,11 +205,11 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
   if (noAttributes) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-center">
-        <SlidersHorizontal className="w-12 h-12 text-gray-300" />
-        <h3 className="text-lg font-semibold text-gray-900">
+        <SlidersHorizontal className="w-12 h-12 text-zinc-300" />
+        <h3 className="text-lg font-semibold text-foreground">
           No attributes available for this business category
         </h3>
-        <p className="text-sm text-gray-400">Auto-advancing...</p>
+        <p className="text-sm text-zinc-400">Auto-advancing...</p>
       </div>
     );
   }
@@ -220,13 +220,13 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
     <div className="space-y-6">
       {/* Success Banner */}
       {pushSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-green-800">
+            <p className="text-sm font-medium text-emerald-800">
               Attributes successfully pushed to Google Business Profile
             </p>
-            <p className="text-xs text-green-600 mt-0.5">
+            <p className="text-xs text-emerald-600 mt-0.5">
               Advancing to next step...
             </p>
           </div>
@@ -252,10 +252,10 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
 
       {/* Heading */}
       <div>
-        <h3 className="text-base font-semibold text-gray-900">
+        <h3 className="text-base font-semibold text-foreground">
           Business Attributes
         </h3>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Manage your Google Business Profile attributes. Toggle, select, or
           enter values, then push to Google.
         </p>
@@ -267,18 +267,18 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         return (
           <div
             key={group}
-            className="bg-white rounded-lg shadow-sm border border-gray-200"
+            className="bg-white rounded-lg border border-border card-shadow"
           >
             <button
               type="button"
               onClick={() => toggleGroup(group)}
               className="w-full flex items-center justify-between p-4 text-left"
             >
-              <span className="font-medium text-gray-900">{group}</span>
+              <span className="font-medium text-foreground">{group}</span>
               {isCollapsed ? (
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-zinc-400" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-zinc-400" />
               )}
             </button>
 
@@ -287,11 +287,11 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
                 {attrs.map((attr) => (
                   <div
                     key={attr.attributeId}
-                    className="py-3 border-b border-gray-100 last:border-b-0"
+                    className="py-3 border-b border-border last:border-b-0"
                   >
                     {attr.valueType === "BOOL" && (
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-700">
+                        <span className="text-sm text-foreground">
                           {attr.displayName}
                         </span>
                         <button
@@ -304,7 +304,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
                             })
                           }
                           className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${
-                            attr.boolValue ? "bg-blue-600" : "bg-gray-200"
+                            attr.boolValue ? "bg-primary" : "bg-zinc-200"
                           }`}
                         >
                           <span
@@ -320,7 +320,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
 
                     {attr.valueType === "ENUM" && (
                       <div>
-                        <span className="text-sm text-gray-700 block mb-2">
+                        <span className="text-sm text-foreground block mb-2">
                           {attr.displayName}
                         </span>
                         <div className="space-y-1.5">
@@ -339,9 +339,9 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
                                     enumValue: meta.value,
                                   })
                                 }
-                                className="w-4 h-4 text-blue-600"
+                                className="w-4 h-4 text-primary"
                               />
-                              <span className="text-sm text-gray-700">
+                              <span className="text-sm text-foreground">
                                 {meta.displayName}
                               </span>
                             </label>
@@ -352,7 +352,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
 
                     {attr.valueType === "REPEATED_ENUM" && (
                       <div>
-                        <span className="text-sm text-gray-700 block mb-2">
+                        <span className="text-sm text-foreground block mb-2">
                           {attr.displayName}
                         </span>
                         <div className="space-y-1.5">
@@ -380,9 +380,9 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
                                       repeatedEnumValues: next,
                                     });
                                   }}
-                                  className="w-4 h-4 text-blue-600 rounded"
+                                  className="w-4 h-4 text-primary rounded"
                                 />
-                                <span className="text-sm text-gray-700">
+                                <span className="text-sm text-foreground">
                                   {meta.displayName}
                                 </span>
                               </label>
@@ -394,7 +394,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
 
                     {attr.valueType === "URL" && (
                       <div>
-                        <label className="text-sm text-gray-700 block mb-1.5">
+                        <label className="text-sm text-foreground block mb-1.5">
                           {attr.displayName}
                         </label>
                         <input
@@ -406,7 +406,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
                               urlValue: e.target.value,
                             })
                           }
-                          className="w-full border border-gray-300 rounded-md p-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full border border-border rounded-lg p-2.5 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300"
                         />
                       </div>
                     )}
@@ -424,7 +424,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
           type="button"
           onClick={handlePush}
           disabled={pushing || pushSuccess}
-          className="w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
+          className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-lg px-6 py-2.5 font-medium text-sm"
         >
           {pushing ? (
             <span className="flex items-center justify-center gap-2">
@@ -438,7 +438,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         <button
           type="button"
           onClick={() => onComplete()}
-          className="w-full text-gray-500 underline text-sm py-2 mt-2"
+          className="w-full text-muted-foreground underline text-sm py-2 mt-2"
         >
           Skip for Now
         </button>

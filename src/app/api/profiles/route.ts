@@ -10,7 +10,7 @@ export async function GET() {
   }
 
   const profiles = await prisma.profile.findMany({
-    where: { isConnected: true },
+    where: { isConnected: true, isOnboarded: true },
     select: {
       id: true,
       name: true,

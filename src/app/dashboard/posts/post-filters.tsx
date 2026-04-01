@@ -37,7 +37,7 @@ export function PostFilters({
       <select
         value={currentProfileId || ""}
         onChange={(e) => updateFilter("profileId", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Profiles</option>
         {profiles.map((p) => (
@@ -50,7 +50,7 @@ export function PostFilters({
       <select
         value={currentStatus || ""}
         onChange={(e) => updateFilter("status", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Statuses</option>
         <option value="DRAFT">Draft</option>
@@ -63,7 +63,7 @@ export function PostFilters({
       <select
         value={currentType || ""}
         onChange={(e) => updateFilter("type", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Types</option>
         <option value="WHATS_NEW">What&apos;s New</option>

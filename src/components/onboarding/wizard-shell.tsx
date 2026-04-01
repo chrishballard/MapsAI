@@ -138,9 +138,9 @@ export function WizardShell({
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">{profileName}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{profileName}</h2>
         {saving && (
-          <span className="flex items-center gap-1 text-sm text-gray-400">
+          <span className="flex items-center gap-1 text-sm text-zinc-400">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving...
           </span>
@@ -155,7 +155,7 @@ export function WizardShell({
       />
 
       <div
-        className={`min-h-[400px] bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-6${
+        className={`min-h-[400px] bg-white rounded-lg border border-border card-shadow p-6 mt-6${
           currentStep === 0
             ? " flex flex-col items-center justify-center text-center"
             : ""
@@ -163,11 +163,11 @@ export function WizardShell({
       >
         {currentStep === 0 ? (
           <div className="flex flex-col items-center gap-3">
-            <CheckCircle2 className="w-12 h-12 text-green-500" />
-            <h3 className="text-lg font-semibold text-gray-900">
+            <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+            <h3 className="text-lg font-semibold text-foreground">
               Profile Selected
             </h3>
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               Profile selected: {profileName}
             </p>
           </div>
@@ -211,7 +211,7 @@ export function WizardShell({
             <button
               type="button"
               onClick={goBack}
-              className="flex items-center gap-1 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md px-4 py-2 text-sm"
+              className="flex items-center gap-1 border border-border text-foreground hover:bg-zinc-50 rounded-md px-4 py-2 text-sm"
             >
               <ChevronLeft className="w-4 h-4" />
               Back
@@ -222,7 +222,7 @@ export function WizardShell({
           <button
             type="button"
             onClick={completeCurrentStep}
-            className="flex items-center gap-1 bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 text-sm"
+            className="flex items-center gap-1 bg-primary text-white hover:bg-primary/90 rounded-md px-4 py-2 text-sm"
           >
             Continue
             <ChevronRight className="w-4 h-4" />

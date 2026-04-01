@@ -57,7 +57,7 @@ export function ReviewActions({ reviewId, responseStatus }: ReviewActionsProps) 
         <button
           onClick={handleApprove}
           disabled={loading !== null}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 border border-green-300 rounded-md hover:bg-green-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors disabled:opacity-50"
         >
           <Check size={14} />
           {loading === "approve" ? "Approving..." : "Approve"}
@@ -67,7 +67,7 @@ export function ReviewActions({ reviewId, responseStatus }: ReviewActionsProps) 
         <button
           onClick={handleRegenerate}
           disabled={loading !== null}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 rounded-md hover:bg-blue-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-700 border border-brand-300 rounded-lg hover:bg-brand-50 transition-colors disabled:opacity-50"
         >
           <RefreshCw size={14} />
           {loading === "regenerate" ? "Generating..." : responseStatus === null ? "Generate Response" : "Regenerate"}
@@ -103,7 +103,7 @@ export function SyncButton() {
     <button
       onClick={handleSync}
       disabled={loading}
-      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+      className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
     >
       <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
       {loading ? "Syncing..." : "Sync Reviews"}

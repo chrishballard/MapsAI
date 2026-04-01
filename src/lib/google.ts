@@ -1,7 +1,10 @@
 import { google } from "googleapis";
 import { prisma } from "./prisma";
 
-const SCOPES = ["https://www.googleapis.com/auth/business.manage"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/business.manage",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
 
 export function createOAuth2Client() {
   return new google.auth.OAuth2(

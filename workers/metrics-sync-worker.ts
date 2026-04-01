@@ -15,6 +15,7 @@ const worker = new Worker(
     const profiles = await prisma.profile.findMany({
       where: {
         isConnected: true,
+        isOnboarded: true,
         googleAccount: { isNot: undefined },
       },
       include: {

@@ -1,37 +1,17 @@
-import { MessageSquare, Star } from "lucide-react";
+import { MessageSquare, Star, ThumbsUp, Reply, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ReviewFilters } from "./review-filters";
-import { ReviewActions, SyncButton, BulkApproveButton } from "./review-actions";
+import {
+  ReviewActions,
+  SyncButton,
+  BulkApproveButton,
+} from "./review-actions";
 import { getSelectedProfileId } from "@/lib/selected-profile";
-
-const STATUS_BADGES: Record<string, { label: string; className: string }> = {
-  DRAFTED: {
-    label: "Drafted",
-    className: "bg-gray-100 text-gray-700",
-  },
-  APPROVED: {
-    label: "Approved",
-    className: "bg-blue-100 text-blue-700",
-  },
-  PUBLISHED: {
-    label: "Published",
-    className: "bg-green-100 text-green-700",
-  },
-  FAILED: {
-    label: "Failed",
-    className: "bg-red-100 text-red-700",
-  },
-};
-
-function formatDate(date: Date | null | undefined): string {
-  if (!date) return "";
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button-variants";
+import { MotionDiv } from "@/components/motion-wrapper";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -42,14 +22,45 @@ function StarRating({ rating }: { rating: number }) {
           size={14}
           className={
             star <= rating
-              ? "fill-yellow-400 text-yellow-400"
-              : "text-gray-300"
+              ? "fill-amber-400 text-amber-400"
+              : "text-zinc-200"
           }
         />
       ))}
     </div>
   );
 }
+
+function formatDate(date: Date | null | undefined): string {
+  if (!date) return "";
+  const now = new Date();
+  const d = new Date(date);
+  const diffMs = now.getTime() - d.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) return "Just now";
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+const STATUS_VARIANT: Record<string, "secondary" | "default" | "success" | "warning" | "error"> = {
+  DRAFTED: "warning",
+  APPROVED: "default",
+  PUBLISHED: "success",
+  FAILED: "error",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  DRAFTED: "Pending",
+  APPROVED: "Approved",
+  PUBLISHED: "Replied",
+  FAILED: "Failed",
+};
 
 interface ReviewsPageProps {
   searchParams: Promise<{
@@ -64,7 +75,6 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   const selectedProfileId = await getSelectedProfileId();
   const { profileId: filterProfileId, rating, responseStatus } = params;
 
-  // Use the global business selector, but allow page-level filter to override
   const profileId = filterProfileId || selectedProfileId;
 
   const where: Prisma.ReviewWhereInput = {};
@@ -72,7 +82,8 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   if (rating) where.rating = parseInt(rating, 10);
   if (responseStatus) {
     where.response = {
-      status: responseStatus as Prisma.EnumReviewResponseStatusFilter["equals"],
+      status:
+        responseStatus as Prisma.EnumReviewResponseStatusFilter["equals"],
     };
   }
 
@@ -86,13 +97,12 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
       orderBy: { reviewDate: "desc" },
     }),
     prisma.profile.findMany({
-      where: { isConnected: true },
+      where: { isConnected: true, isOnboarded: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
   ]);
 
-  // Count drafts for bulk approve
   const draftCount = reviews.filter(
     (r) => r.response?.status === "DRAFTED"
   ).length;
@@ -100,18 +110,26 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   const hasFilters = profileId || rating || responseStatus;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <MotionDiv
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="space-y-8"
+    >
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {reviews.length} review{reviews.length !== 1 ? "s" : ""}
-            {hasFilters ? " (filtered)" : ""}
+          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
+            Reviews
+          </h1>
+          <p className="text-zinc-500 mt-1">
+            Monitor and respond to your customer reviews.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {draftCount > 0 && profileId && (
-            <BulkApproveButton profileId={profileId} draftCount={draftCount} />
+            <BulkApproveButton
+              profileId={profileId}
+              draftCount={draftCount}
+            />
           )}
           <SyncButton />
         </div>
@@ -125,89 +143,102 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
       />
 
       {reviews.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
-          <MessageSquare size={48} className="text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-medium text-gray-900 mb-2">
+        <Card className="flex flex-col items-center text-center py-16">
+          <div className="w-16 h-16 bg-zinc-100 rounded-xl flex items-center justify-center text-zinc-400 mb-4">
+            <MessageSquare size={32} />
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-900 mb-2">
             No reviews synced
           </h2>
-          <p className="text-gray-500 mb-4">
+          <p className="text-zinc-500 mb-6 max-w-md">
             Sync reviews from your connected Google Business Profiles.
           </p>
           <SyncButton />
-        </div>
+        </Card>
       ) : (
         <div className="space-y-4">
-          {reviews.map((review) => {
-            const statusBadge = review.response
-              ? STATUS_BADGES[review.response.status] || STATUS_BADGES.DRAFTED
+          {reviews.map((review, i) => {
+            const responseStatus = review.response?.status;
+            const badgeVariant = responseStatus
+              ? STATUS_VARIANT[responseStatus] || "secondary"
+              : null;
+            const badgeLabel = responseStatus
+              ? STATUS_LABEL[responseStatus] || responseStatus
               : null;
 
             return (
-              <div
+              <MotionDiv
                 key={review.id}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <StarRating rating={review.rating} />
-                    <span className="text-sm font-medium text-gray-900">
-                      {review.reviewerName || "Anonymous"}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {formatDate(review.reviewDate)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600">
-                      {review.profile.name}
-                    </span>
-                    {statusBadge && (
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge.className}`}
-                      >
-                        {statusBadge.label}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <p className="text-sm text-gray-700 mb-4">
-                  {review.comment || (
-                    <span className="italic text-gray-400">
-                      Rating only - no comment
-                    </span>
-                  )}
-                </p>
-
-                {review.response && (
-                  <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
-                    <p className="text-xs font-medium text-gray-500 mb-1">
-                      AI Response Draft
-                    </p>
-                    <p className="text-sm text-gray-700">
-                      {review.response.content}
-                    </p>
-                    {review.response.status === "FAILED" &&
-                      review.response.errorMessage && (
-                        <p
-                          className="text-xs text-red-600 mt-2 truncate"
-                          title={review.response.errorMessage}
-                        >
-                          Error: {review.response.errorMessage}
+                <Card className="hover:border-brand-300 transition-colors group">
+                  <div className="flex items-start justify-between">
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 bg-zinc-100 rounded-full flex items-center justify-center text-zinc-500 font-bold shrink-0">
+                        {(review.reviewerName || "A")[0].toUpperCase()}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-zinc-900">
+                            {review.reviewerName || "Anonymous"}
+                          </span>
+                          <StarRating rating={review.rating} />
+                          <span className="text-xs text-zinc-400">
+                            {formatDate(review.reviewDate)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-zinc-600 leading-relaxed max-w-2xl">
+                          {review.comment ? (
+                            <>&ldquo;{review.comment}&rdquo;</>
+                          ) : (
+                            <span className="italic text-zinc-400">
+                              Rating only - no comment
+                            </span>
+                          )}
                         </p>
-                      )}
-                  </div>
-                )}
+                        <div className="flex items-center gap-4 mt-3">
+                          <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">
+                            {review.profile.name}
+                          </span>
+                          {badgeVariant && badgeLabel && (
+                            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                          )}
+                        </div>
 
-                <ReviewActions
-                  reviewId={review.id}
-                  responseStatus={review.response?.status || null}
-                />
-              </div>
+                        {review.response && (
+                          <div className="mt-3 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                            <p className="text-xs font-medium text-zinc-400 mb-1">
+                              AI Response
+                            </p>
+                            <p className="text-sm text-zinc-600">
+                              {review.response.content}
+                            </p>
+                            {review.response.status === "FAILED" &&
+                              review.response.errorMessage && (
+                                <p className="text-xs text-red-600 mt-2 truncate">
+                                  Error: {review.response.errorMessage}
+                                </p>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <ReviewActions
+                        reviewId={review.id}
+                        responseStatus={review.response?.status || null}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </MotionDiv>
             );
           })}
         </div>
       )}
-    </div>
+    </MotionDiv>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { ReoptimizeSection } from "./reoptimize-section";
+import { OffboardButton } from "./offboard-button";
 
 export default async function ProfileDetailPage({
   params,
@@ -96,40 +97,43 @@ export default async function ProfileDetailPage({
       {/* Back link */}
       <Link
         href="/dashboard/profiles"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
       >
         <ArrowLeft size={14} />
         Back to Profiles
       </Link>
 
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-lg border border-border card-shadow p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{profile.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">{profile.name}</h1>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               {profile.category && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-primary">
                   {profile.category}
                 </span>
               )}
               {profile.address && (
-                <span className="text-sm text-gray-500">{profile.address}</span>
+                <span className="text-sm text-muted-foreground">{profile.address}</span>
               )}
             </div>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               {profile.googleAccount.googleEmail}
             </p>
           </div>
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-              profile.isConnected
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {profile.isConnected ? "Connected" : "Disconnected"}
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                profile.isConnected
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-100 text-red-700"
+              }`}
+            >
+              {profile.isConnected ? "Connected" : "Disconnected"}
+            </span>
+            {profile.isOnboarded && <OffboardButton profileId={id} />}
+          </div>
         </div>
       </div>
 
@@ -140,15 +144,15 @@ export default async function ProfileDetailPage({
           return (
             <div
               key={stat.label}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-4"
+              className="bg-white rounded-lg border border-border card-shadow p-4"
             >
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-md">
-                  <Icon size={18} className="text-blue-600" />
+                <div className="p-2 bg-brand-50 rounded-md">
+                  <Icon size={18} className="text-primary" />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">{stat.label}</p>
-                  <p className="text-xl font-semibold text-gray-900">{stat.value}</p>
+                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  <p className="text-xl font-semibold text-foreground">{stat.value}</p>
                 </div>
               </div>
             </div>
@@ -157,26 +161,26 @@ export default async function ProfileDetailPage({
       </div>
 
       {/* Posts Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Posts</h2>
+      <div className="bg-white rounded-lg border border-border card-shadow mb-6">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-lg font-medium text-foreground">Posts</h2>
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard/posts/generate"
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              className="text-sm text-primary hover:text-primary/80 font-medium"
             >
               Generate Posts
             </Link>
             <Link
               href={`/dashboard/posts?profileId=${id}`}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
               View All
             </Link>
           </div>
         </div>
         {recentPosts.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-500">
+          <div className="px-6 py-8 text-center text-sm text-muted-foreground">
             No posts yet. Generate your first post!
           </div>
         ) : (
@@ -184,26 +188,26 @@ export default async function ProfileDetailPage({
             {recentPosts.map((post) => (
               <div
                 key={post.id}
-                className="border border-gray-200 rounded-lg p-4"
+                className="border border-border rounded-lg p-4"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     {post.type.replace("_", " ")}
                   </span>
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       post.status === "PUBLISHED"
-                        ? "bg-green-100 text-green-700"
+                        ? "bg-emerald-50 text-emerald-700"
                         : post.status === "DRAFT"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-gray-100 text-gray-700"
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-zinc-100 text-foreground"
                     }`}
                   >
                     {post.status}
                   </span>
                 </div>
-                <p className="text-sm text-gray-900 line-clamp-3">{post.content}</p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-sm text-foreground line-clamp-3">{post.content}</p>
+                <p className="text-xs text-zinc-400 mt-2">
                   {post.createdAt.toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
@@ -217,27 +221,27 @@ export default async function ProfileDetailPage({
       </div>
 
       {/* Reviews Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Reviews</h2>
+      <div className="bg-white rounded-lg border border-border card-shadow mb-6">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-lg font-medium text-foreground">Reviews</h2>
           <Link
             href={`/dashboard/reviews?profileId=${id}`}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             View All
           </Link>
         </div>
         {recentReviews.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-500">
+          <div className="px-6 py-8 text-center text-sm text-muted-foreground">
             No reviews synced yet.
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-border">
             {recentReviews.map((review) => (
               <div key={review.id} className="px-6 py-4">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className="text-sm font-medium text-foreground">
                       {review.reviewerName || "Anonymous"}
                     </span>
                     <div className="flex items-center gap-0.5">
@@ -247,14 +251,14 @@ export default async function ProfileDetailPage({
                           size={12}
                           className={
                             i < review.rating
-                              ? "text-yellow-400 fill-yellow-400"
-                              : "text-gray-300"
+                              ? "text-amber-400 fill-amber-400"
+                              : "text-zinc-300"
                           }
                         />
                       ))}
                     </div>
                   </div>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-zinc-400">
                     {review.reviewDate.toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
@@ -262,14 +266,14 @@ export default async function ProfileDetailPage({
                   </span>
                 </div>
                 {review.comment && (
-                  <p className="text-sm text-gray-600 line-clamp-2">{review.comment}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-2">{review.comment}</p>
                 )}
                 {review.response && (
-                  <div className="mt-2 pl-3 border-l-2 border-blue-200">
-                    <p className="text-xs text-gray-500">
+                  <div className="mt-2 pl-3 border-l-2 border-brand-200">
+                    <p className="text-xs text-muted-foreground">
                       AI Response ({review.response.status})
                     </p>
-                    <p className="text-sm text-gray-600 line-clamp-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2">
                       {review.response.content}
                     </p>
                   </div>
@@ -282,46 +286,46 @@ export default async function ProfileDetailPage({
 
       {/* Metrics Section */}
       {hasMetrics && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-medium text-gray-900">
+        <div className="bg-white rounded-lg border border-border card-shadow">
+          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+            <h2 className="text-lg font-medium text-foreground">
               This Month&apos;s Metrics
             </h2>
             <Link
               href="/dashboard/reports"
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
               View Reports
             </Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-6">
             <div className="text-center">
-              <BarChart3 size={20} className="text-blue-500 mx-auto mb-1" />
-              <p className="text-xl font-semibold text-gray-900">
+              <BarChart3 size={20} className="text-primary mx-auto mb-1" />
+              <p className="text-xl font-semibold text-foreground">
                 {totalImpressions.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500">Impressions</p>
+              <p className="text-xs text-muted-foreground">Impressions</p>
             </div>
             <div className="text-center">
-              <MousePointerClick size={20} className="text-green-500 mx-auto mb-1" />
-              <p className="text-xl font-semibold text-gray-900">
+              <MousePointerClick size={20} className="text-emerald-500 mx-auto mb-1" />
+              <p className="text-xl font-semibold text-foreground">
                 {totalClicks.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500">Website Clicks</p>
+              <p className="text-xs text-muted-foreground">Website Clicks</p>
             </div>
             <div className="text-center">
               <Phone size={20} className="text-purple-500 mx-auto mb-1" />
-              <p className="text-xl font-semibold text-gray-900">
+              <p className="text-xl font-semibold text-foreground">
                 {totalCalls.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500">Calls</p>
+              <p className="text-xs text-muted-foreground">Calls</p>
             </div>
             <div className="text-center">
               <MapPin size={20} className="text-orange-500 mx-auto mb-1" />
-              <p className="text-xl font-semibold text-gray-900">
+              <p className="text-xl font-semibold text-foreground">
                 {totalDirections.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500">Directions</p>
+              <p className="text-xs text-muted-foreground">Directions</p>
             </div>
           </div>
         </div>
@@ -330,7 +334,7 @@ export default async function ProfileDetailPage({
       {/* Re-optimize Section (only for onboarded profiles) */}
       {onboardingProgress?.isComplete && (
         <div className="mt-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Re-optimize</h2>
+          <h2 className="text-lg font-medium text-foreground mb-4">Re-optimize</h2>
           <ReoptimizeSection profileId={id} />
         </div>
       )}

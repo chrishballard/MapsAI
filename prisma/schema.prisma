@@ -54,6 +54,7 @@ model Profile {
   category        String?
   websiteUrl      String?
   isConnected     Boolean        @default(true)
+  isOnboarded     Boolean        @default(false)
   autoApproveReviews Boolean     @default(false)
   postFrequency      Int         @default(4)
   createdAt       DateTime       @default(now())

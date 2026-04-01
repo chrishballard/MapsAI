@@ -40,9 +40,9 @@ export function StepIndicator({
                 onClick={() => isCompleted && onStepClick(index)}
                 className={`
                   w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
-                  ${isCompleted ? "bg-green-500 text-white cursor-pointer hover:bg-green-600" : ""}
-                  ${isCurrent ? "bg-blue-600 text-white ring-2 ring-blue-200" : ""}
-                  ${isFuture ? "bg-gray-200 text-gray-400 cursor-default opacity-50" : ""}
+                  ${isCompleted ? "bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600" : ""}
+                  ${isCurrent ? "bg-primary text-white ring-2 ring-brand-100" : ""}
+                  ${isFuture ? "bg-zinc-200 text-zinc-400 cursor-default opacity-50" : ""}
                 `}
                 disabled={isFuture}
               >
@@ -55,10 +55,10 @@ export function StepIndicator({
               <span
                 className={`hidden sm:block text-xs mt-1 text-center whitespace-nowrap ${
                   isCurrent
-                    ? "text-blue-600 font-medium"
+                    ? "text-primary font-medium"
                     : isCompleted
-                    ? "text-green-600"
-                    : "text-gray-400"
+                    ? "text-emerald-600"
+                    : "text-zinc-400"
                 }`}
               >
                 {step.shortLabel}
@@ -67,7 +67,7 @@ export function StepIndicator({
             {index < steps.length - 1 && (
               <div
                 className={`flex-1 h-0.5 mx-2 ${
-                  completedSteps.includes(index) ? "bg-green-500" : "bg-gray-200"
+                  completedSteps.includes(index) ? "bg-emerald-500" : "bg-zinc-200"
                 }`}
               />
             )}

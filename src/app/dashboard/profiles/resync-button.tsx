@@ -30,7 +30,7 @@ export function ResyncButton() {
     <button
       onClick={handleSync}
       disabled={syncing}
-      className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+      className="inline-flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted/50 transition-colors disabled:opacity-50"
     >
       <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
       {syncing ? "Syncing..." : "Resync Profiles"}

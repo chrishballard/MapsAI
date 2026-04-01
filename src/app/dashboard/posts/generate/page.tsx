@@ -116,13 +116,13 @@ export default function GeneratePostsPage() {
       <div className="flex items-center gap-3 mb-6">
         <Link
           href="/dashboard/posts"
-          className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+          className="p-2 text-zinc-400 hover:text-muted-foreground transition-colors"
         >
           <ArrowLeft size={20} />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Generate Posts</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Generate Posts</h1>
+          <p className="text-sm text-zinc-500 mt-1">
             Select profiles to generate AI-powered monthly post drafts
           </p>
         </div>
@@ -136,11 +136,11 @@ export default function GeneratePostsPage() {
       )}
 
       {results && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
           <div className="flex items-start gap-3">
-            <Check size={20} className="text-green-500 mt-0.5 shrink-0" />
+            <Check size={20} className="text-emerald-500 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-green-800">
+              <p className="text-sm font-medium text-emerald-800">
                 Generated {totalGenerated} posts for {successCount} profile
                 {successCount !== 1 ? "s" : ""}
               </p>
@@ -157,7 +157,7 @@ export default function GeneratePostsPage() {
               )}
               <Link
                 href="/dashboard/posts"
-                className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-green-700 hover:text-green-800"
+                className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-emerald-700 hover:text-emerald-800"
               >
                 View Posts
                 <ArrowLeft size={14} className="rotate-180" />
@@ -168,20 +168,20 @@ export default function GeneratePostsPage() {
       )}
 
       {loading ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+        <div className="bg-white rounded-lg border border-border card-shadow p-8 text-center">
           <Loader2
             size={32}
-            className="text-gray-300 mx-auto mb-4 animate-spin"
+            className="text-zinc-300 mx-auto mb-4 animate-spin"
           />
-          <p className="text-gray-500">Loading profiles...</p>
+          <p className="text-muted-foreground">Loading profiles...</p>
         </div>
       ) : profiles.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
-          <AlertCircle size={48} className="text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-medium text-gray-900 mb-2">
+        <div className="bg-white rounded-lg border border-border card-shadow p-8 text-center">
+          <AlertCircle size={48} className="text-zinc-300 mx-auto mb-4" />
+          <h2 className="text-lg font-medium text-foreground mb-2">
             No profiles available
           </h2>
-          <p className="text-gray-500">
+          <p className="text-muted-foreground">
             Connect a Google account and sync profiles first.
           </p>
         </div>
@@ -191,19 +191,19 @@ export default function GeneratePostsPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={selectAll}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                className="text-sm text-primary hover:text-primary/80 font-medium"
               >
                 Select All
               </button>
-              <span className="text-gray-300">|</span>
+              <span className="text-zinc-300">|</span>
               <button
                 onClick={deselectAll}
-                className="text-sm text-gray-500 hover:text-gray-700 font-medium"
+                className="text-sm text-muted-foreground hover:text-foreground font-medium"
               >
                 Deselect All
               </button>
             </div>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-muted-foreground">
               {selectedIds.size} selected
             </span>
           </div>
@@ -214,22 +214,22 @@ export default function GeneratePostsPage() {
                 key={profile.id}
                 className={`flex items-center gap-3 p-4 bg-white rounded-lg border cursor-pointer transition-colors ${
                   selectedIds.has(profile.id)
-                    ? "border-blue-300 bg-blue-50"
-                    : "border-gray-200 hover:border-gray-300"
+                    ? "border-brand-300 bg-brand-50"
+                    : "border-border hover:border-border"
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={selectedIds.has(profile.id)}
                   onChange={() => toggleProfile(profile.id)}
-                  className="w-4 h-4 text-blue-600 rounded border-gray-300"
+                  className="w-4 h-4 text-primary rounded border-border"
                 />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-sm font-medium text-foreground">
                     {profile.name}
                   </p>
                   {profile.category && (
-                    <p className="text-xs text-gray-500">{profile.category}</p>
+                    <p className="text-xs text-muted-foreground">{profile.category}</p>
                   )}
                 </div>
               </label>
@@ -239,7 +239,7 @@ export default function GeneratePostsPage() {
           <button
             onClick={handleGenerate}
             disabled={selectedIds.size === 0 || generating}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-md font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {generating ? (
               <>

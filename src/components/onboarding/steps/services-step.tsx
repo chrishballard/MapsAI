@@ -27,6 +27,7 @@ interface AvailableService {
   displayName: string;
 }
 
+
 interface ServicesStepProps {
   profileId: string;
   onComplete: () => Promise<void>;
@@ -52,6 +53,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const [customServices, setCustomServices] = useState<string[]>([]);
 
   const hasInitialized = useRef(false);
+  const serviceTypeIdMap = useRef(new Map<string, string>());
 
   // On mount: fetch saved services and available GBP services
   useEffect(() => {
@@ -80,6 +82,11 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           const available: AvailableService[] = data.availableServices ?? [];
 
           setAvailableServices(available);
+
+          // Build serviceTypeId lookup
+          for (const a of available) {
+            serviceTypeIdMap.current.set(a.displayName, a.serviceTypeId);
+          }
 
           if (saved.length > 0) {
             // Return visit: show service cards
@@ -330,7 +337,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -340,22 +347,22 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-4">
-          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-          <p className="text-sm text-gray-600">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">
             Generating descriptions for {totalSelected} services...
           </p>
         </div>
         {Array.from({ length: Math.min(totalSelected, 5) }).map((_, i) => (
           <div
             key={i}
-            className="bg-white border border-gray-200 rounded-lg p-4"
+            className="bg-white border border-border rounded-lg p-4"
           >
             <div className="animate-pulse space-y-3">
-              <div className="h-4 bg-gray-200 rounded w-1/3" />
+              <div className="h-4 bg-zinc-200 rounded w-1/3" />
               <div className="space-y-2">
-                <div className="h-3 bg-gray-200 rounded w-full" />
-                <div className="h-3 bg-gray-200 rounded w-5/6" />
-                <div className="h-3 bg-gray-200 rounded w-4/6" />
+                <div className="h-3 bg-zinc-200 rounded w-full" />
+                <div className="h-3 bg-zinc-200 rounded w-5/6" />
+                <div className="h-3 bg-zinc-200 rounded w-4/6" />
               </div>
             </div>
           </div>
@@ -380,12 +387,12 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
 
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Wrench className="w-5 h-5 text-gray-700" />
-            <h3 className="text-base font-semibold text-gray-900">
+            <Wrench className="w-5 h-5 text-foreground" />
+            <h3 className="text-base font-semibold text-foreground">
               Available Services
             </h3>
           </div>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-muted-foreground mb-4">
             Select the services your business offers. We&apos;ll generate
             AI-optimized descriptions for each.
           </p>
@@ -395,22 +402,22 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               {availableServices.map((svc) => (
                 <label
                   key={svc.serviceTypeId}
-                  className="flex items-center gap-3 p-3 rounded-md border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                  className="flex items-center gap-3 p-3 rounded-md border border-border hover:bg-zinc-50 cursor-pointer"
                 >
                   <input
                     type="checkbox"
                     checked={checkedServices.has(svc.displayName)}
                     onChange={() => toggleService(svc.displayName)}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-brand-50"
                   />
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm text-foreground">
                     {svc.displayName}
                   </span>
                 </label>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 italic">
+            <p className="text-sm text-zinc-400 italic">
               No structured services found for this business category. You can
               add custom services below.
             </p>
@@ -419,10 +426,10 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
 
         {/* Custom Service Input */}
         <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-1">
+          <h4 className="text-sm font-medium text-foreground mb-1">
             Add a custom service
           </h4>
-          <p className="text-xs text-gray-500 mb-2">
+          <p className="text-xs text-muted-foreground mb-2">
             For niche services not in the list above
           </p>
           <div className="flex gap-2">
@@ -437,13 +444,13 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
                 }
               }}
               placeholder="e.g., Emergency Board-Up Service"
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-900 flex-1"
+              className="border border-border rounded-md px-3 py-1.5 text-sm text-foreground flex-1"
             />
             <button
               type="button"
               onClick={addCustomService}
               disabled={!customServiceInput.trim()}
-              className="flex items-center gap-1 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
+              className="flex items-center gap-1 border border-border text-foreground hover:bg-zinc-50 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm"
             >
               <Plus className="w-4 h-4" />
               Add
@@ -456,13 +463,13 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               {customServices.map((name) => (
                 <span
                   key={name}
-                  className="bg-gray-100 text-gray-700 rounded-full px-3 py-1.5 text-sm flex items-center gap-1.5"
+                  className="bg-zinc-100 text-foreground rounded-full px-3 py-1.5 text-sm flex items-center gap-1.5"
                 >
                   {name}
                   <button
                     type="button"
                     onClick={() => removeCustomService(name)}
-                    className="text-gray-400 hover:text-red-500"
+                    className="text-zinc-400 hover:text-red-500"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -477,12 +484,12 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           type="button"
           onClick={handleGenerate}
           disabled={totalSelected === 0}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
+          className="w-full flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
         >
           <Sparkles className="w-4 h-4" />
           Generate Descriptions
           {totalSelected > 0 && (
-            <span className="text-blue-200">({totalSelected})</span>
+            <span className="text-brand-200">({totalSelected})</span>
           )}
         </button>
       </div>
@@ -494,13 +501,13 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
     <div className="space-y-4">
       {/* Success Banner */}
       {pushSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-green-800">
+            <p className="text-sm font-medium text-emerald-800">
               Services successfully pushed to Google Business Profile
             </p>
-            <p className="text-xs text-green-600 mt-0.5">
+            <p className="text-xs text-emerald-600 mt-0.5">
               Advancing to next step...
             </p>
           </div>
@@ -526,14 +533,14 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
 
       {/* Running Counter */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           {approvedCount} of {services.length} services approved
         </p>
         {!allPushed && (
           <button
             type="button"
             onClick={handleRegenerate}
-            className="flex items-center gap-1.5 text-gray-600 border border-gray-300 hover:bg-gray-50 rounded-md px-3 py-1.5 text-sm"
+            className="flex items-center gap-1.5 text-muted-foreground border border-border hover:bg-zinc-50 rounded-md px-3 py-1.5 text-sm"
           >
             <RotateCcw className="w-4 h-4" />
             Regenerate All
@@ -545,25 +552,25 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
       {services.map((service, index) => (
         <div
           key={service.serviceName}
-          className={`bg-white border border-gray-200 rounded-lg p-4${
+          className={`bg-white border border-border rounded-lg p-4${
             service.isPushed
-              ? " border-l-4 border-l-blue-500"
+              ? " border-l-4 border-l-primary"
               : service.isApproved
-              ? " border-l-4 border-l-green-500"
+              ? " border-l-4 border-l-emerald-500"
               : ""
           }`}
         >
           {/* Top Row: Name + Badge */}
           <div className="flex items-center gap-2 mb-2">
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-foreground">
               {service.serviceName}
             </span>
             {service.isStructured ? (
-              <span className="bg-blue-100 text-blue-700 text-xs rounded-full px-2 py-0.5">
+              <span className="bg-brand-100 text-primary text-xs rounded-full px-2 py-0.5">
                 Structured
               </span>
             ) : (
-              <span className="bg-gray-100 text-gray-600 text-xs rounded-full px-2 py-0.5">
+              <span className="bg-zinc-100 text-muted-foreground text-xs rounded-full px-2 py-0.5">
                 Custom
               </span>
             )}
@@ -575,18 +582,18 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             onChange={(e) => updateDescription(index, e.target.value)}
             rows={3}
             disabled={service.isPushed}
-            className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50"
+            className="w-full border border-border rounded-md p-2 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 disabled:bg-muted/50"
           />
 
           {/* Character Count */}
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-zinc-400 mt-1">
             {service.description.length} characters
           </p>
 
           {/* Action Buttons */}
           <div className="mt-2">
             {service.isPushed ? (
-              <div className="flex items-center gap-1.5 text-blue-600 text-sm">
+              <div className="flex items-center gap-1.5 text-primary text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>
                   Pushed on{" "}
@@ -597,14 +604,14 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               </div>
             ) : service.isApproved ? (
               <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 text-green-600 text-sm">
+                <span className="flex items-center gap-1.5 text-emerald-600 text-sm">
                   <CheckCircle2 className="w-4 h-4" />
                   Approved
                 </span>
                 <button
                   type="button"
                   onClick={() => unapproveService(index)}
-                  className="text-gray-400 text-xs underline hover:text-gray-600"
+                  className="text-zinc-400 text-xs underline hover:text-muted-foreground"
                 >
                   Undo
                 </button>
@@ -613,7 +620,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               <button
                 type="button"
                 onClick={() => approveService(index)}
-                className="flex items-center gap-1.5 bg-green-50 text-green-700 border border-green-200 rounded px-3 py-1 text-sm hover:bg-green-100"
+                className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Approve
@@ -630,7 +637,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           <button
             type="button"
             onClick={approveAll}
-            className="w-full bg-green-50 text-green-700 border border-green-200 rounded-md px-4 py-2 text-sm font-medium hover:bg-green-100"
+            className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-4 py-2 text-sm font-medium hover:bg-emerald-100"
           >
             Approve All Remaining ({unapprovedCount})
           </button>
@@ -642,7 +649,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             type="button"
             onClick={handlePush}
             disabled={approvedCount === 0 || pushing}
-            className="w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
+            className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
           >
             {pushing ? (
               <span className="flex items-center justify-center gap-2">
@@ -660,7 +667,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           <button
             type="button"
             onClick={onComplete}
-            className="w-full border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md py-2.5 font-medium text-sm"
+            className="w-full border border-border text-foreground hover:bg-zinc-50 rounded-md py-2.5 font-medium text-sm"
           >
             Continue
           </button>
@@ -671,7 +678,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           <button
             type="button"
             onClick={handleSkip}
-            className="w-full text-gray-500 underline text-sm py-1"
+            className="w-full text-muted-foreground underline text-sm py-1"
           >
             Skip for Now
           </button>

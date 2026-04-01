@@ -60,6 +60,30 @@ function titleCase(str: string): string {
     .join(" ");
 }
 
+export async function fetchCategoryId(params: {
+  googleAccountId: string;
+  locationName: string;
+}): Promise<string | null> {
+  try {
+    const oauth2Client = await createGoogleClient(params.googleAccountId);
+
+    const response = await oauth2Client.request<{
+      categories?: {
+        primaryCategory?: {
+          name?: string;
+        };
+      };
+    }>({
+      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
+      method: "GET",
+    });
+
+    return response.data.categories?.primaryCategory?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchStructuredServices(params: {
   googleAccountId: string;
   locationName: string;
@@ -67,6 +91,63 @@ export async function fetchStructuredServices(params: {
   try {
     const oauth2Client = await createGoogleClient(params.googleAccountId);
 
+    // First: get the location's primary category
+    const locationResponse = await oauth2Client.request<{
+      categories?: {
+        primaryCategory?: {
+          name?: string;
+          displayName?: string;
+          serviceTypes?: Array<{
+            serviceTypeId: string;
+            displayName: string;
+          }>;
+        };
+      };
+    }>({
+      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
+      method: "GET",
+    });
+
+    const primaryCategory = locationResponse.data.categories?.primaryCategory;
+
+    // If category has serviceTypes directly, use those
+    if (primaryCategory?.serviceTypes && primaryCategory.serviceTypes.length > 0) {
+      return primaryCategory.serviceTypes.map((st) => ({
+        serviceTypeId: st.serviceTypeId,
+        displayName: st.displayName,
+      }));
+    }
+
+    // Fallback: try to get service types from categories batchGet
+    if (primaryCategory?.name) {
+      try {
+        const catResponse = await oauth2Client.request<{
+          categories?: Array<{
+            name: string;
+            displayName: string;
+            serviceTypes?: Array<{
+              serviceTypeId: string;
+              displayName: string;
+            }>;
+          }>;
+        }>({
+          url: `https://mybusinessbusinessinformation.googleapis.com/v1/categories:batchGet?names=${encodeURIComponent(primaryCategory.name)}&languageCode=en`,
+          method: "GET",
+        });
+
+        const category = catResponse.data.categories?.[0];
+        if (category?.serviceTypes && category.serviceTypes.length > 0) {
+          return category.serviceTypes.map((st) => ({
+            serviceTypeId: st.serviceTypeId,
+            displayName: st.displayName,
+          }));
+        }
+      } catch {
+        // batchGet failed, continue to fallback
+      }
+    }
+
+    // Final fallback: read currently set services
     const response = await oauth2Client.request<{
       serviceItems?: Array<{
         structuredServiceItem?: {
@@ -84,10 +165,15 @@ export async function fetchStructuredServices(params: {
 
     return serviceItems
       .filter((item) => item.structuredServiceItem)
-      .map((item) => ({
-        serviceTypeId: item.structuredServiceItem!.serviceTypeId,
-        displayName: titleCase(item.structuredServiceItem!.serviceTypeId),
-      }));
+      .map((item) => {
+        const rawId = item.structuredServiceItem!.serviceTypeId;
+        const lastSegment = rawId.includes("/") ? rawId.split("/").pop()! : rawId;
+        const displayName = lastSegment.replace(/_/g, " ");
+        return {
+          serviceTypeId: rawId,
+          displayName,
+        };
+      });
   } catch {
     return [];
   }
@@ -131,6 +217,14 @@ export async function pushServicesToGBP(params: {
 
     return { success: true };
   } catch (error: unknown) {
+    // Log the full Google API error for debugging
+    const googleError = error as { response?: { data?: unknown; status?: number }; message?: string };
+    console.error("[SERVICE_PUSH_ERROR] Full error:", JSON.stringify({
+      status: googleError.response?.status,
+      data: googleError.response?.data,
+      message: googleError.message,
+    }, null, 2));
+
     const message =
       error instanceof Error
         ? error.message
@@ -175,16 +269,50 @@ export interface GBPAttribute {
 export async function fetchAttributes(params: {
   googleAccountId: string;
   locationName: string;
+  categoryId?: string;
 }): Promise<{ attributes: GBPAttribute[]; error?: string }> {
   try {
     const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-    const response = await oauth2Client.request<{
+    // Fetch the location with attributes readMask to get current attribute values
+    // Then fetch available attribute metadata for the category
+    const locationResponse = await oauth2Client.request<{
       attributes?: Array<GBPAttributeValue & GBPAttributeMetadata>;
     }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}/attributes`,
+      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=attributes`,
       method: "GET",
     });
+
+    // Also try to get all available attributes via the location's attributes endpoint
+    let metadataAttributes: Array<GBPAttributeValue & GBPAttributeMetadata> = [];
+    try {
+      const metadataResponse = await oauth2Client.request<{
+        attributes?: Array<GBPAttributeValue & GBPAttributeMetadata>;
+      }>({
+        url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}/attributes`,
+        method: "GET",
+      });
+      metadataAttributes = metadataResponse.data.attributes || [];
+    } catch {
+      // Metadata fetch failed, continue with location attributes only
+    }
+
+    // Merge: use metadata attributes as the base, overlay with location values
+    const locationAttrs = locationResponse.data.attributes || [];
+    const locationAttrMap = new Map(
+      locationAttrs.map((a) => [a.attributeId, a])
+    );
+
+    // Combine both sources, preferring location values
+    const allAttrMap = new Map<string, GBPAttributeValue & GBPAttributeMetadata>();
+    for (const attr of metadataAttributes) {
+      allAttrMap.set(attr.attributeId, attr);
+    }
+    for (const attr of locationAttrs) {
+      allAttrMap.set(attr.attributeId, { ...allAttrMap.get(attr.attributeId), ...attr });
+    }
+
+    const response = { data: { attributes: Array.from(allAttrMap.values()) } };
 
     const rawAttributes = response.data.attributes || [];
 

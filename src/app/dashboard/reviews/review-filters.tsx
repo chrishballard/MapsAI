@@ -37,7 +37,7 @@ export function ReviewFilters({
       <select
         value={currentProfileId || ""}
         onChange={(e) => updateFilter("profileId", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Profiles</option>
         {profiles.map((p) => (
@@ -50,7 +50,7 @@ export function ReviewFilters({
       <select
         value={currentRating || ""}
         onChange={(e) => updateFilter("rating", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Ratings</option>
         <option value="5">5 Stars</option>
@@ -63,7 +63,7 @@ export function ReviewFilters({
       <select
         value={currentResponseStatus || ""}
         onChange={(e) => updateFilter("responseStatus", e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-md text-sm text-gray-700 bg-white"
+        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
         <option value="">All Statuses</option>
         <option value="DRAFTED">Drafted</option>

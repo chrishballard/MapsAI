@@ -19,7 +19,7 @@ export interface GBPReviewReply {
 }
 
 export interface GBPReview {
-  name: string; // Full resource name: accounts/.../locations/.../reviews/...
+  name: string; // Full resource name
   reviewId: string;
   reviewer: GBPReviewer;
   starRating: string; // "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE"
@@ -45,23 +45,40 @@ export async function fetchReviews(
   const oauth2Client = await createGoogleClient(googleAccountId);
 
   const parent = `${accountResourceName}/${locationName}`;
-  let url = `https://mybusiness.googleapis.com/v4/${parent}/reviews?pageSize=50&orderBy=updateTime+desc`;
 
-  if (pageToken) {
-    url += `&pageToken=${encodeURIComponent(pageToken)}`;
+  // Try the v1 mybusinessreviews API first, then fall back to legacy v4
+  const endpoints = [
+    `https://mybusiness.googleapis.com/v4/${parent}/reviews`,
+    `https://mybusinessreviews.googleapis.com/v1/${parent}/reviews`,
+  ];
+
+  let lastError: unknown;
+
+  for (const baseUrl of endpoints) {
+    try {
+      let url = `${baseUrl}?pageSize=50&orderBy=updateTime+desc`;
+      if (pageToken) {
+        url += `&pageToken=${encodeURIComponent(pageToken)}`;
+      }
+
+      const response = await oauth2Client.request<FetchReviewsResponse>({
+        url,
+        method: "GET",
+      });
+
+      return {
+        reviews: response.data.reviews || [],
+        nextPageToken: response.data.nextPageToken,
+        totalReviewCount: response.data.totalReviewCount,
+        averageRating: response.data.averageRating,
+      };
+    } catch (err) {
+      lastError = err;
+      console.warn(`[google-reviews] Failed with endpoint ${baseUrl}, trying next...`);
+    }
   }
 
-  const response = await oauth2Client.request<FetchReviewsResponse>({
-    url,
-    method: "GET",
-  });
-
-  return {
-    reviews: response.data.reviews || [],
-    nextPageToken: response.data.nextPageToken,
-    totalReviewCount: response.data.totalReviewCount,
-    averageRating: response.data.averageRating,
-  };
+  throw lastError;
 }
 
 export async function publishReviewReply(
@@ -71,11 +88,26 @@ export async function publishReviewReply(
 ): Promise<void> {
   const oauth2Client = await createGoogleClient(googleAccountId);
 
-  const url = `https://mybusiness.googleapis.com/v4/${reviewResourceName}/reply`;
+  // Try both endpoints
+  const endpoints = [
+    `https://mybusiness.googleapis.com/v4/${reviewResourceName}/reply`,
+    `https://mybusinessreviews.googleapis.com/v1/${reviewResourceName}/reply`,
+  ];
 
-  await oauth2Client.request({
-    url,
-    method: "PUT",
-    data: { comment },
-  });
+  let lastError: unknown;
+
+  for (const url of endpoints) {
+    try {
+      await oauth2Client.request({
+        url,
+        method: "PUT",
+        data: { comment },
+      });
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 }

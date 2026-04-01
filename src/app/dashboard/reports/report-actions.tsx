@@ -57,15 +57,15 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-6">
-      <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+    <div className="bg-white rounded-lg shadow-sm border border-border p-5 mb-6">
+      <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
         Generate Report
       </h2>
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
           <label
             htmlFor="profile-select"
-            className="block text-sm text-gray-600 mb-1"
+            className="block text-sm text-muted-foreground mb-1"
           >
             Profile
           </label>
@@ -73,7 +73,7 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
             id="profile-select"
             value={profileId}
             onChange={(e) => setProfileId(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-brand-50 focus:border-brand-300"
           >
             <option value="">All Profiles</option>
             {profiles.map((p) => (
@@ -87,7 +87,7 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
         <div className="min-w-[160px]">
           <label
             htmlFor="month-select"
-            className="block text-sm text-gray-600 mb-1"
+            className="block text-sm text-muted-foreground mb-1"
           >
             Month
           </label>
@@ -96,14 +96,14 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-brand-50 focus:border-brand-300"
           />
         </div>
 
         <button
           onClick={handleGenerate}
           disabled={loading || profiles.length === 0}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading && <Loader2 size={16} className="mr-2 animate-spin" />}
           Generate Report
@@ -111,7 +111,7 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
       </div>
 
       {message && (
-        <p className="mt-3 text-sm text-gray-600">{message}</p>
+        <p className="mt-3 text-sm text-muted-foreground">{message}</p>
       )}
     </div>
   );
@@ -155,7 +155,7 @@ export function DownloadButton({ reportId }: DownloadButtonProps) {
     <button
       onClick={handleDownload}
       disabled={loading}
-      className="inline-flex items-center px-3 py-1.5 border border-blue-600 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50"
+      className="inline-flex items-center px-3 py-1.5 border border-primary text-primary rounded-lg text-sm font-medium hover:bg-brand-50 transition-colors disabled:opacity-50"
     >
       {loading ? (
         <Loader2 size={14} className="mr-1.5 animate-spin" />

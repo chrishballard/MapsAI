@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: { id: true, googleAccountId: true, locationName: true },
+    select: { id: true, googleAccountId: true, locationName: true, category: true },
   });
 
   if (!profile) {
@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
   const result = await fetchAttributes({
     googleAccountId: profile.googleAccountId,
     locationName: profile.locationName,
+    categoryId: profile.category ?? undefined,
   });
 
   if (result.attributes.length === 0 && !result.error) {
