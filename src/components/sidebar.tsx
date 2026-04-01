@@ -10,7 +10,6 @@ import {
   Settings,
   LayoutDashboard,
   ChevronRight,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -76,25 +75,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 mt-auto">
-        <div className="bg-zinc-900 rounded-xl p-4 text-white relative overflow-hidden group cursor-pointer">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand-500/20 rounded-full blur-2xl transition-all group-hover:scale-150" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-brand-400" />
-              <span className="text-xs font-bold uppercase tracking-widest text-brand-400">
-                Pro Plan
-              </span>
-            </div>
-            <p className="text-sm font-medium mb-3">
-              Unlock advanced AI features
-            </p>
-            <button className="w-full bg-white text-zinc-900 text-xs font-bold py-2 rounded-lg hover:bg-zinc-100 transition-colors">
-              Upgrade Now
-            </button>
-          </div>
-        </div>
-      </div>
     </aside>
   );
 }
