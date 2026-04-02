@@ -1,4 +1,8 @@
-import type { TaskItem } from "./tasks-table";
+import { prisma } from "@/lib/prisma";
+import { getSelectedProfileId } from "@/lib/selected-profile";
+import { TasksTable, type TaskItem } from "./tasks-table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 function formatDueDate(date: Date): string {
   const now = new Date();
@@ -52,4 +56,58 @@ export function buildTaskItems(
   }));
 
   return [...postTasks, ...reviewTasks, ...onboardingTasks];
+}
+
+export async function TasksSection() {
+  const selectedProfileId = await getSelectedProfileId();
+  const profileFilter = selectedProfileId ? { profileId: selectedProfileId } : {};
+
+  const [draftPosts, draftedResponses, incompleteProfiles] = await Promise.all([
+    prisma.post.findMany({
+      where: { ...profileFilter, status: "DRAFT" },
+      orderBy: { createdAt: "desc" },
+      include: { profile: { select: { name: true } } },
+    }),
+    prisma.review.findMany({
+      where: {
+        ...profileFilter,
+        response: { status: "DRAFTED" },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        profile: { select: { name: true } },
+        response: true,
+      },
+    }),
+    prisma.profile.findMany({
+      where: {
+        isOnboarded: false,
+        ...(selectedProfileId ? { id: selectedProfileId } : {}),
+      },
+      select: { id: true, name: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  const tasks = buildTaskItems(draftPosts, draftedResponses, incompleteProfiles);
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-4">My Tasks</h2>
+      <TasksTable tasks={tasks} />
+    </div>
+  );
+}
+
+export function TasksSectionSkeleton() {
+  return (
+    <div>
+      <Skeleton className="h-6 w-24 mb-4" />
+      <Card>
+        {[...Array(3)].map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-none border-b last:border-b-0" />
+        ))}
+      </Card>
+    </div>
+  );
 }
