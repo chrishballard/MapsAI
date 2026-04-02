@@ -65,7 +65,9 @@ Plans:
   3. User can type in a search bar to filter profiles by business name in real time
   4. User can click "Add a Business" on the profiles page and be taken to the onboarding flow
   5. Profile list queries use Prisma aggregations (`_avg`, `_count`) — no full review relation arrays fetched for list rendering
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 15-01-PLAN.md — Score badges, search filtering, query optimization
 **UI hint**: yes
 
 ### Phase 16: Dashboard Upgrades
