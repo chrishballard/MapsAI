@@ -64,9 +64,9 @@ Source: established system default; smoke page uses `p-8` (32px) container paddi
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 16px | 400 (regular) | 1.5 |
-| Label | 14px | 500 (medium) | 1.4 |
+| Label | 14px | 400 (regular) | 1.4 |
 | Heading | 20px | 600 (semibold) | 1.2 |
-| Display | 28px | 700 (bold) | 1.2 |
+| Display | 28px | 600 (semibold) | 1.2 |
 
 Font: `Inter` for all roles. Mono (`JetBrains Mono`) used only for code blocks or technical value displays (e.g., score numbers in smoke page).
 
