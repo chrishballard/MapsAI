@@ -27,6 +27,8 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 - ✓ ATTR: Dynamic GBP attribute management (bool, enum, repeated enum, URL) — v1.1
 - ✓ PROF: Configurable post frequency, used by scheduling system — v1.1
 - ✓ REOPT: On-demand re-optimization with live-vs-suggested comparison — v1.1
+- ✓ CARD: Business cards view with score badges, search, responsive grid — v1.2 (Phase 15)
+- ✓ DASH: Dashboard upgrades — automations feed, expanded tasks, Suspense streaming — v1.2 (Phase 16)
 
 ### Active
 
@@ -60,8 +62,8 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 - **v1.0 MVP** shipped: ongoing management (posts, reviews, reports)
 - **v1.1 Onboarding** shipped: guided optimization wizard, AI keywords/descriptions/services, re-optimization
-- **v1.2 in progress**: Profile optimization UI, dashboard/business/review/report upgrades
-- 129 TypeScript files, ~41k LOC
+- **v1.2 in progress**: Phase 16 (Dashboard Upgrades) complete — Suspense streaming, automations feed, expanded tasks. Next: Phase 17 (Profile Optimization Page)
+- ~135 TypeScript files
 - GBP API access application submitted (pending approval for write operations)
 - No sidebar link to onboarding page yet (users navigate directly)
 
