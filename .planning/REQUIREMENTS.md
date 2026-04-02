@@ -89,13 +89,36 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| OPT-01 | Phase 17 | Pending |
+| OPT-02 | Phase 17 | Pending |
+| OPT-03 | Phase 17 | Pending |
+| OPT-04 | Phase 17 | Pending |
+| DASH-01 | Phase 16 | Pending |
+| DASH-02 | Phase 16 | Pending |
+| DASH-03 | Phase 16 | Pending |
+| CARD-01 | Phase 15 | Pending |
+| CARD-02 | Phase 15 | Pending |
+| CARD-03 | Phase 15 | Pending |
+| CARD-04 | Phase 15 | Pending |
+| RVMT-01 | Phase 18 | Pending |
+| RVMT-02 | Phase 18 | Pending |
+| RVMT-03 | Phase 18 | Pending |
+| RVMT-04 | Phase 18 | Pending |
+| RVMT-05 | Phase 18 | Pending |
+| RPT-01 | Phase 19 | Pending |
+| RPT-02 | Phase 19 | Pending |
+| RPT-03 | Phase 19 | Pending |
+| RPT-04 | Phase 19 | Pending |
+| RPT-05 | Phase 19 | Pending |
+| RPT-06 | Phase 19 | Pending |
+| RPT-07 | Phase 19 | Pending |
+| RPT-08 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 24 total
-- Mapped to phases: 0
-- Unmapped: 24 ⚠️
+- Mapped to phases: 24
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-04-02 after initial definition*
+*Last updated: 2026-04-02 — traceability populated after roadmap creation*
