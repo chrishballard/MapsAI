@@ -22,10 +22,10 @@ Requirements for Milestone v1.2: Profile Optimization & UI Enhancements.
 
 ### Business Cards (CARD)
 
-- [ ] **CARD-01**: User can view business profiles as a 4-column card grid with business logo/icon, star rating, review count, business name, and address
-- [ ] **CARD-02**: User can search profiles by name using a search bar on the profiles page
-- [ ] **CARD-03**: User can click "Add a Business" to navigate to the onboarding flow
-- [ ] **CARD-04**: User can see an optimization score badge on each business card (color-coded green/yellow/red)
+- [x] **CARD-01**: User can view business profiles as a 4-column card grid with business logo/icon, star rating, review count, business name, and address
+- [x] **CARD-02**: User can search profiles by name using a search bar on the profiles page
+- [x] **CARD-03**: User can click "Add a Business" to navigate to the onboarding flow
+- [x] **CARD-04**: User can see an optimization score badge on each business card (color-coded green/yellow/red)
 
 ### Review Metrics (RVMT)
 
@@ -96,10 +96,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-01 | Phase 16 | Pending |
 | DASH-02 | Phase 16 | Pending |
 | DASH-03 | Phase 16 | Pending |
-| CARD-01 | Phase 15 | Pending |
-| CARD-02 | Phase 15 | Pending |
-| CARD-03 | Phase 15 | Pending |
-| CARD-04 | Phase 15 | Pending |
+| CARD-01 | Phase 15 | Complete |
+| CARD-02 | Phase 15 | Complete |
+| CARD-03 | Phase 15 | Complete |
+| CARD-04 | Phase 15 | Complete |
 | RVMT-01 | Phase 18 | Pending |
 | RVMT-02 | Phase 18 | Pending |
 | RVMT-03 | Phase 18 | Pending |
