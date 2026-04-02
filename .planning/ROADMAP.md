@@ -49,7 +49,10 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
   2. `recharts` and `qrcode.react` are installed and `npx shadcn@latest add chart` has been run — a test chart renders without hydration errors in `next build`
   3. Any missing composite DB indexes (`DailyMetric(profileId, date)`, `ProfileDescription(profileId, isApproved)`) have been added to `prisma/schema.prisma` and migrated
   4. Score thresholds are documented in code comments: green ≥70, amber 40-69, red <40
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 14-01-PLAN.md — TDD optimization score function with vitest setup
+- [ ] 14-02-PLAN.md — Install chart/QR deps, shadcn chart, Prisma index migration
 **UI hint**: yes
 
 ### Phase 15: Business Cards View
@@ -123,7 +126,7 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 14. Score Library & Dependencies | v1.2 | 0/? | Not started | - |
+| 14. Score Library & Dependencies | v1.2 | 0/2 | Planning | - |
 | 15. Business Cards View | v1.2 | 0/? | Not started | - |
 | 16. Dashboard Upgrades | v1.2 | 0/? | Not started | - |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
