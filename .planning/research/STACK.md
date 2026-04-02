@@ -1,330 +1,230 @@
-# Technology Stack
+# Stack Research
 
-**Project:** MapsAI - Milestone v1.1 (Onboarding & Optimization)
-**Researched:** 2026-03-04
-**Scope:** Stack additions/changes for GBP write operations, media upload, wizard UI, and AI keyword generation
+**Domain:** GBP management SaaS — Profile Optimization & UI Enhancements (v1.2)
+**Researched:** 2026-04-02
+**Confidence:** HIGH
 
-## Existing Stack (DO NOT CHANGE)
+---
 
-Already validated and shipping. Listed for reference only:
+## Context: What's Already Installed
 
-| Technology | Version | Status |
-|------------|---------|--------|
-| Next.js (App Router) | 16.1.6 | Shipping |
-| TypeScript | 5.x | Shipping |
-| PostgreSQL + Prisma | 7.4.2 | Shipping |
-| BullMQ + Redis | 5.70.2 | Shipping |
-| @anthropic-ai/sdk | 0.78.0 | Shipping |
-| googleapis | 171.4.0 | Shipping |
-| NextAuth.js | 4.24.13 | Shipping |
-| Tailwind CSS | 4.x | Shipping |
-| Zod | 4.3.6 | Shipping |
-| Lucide React | 0.577.0 | Shipping |
-| @react-pdf/renderer | 4.3.2 | Shipping |
+These are in `package.json`. Do NOT re-add them:
 
-## New Stack Additions
+| Already Present | Covers |
+|-----------------|--------|
+| `chart.js ^4.5.1` + `chartjs-node-canvas ^5.0.0` | Server-side chart rendering for PDF reports — keep for that purpose only |
+| `@react-pdf/renderer ^4.3.2` | PDF generation |
+| `lucide-react ^0.577.0` | Icons |
+| `motion ^12.35.2` | Animations |
+| `shadcn ^4.0.0` | Component scaffolding CLI |
+| `class-variance-authority`, `clsx`, `tailwind-merge` | Component styling utilities |
+| `react 19.2.3`, `react-dom 19.2.3` | Runtime |
+| `next 16.1.6` | Framework |
 
-### No New Dependencies Required
+---
 
-The milestone's core features are achievable with zero new npm packages. Here is why:
+## New Dependencies Required
 
-**GBP API write operations** use `googleapis` (already installed at v171.4.0) via `google.mybusinessbusinessinformation({ version: 'v1' })` -- the same client already used for location reads in `src/lib/google-locations.ts`. Write operations (patch descriptions, services, attributes) are different methods on the same client.
+### Core Technologies
 
-**Media/logo upload** uses the v4 API endpoint (`accounts.locations.media`) which is still active (not deprecated). The `googleapis` package exposes this via `google.mybusiness({ version: 'v4' })` for the media create/upload methods, or direct HTTP requests via the OAuth2 client (pattern already used in `src/lib/google-posts.ts`).
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `recharts` | `^3.8.1` | Line charts, bar charts, radial gauge charts in React UI | shadcn/ui officially uses Recharts as its charting primitive. The shadcn Chart component wraps Recharts via `ChartContainer`/`ChartTooltip` and inherits Tailwind CSS variable theming. Recharts 3.x fully supports React 19 (resolved in 3.x after alpha support in 2.13.0-alpha.2). Built on SVG — scales cleanly at all screen sizes, no canvas blurriness. Composition-first design means you use Recharts components directly without abstraction lock-in. Latest: v3.8.1 (March 2026). |
+| `qrcode.react` | `^4.2.0` | Review request QR codes | Zero external dependencies, 1,215 npm dependents (highest adoption in category by 3x). v4 exports `QRCodeSVG` (recommended — scales, integrates with Tailwind-styled containers) and `QRCodeCanvas` (for download-to-PNG via `canvas.toDataURL()`). Pure React component, no server-side setup. Works with `"use client"` in Next.js App Router. |
 
-**Multi-step wizard** is a UI pattern, not a library. React `useState` for step tracking + existing Zod for per-step validation + existing Tailwind for styling. No form library needed for the wizard's scope (a few text fields per step, not a complex nested form).
+### Supporting Libraries
 
-**AI keyword generation** uses the existing `@anthropic-ai/sdk` with Claude Sonnet. No third-party keyword API needed -- the PROJECT.md explicitly defers keyword volume data.
+No additional libraries required. Details below.
 
-**File upload handling** uses Next.js built-in `Request.formData()` in API routes. No multer or formidable needed -- Next.js App Router handles multipart form data natively.
+| Need | Solution | Why No New Dep |
+|------|----------|----------------|
+| Gauge / optimization score display | Recharts `RadialBarChart` with `startAngle={180}` + `endAngle={0}` | Semicircle gauge pattern is fully achievable with Recharts built-ins. See implementation pattern below. |
+| Map thumbnails in Business Cards View | Google Maps Static API via `<img>` tag | Plain URL with API key — no npm package. 10,000 free requests/month (within budget for 200 profiles). |
+| Line/bar charts (Views on Google, review trends) | Recharts `LineChart`, `BarChart` + shadcn `ChartContainer` | Standard Recharts types. |
+| Rating distribution | Recharts `BarChart` (horizontal) | Built-in Recharts — no new dep. |
 
-### One Recommended Addition: sharp
+### Development Tools
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| sharp | ^0.33.x | Server-side image processing | Resize/validate logos before GBP upload. GBP requires logos at 720x720px, JPG/PNG, 10KB-5MB. sharp is already a transitive dependency of Next.js (used by `next/image`) so it adds near-zero bundle weight. |
+No new dev tools required.
+
+---
+
+## Installation
 
 ```bash
-npm install sharp
+# New dependencies only (two packages)
+npm install recharts qrcode.react
 ```
 
-**Why sharp:**
-- GBP logo requirements: 720x720px square, JPG or PNG, 10KB-5MB
-- Users will upload arbitrary images -- resizing server-side prevents API rejection
-- Already bundled with Next.js as an optional dependency for `next/image` optimization
-- No alternative needed -- sharp is the universal standard for Node.js image processing
+**After installing recharts**, update the shadcn Chart component to its Recharts v3-compatible version:
 
-## GBP API Integration Details
+```bash
+npx shadcn@latest add chart
+```
 
-### API Endpoints for Write Operations
+This pulls the updated chart primitives (PR #8486 merged March 2026) that are compatible with recharts v3 TypeScript types and the updated CSS variable syntax.
 
-All write operations use the OAuth scope `https://www.googleapis.com/auth/business.manage` which is already configured in `src/lib/google.ts`.
+---
 
-#### 1. Update Business Description
+## Gauge / Score Visualization Pattern
 
-**API:** `mybusinessbusinessinformation.v1` (already used for reads)
-**Method:** `locations.patch`
-**Endpoint:** `PATCH https://mybusinessbusinessinformation.googleapis.com/v1/locations/{locationId}?updateMask=profile.description`
+No separate gauge library. Use Recharts `RadialBarChart`:
 
-```typescript
-// Uses existing google client pattern from src/lib/google-locations.ts
-const mybusinessbusinessinformation = google.mybusinessbusinessinformation({
-  version: "v1",
-  auth: oauth2Client,
-});
+```tsx
+"use client";
+import { RadialBarChart, RadialBar, PolarAngleAxis } from "recharts";
+import { ChartContainer } from "@/components/ui/chart";
 
-await mybusinessbusinessinformation.locations.patch({
-  name: `locations/${locationId}`,
-  updateMask: "profile.description",
-  requestBody: {
-    profile: {
-      description: "AI-generated SEO description here",
+// startAngle=180, endAngle=0 creates a semicircle pointing down
+// PolarAngleAxis domain=[0,100] maps score percentage to arc fill
+export function OptimizationGauge({ score }: { score: number }) {
+  const color = score >= 70 ? "var(--color-green)" : score >= 40 ? "var(--color-amber)" : "var(--color-red)";
+  return (
+    <ChartContainer config={{}} className="h-[180px] w-full">
+      <RadialBarChart
+        data={[{ value: score, fill: color }]}
+        innerRadius="70%"
+        outerRadius="100%"
+        startAngle={180}
+        endAngle={0}
+      >
+        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+        <RadialBar dataKey="value" cornerRadius={4} background={{ fill: "var(--muted)" }} />
+        <text x="50%" y="55%" textAnchor="middle" className="fill-foreground text-4xl font-bold">
+          {score}
+        </text>
+        <text x="50%" y="70%" textAnchor="middle" className="fill-muted-foreground text-sm">
+          Optimization Score
+        </text>
+      </RadialBarChart>
+    </ChartContainer>
+  );
+}
+```
+
+## Map Thumbnail Pattern
+
+No npm package. Construct the URL server-side and render as `<img>`:
+
+```tsx
+// Generate in a Server Component or server action
+function buildStaticMapUrl(address: string): string {
+  const encoded = encodeURIComponent(address);
+  const key = process.env.GOOGLE_MAPS_STATIC_API_KEY;
+  return `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=14&size=400x200&markers=color:red%7C${encoded}&key=${key}`;
+}
+
+// In Business Card component:
+<Image
+  src={buildStaticMapUrl(profile.address)}
+  alt={`Map of ${profile.name}`}
+  width={400}
+  height={200}
+  className="rounded-md object-cover"
+/>
+```
+
+Add to `next.config.js`:
+```js
+images: {
+  remotePatterns: [
+    {
+      protocol: "https",
+      hostname: "maps.googleapis.com",
+      pathname: "/maps/api/staticmap/**",
     },
-  },
-});
+  ],
+},
 ```
 
-**Confidence:** HIGH -- same API client used for existing location reads. `locations.patch` is documented at [locations/patch reference](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch).
-
-#### 2. Update Services
-
-**API:** `mybusinessbusinessinformation.v1`
-**Method:** `locations.patch` with `updateMask=serviceItems`
-**Constraint:** Must replace the entire service list -- individual service updates are not supported.
-
-```typescript
-await mybusinessbusinessinformation.locations.patch({
-  name: `locations/${locationId}`,
-  updateMask: "serviceItems",
-  requestBody: {
-    serviceItems: [
-      {
-        freeFormServiceItem: {
-          category: { displayName: "Plumbing", categoryId: "gcid:plumber" },
-          label: { displayName: "Drain cleaning", description: "AI-optimized description" },
-        },
-      },
-    ],
-  },
-});
+**Environment variable to add:**
+```
+GOOGLE_MAPS_STATIC_API_KEY=   # Separate from GBP OAuth creds. Enable Maps Static API in Google Cloud Console.
 ```
 
-Two service item formats exist:
-- **StructuredServiceItem** -- uses Google's predefined `serviceTypeId` (query available services via `categories.batchGet` with `view=FULL`)
-- **FreeFormServiceItem** -- custom label with description text (more flexible, use this for AI-generated descriptions)
+**Pricing:** 10,000 free requests/month under the March 2025 Google Maps per-SKU pricing model. At 200 business cards loaded occasionally, well within free tier.
 
-**Confidence:** HIGH -- documented at [services guide](https://developers.google.com/my-business/content/services).
+---
 
-#### 3. Update Attributes
+## Alternatives Considered
 
-**API:** `mybusinessbusinessinformation.v1`
-**Method:** `locations.updateAttributes`
-**Endpoint:** `PATCH https://mybusinessbusinessinformation.googleapis.com/v1/locations/{locationId}/attributes?attributeMask=attr1,attr2`
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| `recharts ^3.8.1` | `react-chartjs-2` (wrapping the existing chart.js) | If you needed canvas-rendered charts for performance with 100k+ data points — never true here. chart.js stays for server-side PDF workers only. |
+| `recharts ^3.8.1` | `nivo` | If you needed highly customized animated charts with a larger ecosystem of types (calendar, sunburst, etc.). Nivo has a larger bundle and no shadcn integration. Not warranted for 4-5 standard chart types. |
+| `recharts ^3.8.1` | `victory` | If you needed React Native portability. victory is less actively maintained than recharts and has no shadcn primitives. |
+| `qrcode.react ^4.2.0` | `react-qr-code` | Functionally equivalent but 3x fewer npm dependents. No advantage. |
+| `qrcode.react ^4.2.0` | `next-qrcode` | Hook-based API, Next.js-specific, adds unnecessary complexity. qrcode.react is simpler. |
+| Google Maps Static API URL (no dep) | `@react-google-maps/api` | If you needed interactive maps with panning/zoom. Static thumbnail only — the JS Maps API adds ~100KB runtime for no benefit. |
+| Recharts `RadialBarChart` (built-in) | `react-gauge-component` | Only 10 npm dependents (very low adoption). Adds a dependency that Recharts already replaces. |
 
-```typescript
-// First: discover available attributes for the business category
-const available = await mybusinessbusinessinformation.attributes.list({
-  parent: `locations/${locationId}`,
-});
+---
 
-// Then: update specific attributes
-await mybusinessbusinessinformation.locations.updateAttributes({
-  name: `locations/${locationId}/attributes`,
-  attributeMask: "has_wheelchair_accessible_entrance,wi_fi",
-  requestBody: {
-    attributes: [
-      { name: "locations/{id}/attributes/has_wheelchair_accessible_entrance", values: [true] },
-      { name: "locations/{id}/attributes/wi_fi", values: ["paid"] },
-    ],
-  },
-});
-```
+## What NOT to Use
 
-**Key constraint:** Available attributes vary by business category and region. Must query `attributes.list` first to know what's settable.
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `react-chartjs-2` for UI charts | chart.js/canvas paradigm doesn't compose with shadcn CSS tokens; creates two charting paradigms in one app; chart.js is already present only for server-side PDF generation | `recharts` + shadcn `ChartContainer` |
+| `react-gauge-component` | 10 npm dependents — extremely low adoption, adds a dep that Recharts replaces cleanly | Recharts `RadialBarChart` with `startAngle/endAngle` |
+| `@react-google-maps/api` or `google-maps-react` | ~100KB JS bundle for a static thumbnail | Google Maps Static API `<img src="...staticmap?...">` |
+| `leaflet` / `react-leaflet` | Interactive maps not needed — thumbnail display only | Google Maps Static API URL |
+| `next-qrcode` | Next.js-specific, hook-based API adds indirection | `qrcode.react` — simpler, same output |
+| Any gauge-specific library | Redundant with Recharts; fragments the chart dependency surface | Recharts `RadialBarChart` |
 
-**Confidence:** HIGH -- documented at [attributes guide](https://developers.google.com/my-business/content/attributes).
+---
 
-#### 4. Upload Logo/Media
+## Stack Patterns by Variant
 
-**API:** Google My Business v4 (NOT mybusinessbusinessinformation v1 -- media lives in v4)
-**Status:** v4 media endpoints are still active (not on deprecation schedule as of March 2026)
+**If review QR code needs to be downloadable (PNG):**
+- Use `QRCodeCanvas` from `qrcode.react` instead of `QRCodeSVG`
+- Access via `ref.current.toDataURL()` to create a download link
+- Pattern: `<a download="review-qr.png" href={canvasRef.current?.toDataURL()}>Download</a>`
 
-Two upload methods:
+**If map thumbnail fails (API key not configured):**
+- Render a placeholder with the business address text instead of the `<Image>` component
+- Use a graceful fallback: `onError` on the `<img>` tag sets a fallback state
 
-**Method A: Upload from URL (simpler, if image is already hosted)**
-```typescript
-const oauth2Client = await createGoogleClient(googleAccountId);
-const url = `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media`;
+**If optimization score needs color-coded bands:**
+- Pass score to a utility function: `getScoreColor(score)` → returns Tailwind/CSS variable class
+- Green: ≥70, Amber: 40-69, Red: <40 — align with GBP audit industry conventions
 
-await oauth2Client.request({
-  url,
-  method: "POST",
-  data: {
-    mediaFormat: "PHOTO",
-    locationAssociation: { category: "LOGO" },
-    sourceUrl: "https://example.com/logo.jpg",
-  },
-});
-```
+---
 
-**Method B: Upload from bytes (for user-uploaded files)**
-```typescript
-// Step 1: Get upload reference
-const startRes = await oauth2Client.request({
-  url: `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media:startUpload`,
-  method: "POST",
-});
-const resourceName = startRes.data.resourceName;
+## Version Compatibility
 
-// Step 2: Upload binary data
-await oauth2Client.request({
-  url: `https://mybusiness.googleapis.com/upload/v1/media/${resourceName}?upload_type=media`,
-  method: "POST",
-  headers: { "Content-Type": "image/jpeg" },
-  body: imageBuffer,
-});
+| Package | React Peer Req | Notes |
+|---------|---------------|-------|
+| `recharts ^3.8.1` | React 18 or 19 | React 19 support was added in 2.13.0-alpha.2, stable in all 3.x releases. Verified compatible with `react@19.2.3`. |
+| `qrcode.react ^4.2.0` | React 16.8+ | No peer dep issues with React 19. v4 deprecates `includeMargin` — use `marginSize` prop instead. |
+| shadcn chart component (Recharts v3) | — | Requires re-running `npx shadcn@latest add chart` to get v3-compatible component. PR #8486 merged March 2026. Breaking change: use `var(--chart-1)` not `hsl(var(--chart-1))` in CSS. |
 
-// Step 3: Create media item linking to uploaded data
-await oauth2Client.request({
-  url: `https://mybusiness.googleapis.com/v4/${accountResourceName}/${locationName}/media`,
-  method: "POST",
-  data: {
-    mediaFormat: "PHOTO",
-    locationAssociation: { category: "LOGO" },
-    dataRef: { resourceName },
-  },
-});
-```
+---
 
-**Media categories:** `LOGO`, `COVER`, `ADDITIONAL`
+## Integration Notes
 
-**Confidence:** HIGH -- v4 media endpoints confirmed active. Documented at [upload media guide](https://developers.google.com/my-business/content/upload-photos).
+**Recharts + Tailwind CSS 4:** Recharts renders SVG with inline styles. Tailwind CSS 4 utility classes don't apply inside SVG directly. Use shadcn's `ChartContainer` which injects CSS variables (`--chart-1` through `--chart-5`, `--color-{key}`) that Recharts consumes via `fill="var(--color-xxx)"` in chart data objects.
 
-#### 5. Social Profile Links
+**Recharts in App Router:** All Recharts components require `"use client"` — they use `ResizeObserver` internally. Keep chart components in `/components/charts/` as client components. Server components and server actions fetch data and pass it as props.
 
-**API status:** Social links are NOT available in the GBP API as a writable field.
+**qrcode.react in App Router:** Add `"use client"` to any component rendering `<QRCodeSVG>` or `<QRCodeCanvas>`. For review request QR codes, construct the Google review URL server-side (e.g., in a server action or server component) and pass the URL string as a prop to the client component.
 
-The `mybusinessbusinessinformation.v1` Location resource schema does not include `socialProfiles`, `moreUrls`, or any social link fields. Social links were added to the GBP web dashboard in 2023 but have not been exposed as API-writable fields.
+**Google Maps Static API in App Router:** Construct the URL in Server Components to keep the API key server-side. Never expose `GOOGLE_MAPS_STATIC_API_KEY` to the client — always build the URL in server-side code and pass the constructed `src` string to an `<Image>` component.
 
-**Recommendation:** Store social links in the local database (Prisma) for reference/display in the app, but do NOT attempt to push them to GBP via API. This is a manual GBP dashboard task. Flag this clearly in the UI: "Social links must be updated manually in Google Business Profile."
-
-**Confidence:** MEDIUM -- could not find social links in any v1 API schema documentation. Multiple community posts confirm this limitation. Worth re-checking periodically as Google may add it.
-
-## Wizard UI Pattern (No Library Needed)
-
-The onboarding wizard is 4-5 steps with simple forms. This does NOT warrant `react-hook-form` or a wizard library.
-
-**Pattern: useState + Zod per-step validation**
-
-```typescript
-// Wizard state
-const [step, setStep] = useState(1);
-const [data, setData] = useState<WizardData>({});
-
-// Per-step Zod schemas (already have Zod 4.3.6)
-const Step1Schema = z.object({ profileId: z.string() });
-const Step2Schema = z.object({ keywords: z.array(z.string()).max(10) });
-// etc.
-```
-
-**Why NOT react-hook-form:**
-- Each wizard step has 2-5 fields max
-- No deeply nested forms, no dynamic field arrays, no complex validation
-- Adding react-hook-form for simple forms adds learning overhead without payoff
-- Zod handles validation, React state handles the rest
-
-**Why NOT a wizard library (react-step-wizard, etc.):**
-- These libraries add routing/animation concerns we do not need
-- The wizard is a single page with conditional rendering, not multi-page navigation
-- Custom step indicator + conditional rendering is ~30 lines of code
-
-## File Upload in Next.js App Router
-
-Next.js 16 handles multipart form data natively in API routes:
-
-```typescript
-// src/app/api/upload-logo/route.ts
-export async function POST(request: Request) {
-  const formData = await request.formData();
-  const file = formData.get("logo") as File;
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  // Resize with sharp
-  const resized = await sharp(buffer)
-    .resize(720, 720, { fit: "cover" })
-    .jpeg({ quality: 85 })
-    .toBuffer();
-
-  // Upload to GBP via v4 media API
-  // ...
-}
-```
-
-No multer, no formidable, no busboy. Native `Request.formData()` is sufficient.
-
-## Database Schema Additions
-
-New Prisma models needed (no new database technology):
-
-```prisma
-// Add to existing Profile model
-model Profile {
-  // ... existing fields ...
-  keywords        String[]    @default([])     // AI-suggested target keywords (up to 10)
-  targetCities    String[]    @default([])     // Target cities (up to 3)
-  seoDescription  String?     @db.Text         // AI-generated SEO description
-  onboardedAt     DateTime?                     // Null = not yet onboarded
-  postFrequency   Int         @default(3)      // Posts per week
-  socialLinks     Json?                         // { facebook, instagram, etc. } stored locally only
-}
-
-// New model for service descriptions
-model ServiceDescription {
-  id          String   @id @default(cuid())
-  profileId   String
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  serviceName String
-  description String   @db.Text
-  isApproved  Boolean  @default(false)
-  isPushed    Boolean  @default(false)   // Pushed to GBP
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-```
-
-## What NOT to Add
-
-| Do Not Add | Why |
-|------------|-----|
-| react-hook-form | Wizard forms are simple; useState + Zod is sufficient |
-| react-step-wizard | 30 lines of custom code replaces an entire library |
-| multer / formidable | Next.js App Router handles FormData natively |
-| @google-cloud/storage | Not needed; logos upload directly to GBP, not to cloud storage |
-| Any keyword volume API (SEMrush, Ahrefs, etc.) | PROJECT.md explicitly defers this; AI suggestions are enough |
-| A separate image upload service | sharp + direct GBP media upload is sufficient |
-| shadcn/ui (if not already installed) | Already using Tailwind + Lucide; adding shadcn mid-project for a few components is churn |
-
-## Integration Points with Existing Code
-
-| New Feature | Integrates With | How |
-|-------------|----------------|-----|
-| GBP description update | `src/lib/google-locations.ts` | Add `updateLocationDescription()` using same `mybusinessbusinessinformation` client |
-| GBP service update | `src/lib/google-locations.ts` | Add `updateLocationServices()` using same client |
-| GBP attribute update | `src/lib/google-locations.ts` | Add `updateLocationAttributes()` using same client |
-| Logo upload | `src/lib/google-posts.ts` | Follow same `oauth2Client.request()` pattern for v4 API calls |
-| AI keyword generation | `@anthropic-ai/sdk` | New prompt template; feed business name, category, city into Claude |
-| AI description generation | `@anthropic-ai/sdk` | New prompt template; include keywords in system prompt |
-| Keywords into post generation | Existing prompt templates | Add keywords/cities to post generation prompts |
-| Onboarding wizard | `src/app/dashboard/` | New route: `src/app/dashboard/onboarding/page.tsx` |
-| Re-optimization | `src/app/dashboard/` | Add buttons to existing profile detail page |
+---
 
 ## Sources
 
-- [GBP API locations.patch](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch) -- HIGH confidence
-- [GBP API attributes guide](https://developers.google.com/my-business/content/attributes) -- HIGH confidence
-- [GBP API services guide](https://developers.google.com/my-business/content/services) -- HIGH confidence
-- [GBP API media upload guide](https://developers.google.com/my-business/content/upload-photos) -- HIGH confidence
-- [GBP API deprecation schedule](https://developers.google.com/my-business/content/sunset-dates) -- HIGH confidence (v4 media still active)
-- [GBP API Location resource schema](https://developers.google.com/my-business/reference/businessinformation/rpc/google.mybusiness.businessinformation.v1) -- HIGH confidence
-- [googleapis npm Node.js client](https://googleapis.dev/nodejs/googleapis/latest/mybusinessbusinessinformation/classes/Mybusinessbusinessinformation.html) -- HIGH confidence
-- [Next.js file upload patterns](https://www.pronextjs.dev/next-js-file-uploads-server-side-solutions) -- MEDIUM confidence
+- [shadcn/ui Chart docs](https://ui.shadcn.com/docs/components/chart) — Recharts v3 requirement confirmed, migration guide — HIGH confidence
+- [shadcn/ui PR #8486](https://github.com/shadcn-ui/ui/pull/8486/files) — Recharts v3 support merged March 2026 — HIGH confidence
+- [recharts GitHub releases](https://github.com/recharts/recharts/releases) — v3.8.1 latest as of March 2026 — HIGH confidence
+- [recharts React 19 issue #4558](https://github.com/recharts/recharts/issues/4558) — React 19 compatibility confirmed in 3.x — HIGH confidence
+- [shadcn/ui recharts v3 compatibility issue #9892](https://github.com/shadcn-ui/ui/issues/9892) — resolved March 2026 — HIGH confidence
+- [shadcn/ui radial chart patterns](https://www.shadcn.io/patterns/chart-radial-shape) — RadialBarChart gauge pattern using endAngle — HIGH confidence
+- [qrcode.react npm](https://www.npmjs.com/package/qrcode.react) — v4.2.0, 1,215 dependents, SVG+Canvas exports — HIGH confidence
+- [Google Maps Static API docs](https://developers.google.com/maps/documentation/maps-static/start) — URL format verified — HIGH confidence
+- [Google Maps Static API pricing](https://developers.google.com/maps/documentation/maps-static/usage-and-billing) — 10,000 free/month per March 2025 pricing model — HIGH confidence
+
+---
+
+*Stack research for: Rankmaps.io v1.2 Profile Optimization & UI Enhancements*
+*Researched: 2026-04-02*

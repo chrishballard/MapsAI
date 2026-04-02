@@ -1,568 +1,531 @@
-# Architecture Patterns
+# Architecture Research
 
-**Domain:** GBP Onboarding Wizard & AI-Powered Profile Optimization
-**Researched:** 2026-03-04
+**Domain:** Next.js App Router — Adding 5 UI features to existing GBP management platform (v1.2)
+**Researched:** 2026-04-02
+**Confidence:** HIGH — based on direct codebase inspection of 129 TypeScript files
 
-## Recommended Architecture
+---
 
-The onboarding and optimization features integrate into the existing Next.js App Router architecture as a new route group under `/dashboard/onboarding/` with supporting API routes, new Prisma models, new GBP API wrapper functions, and new AI generation modules. The wizard is a multi-step client component with local state, persisting progress to the database at each step boundary.
-
-### High-Level Data Flow
-
-```
-Wizard UI (client) ──POST──> API Route ──> AI Generator ──> Draft Record (DB)
-                                                               │
-User Approves ─────PUT───> API Route ──> GBP API Wrapper ──> Google API (push live)
-                                              │
-                                         Update DB record status → PUBLISHED
-```
-
-This mirrors the existing draft-first pattern used for posts and reviews: AI generates content, user approves, then it pushes to GBP.
-
-### Component Boundaries
-
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| `OnboardingWizard` (client component) | Multi-step UI, local wizard state, step navigation | API routes via fetch |
-| `src/app/api/onboarding/` routes | Orchestrate wizard steps, persist progress, trigger AI | Prisma, AI generators, GBP wrappers |
-| `src/lib/keyword-generator.ts` | AI-generate target keywords for a profile | `claude.ts` (Anthropic SDK) |
-| `src/lib/description-generator.ts` | AI-generate SEO business description | `claude.ts` |
-| `src/lib/service-generator.ts` | AI-generate/optimize service descriptions | `claude.ts` |
-| `src/lib/google-business-info.ts` | PATCH location description, services, read location | `google.ts` (OAuth client) |
-| `src/lib/google-attributes.ts` | List available attributes, update attributes | `google.ts` (OAuth client) |
-| `src/lib/google-media.ts` | Upload logo/photos via Media API | `google.ts` (OAuth client) |
-| `ProfileOptimization` (client component) | Re-optimization UI on profile detail page | Same API routes as wizard |
-
-## New vs Modified: Explicit Inventory
-
-### New Files to Create
-
-**Prisma Schema Additions** (modify `schema.prisma`):
-- `ProfileKeyword` model -- target keywords per profile (up to 10)
-- `ProfileCity` model -- target cities per profile (up to 3)
-- `ProfileDescription` model -- AI-generated descriptions with approval status
-- `ProfileService` model -- AI-generated service descriptions with approval status
-- `OnboardingProgress` model -- wizard step tracking per profile
-- New fields on `Profile`: `postFrequency`, `onboardingCompletedAt`, `logoUrl`
-
-**API Routes** (all new):
-- `src/app/api/onboarding/keywords/route.ts` -- generate/save target keywords
-- `src/app/api/onboarding/cities/route.ts` -- save target cities
-- `src/app/api/onboarding/description/route.ts` -- generate/approve/push description
-- `src/app/api/onboarding/services/route.ts` -- generate/approve/push services
-- `src/app/api/onboarding/attributes/route.ts` -- list/update attributes
-- `src/app/api/onboarding/logo/route.ts` -- upload logo
-- `src/app/api/onboarding/progress/route.ts` -- read/update wizard progress
-- `src/app/api/onboarding/settings/route.ts` -- post frequency, social links
-
-**Library Modules** (all new):
-- `src/lib/keyword-generator.ts`
-- `src/lib/description-generator.ts`
-- `src/lib/service-generator.ts`
-- `src/lib/google-business-info.ts`
-- `src/lib/google-attributes.ts`
-- `src/lib/google-media.ts`
-
-**Pages** (all new):
-- `src/app/dashboard/onboarding/page.tsx` -- wizard entry/profile selection
-- `src/app/dashboard/onboarding/[profileId]/page.tsx` -- wizard for specific profile
-
-**Components** (all new):
-- `src/components/onboarding/wizard-shell.tsx` -- step indicator, navigation, progress
-- `src/components/onboarding/step-keywords.tsx` -- keyword generation/editing
-- `src/components/onboarding/step-cities.tsx` -- target city selection
-- `src/components/onboarding/step-description.tsx` -- description generation/approval
-- `src/components/onboarding/step-services.tsx` -- service generation/approval
-- `src/components/onboarding/step-attributes.tsx` -- attribute toggles
-- `src/components/onboarding/step-settings.tsx` -- post frequency, social links, logo
-- `src/components/onboarding/step-review.tsx` -- summary before final push
-- `src/components/profile/optimize-button.tsx` -- re-optimization trigger on profile page
-
-### Modified Files
-
-| File | Change |
-|------|--------|
-| `prisma/schema.prisma` | Add 5 new models + fields on Profile |
-| `src/components/sidebar.tsx` | Add "Onboarding" nav item |
-| `src/app/dashboard/profiles/[id]/page.tsx` | Add "Optimize" button, show keywords/cities/description |
-| `src/lib/post-generator.ts` | Inject keywords and target cities into post generation prompt |
-| `src/lib/prompts/defaults.ts` | Update templates to accept keywords/cities context |
-| `src/app/api/profiles/route.ts` | Include onboarding status in profile list response |
-
-## Data Model Design
-
-### New Prisma Models
-
-```prisma
-model ProfileKeyword {
-  id        String   @id @default(cuid())
-  profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  keyword   String
-  isPrimary Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@unique([profileId, keyword])
-}
-
-model ProfileCity {
-  id        String   @id @default(cuid())
-  profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  city      String   // e.g. "Austin, TX"
-  createdAt DateTime @default(now())
-
-  @@unique([profileId, city])
-}
-
-model ProfileDescription {
-  id           String   @id @default(cuid())
-  profileId    String
-  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  content      String   @db.Text
-  status       String   @default("DRAFT")  // DRAFT | APPROVED | PUBLISHED | FAILED
-  pushedAt     DateTime?
-  errorMessage String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model ProfileService {
-  id            String   @id @default(cuid())
-  profileId     String
-  profile       Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  serviceName   String
-  description   String?  @db.Text
-  serviceType   String   @default("FREE_FORM")  // FREE_FORM | STRUCTURED
-  serviceTypeId String?  // For structured services (e.g. "job_type_id:hair_coloring")
-  status        String   @default("DRAFT")  // DRAFT | APPROVED | PUBLISHED
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model OnboardingProgress {
-  id             String   @id @default(cuid())
-  profileId      String   @unique
-  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  currentStep    Int      @default(0)
-  completedSteps String   @default("[]")  // JSON array of completed step names
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-```
-
-### Profile Model Additions
-
-```prisma
-model Profile {
-  // ... existing fields ...
-  postFrequency          Int       @default(4)  // posts per month
-  onboardingCompletedAt  DateTime?
-  logoUrl                String?
-
-  // New relations
-  keywords               ProfileKeyword[]
-  cities                 ProfileCity[]
-  descriptions           ProfileDescription[]
-  services               ProfileService[]
-  onboardingProgress     OnboardingProgress?
-}
-```
-
-## Wizard State Management
-
-**Use client-side React state with server persistence at step boundaries.** Not URL-based, not a global state library.
-
-### Why This Approach
-
-1. **Local `useState` per step** -- each step component manages its own form state (keyword list, city inputs, generated description text). Simple, avoids unnecessary re-renders.
-
-2. **Persist to DB on step completion** -- when the user clicks "Next" or "Save", an API call writes the step data to the database AND updates `OnboardingProgress.currentStep`. This gives durability: user can close browser and resume later.
-
-3. **No URL-based step routing** -- the wizard is a single page (`/dashboard/onboarding/[profileId]`) with step components swapped via state. Avoids back-button issues and keeps the wizard cohesive. The current step is loaded from `OnboardingProgress` on page mount.
-
-4. **No Redux/Zustand** -- overkill for a linear wizard. The data between steps is independent (keywords don't need to be visible while editing the description). Each step loads its own data from the API.
-
-### Wizard Step Flow
+## System Overview
 
 ```
-Step 0: Select Profile (if not already selected)
-  |
-  v
-Step 1: Keywords (AI generates 10, user can edit/remove/add)
-  |
-  v
-Step 2: Target Cities (user enters up to 3)
-  |
-  v
-Step 3: Description (AI generates using keywords+cities, user approves, push to GBP)
-  |
-  v
-Step 4: Services (AI generates using keywords, user approves individually, push to GBP)
-  |
-  v
-Step 5: Attributes (load available from GBP, toggle values, save)
-  |
-  v
-Step 6: Settings (post frequency, logo upload, social links note)
-  |
-  v
-Step 7: Review & Complete (summary of everything, mark onboarding done)
+┌─────────────────────────────────────────────────────────────┐
+│                    Browser (Next.js RSC + Client)            │
+├────────────────┬────────────────┬───────────────────────────┤
+│  /dashboard    │ /dashboard/    │  /dashboard/              │
+│  (page.tsx)    │ profiles/      │  reviews/  reports/       │
+│  MODIFY        │ (page + [id])  │  (pages)                  │
+│                │ MODIFY         │  MODIFY                   │
+├────────────────┴────────────────┴───────────────────────────┤
+│                   NEW PAGES (v1.2)                           │
+│  /dashboard/optimization/[profileId]/page.tsx                │
+│  /dashboard/reviews/metrics/[profileId]/page.tsx             │
+├─────────────────────────────────────────────────────────────┤
+│        Layout: Sidebar (MODIFY) + Topbar (unchanged)         │
+└─────────────────────────────────────────────────────────────┘
+                         ↕ fetch / RSC direct
+┌─────────────────────────────────────────────────────────────┐
+│                    API Routes (/src/app/api/)                 │
+│                                                              │
+│  EXISTING (used, unchanged)        NEW (v1.2)                │
+│  /api/profiles                     /api/profiles/[id]/score  │
+│  /api/reviews (sync, approve)      /api/reviews/metrics      │
+│  /api/reports/generate             /api/reviews/qr-code      │
+│  /api/metrics/sync                 (PDF: extend existing)    │
+└─────────────────────────────────────────────────────────────┘
+                         ↕ Prisma
+┌─────────────────────────────────────────────────────────────┐
+│                   PostgreSQL (Prisma ORM)                     │
+│                                                              │
+│  ALL EXISTING MODELS — no new models needed for v1.2:        │
+│  Profile, Review, Post, DailyMetric, MonthlyKeyword, Report  │
+│  ProfileKeyword, ProfileCity, ProfileDescription             │
+│  ProfileService, OnboardingProgress, ReviewResponse          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Step Component Pattern
+---
 
+## Component Responsibilities
+
+| Component | Responsibility | v1.2 Status |
+|-----------|----------------|-------------|
+| `/dashboard/page.tsx` | Stats grid, automations feed, tasks table | Modify: welcome banner, extend automations for optimization pushes |
+| `/dashboard/profiles/page.tsx` | Business card grid | Modify: richer cards (ratings, post count, optimization badge, map thumbnail) |
+| `/dashboard/profiles/[id]/page.tsx` | Profile detail, metrics, re-optimize | Modify: optimization score widget, link to new optimization page |
+| `/dashboard/reviews/page.tsx` | Review list with filters, bulk approve | No change — add "View Metrics" button to header only |
+| `/dashboard/reviews/metrics/[profileId]/page.tsx` | Review trends, rating distribution, QR code | New page |
+| `/dashboard/optimization/[profileId]/page.tsx` | Score gauge, audit cards, approve/ignore workflow | New page |
+| `/dashboard/reports/page.tsx` | Report list + generate form | Modify: website clicks chart, completed actions log, competitor card |
+| `src/components/sidebar.tsx` | Navigation | Modify: add Optimization nav item |
+
+---
+
+## Recommended Project Structure (New Files Only)
+
+```
+src/
+├── app/
+│   └── dashboard/
+│       ├── optimization/
+│       │   └── [profileId]/
+│       │       ├── page.tsx                    # RSC: fetch profile + compute score
+│       │       └── optimization-actions.tsx    # Client: approve/ignore action buttons
+│       └── reviews/
+│           └── metrics/
+│               └── [profileId]/
+│                   ├── page.tsx                # RSC: fetch review aggregations
+│                   └── qr-code-section.tsx     # Client: renders QR code on demand
+├── app/
+│   └── api/
+│       ├── profiles/
+│       │   └── [id]/
+│       │       └── score/
+│       │           └── route.ts               # GET: compute + return optimization score
+│       └── reviews/
+│           ├── metrics/
+│           │   └── route.ts                   # GET: rating distribution + monthly trend
+│           └── qr-code/
+│               └── route.ts                   # GET: return review request URL
+└── components/
+    ├── optimization/
+    │   ├── score-gauge.tsx                    # Client: SVG arc gauge
+    │   ├── audit-card.tsx                     # Client: individual audit check card
+    │   └── audit-grid.tsx                     # Client: grid of audit cards
+    └── reviews/
+        ├── rating-distribution.tsx             # Client: horizontal bar chart (1-5 stars)
+        └── review-trend-chart.tsx              # Client: line chart (reviews over time)
+```
+
+Plus one new lib file:
+```
+src/lib/optimization-score.ts    # Pure function: ProfileWithRelations → OptimizationScore
+```
+
+### Structure Rationale
+
+- **`/dashboard/optimization/[profileId]/`** — Profile-scoped route mirrors the v1.1 pattern for `/dashboard/onboarding/[profileId]/`. Score is per-profile.
+- **`/dashboard/reviews/metrics/[profileId]/`** — Under reviews/ because it is a sub-view of review data. Scoped to profile because trends are per-business.
+- **`/api/profiles/[id]/score/`** — The `[id]` directory already exists (contains `offboard/route.ts`) so this is a natural sibling route.
+- **`/components/optimization/` and `/components/reviews/`** — Feature-namespaced folders, consistent with existing `/components/onboarding/`.
+
+---
+
+## Architectural Patterns
+
+### Pattern 1: Server Component with Client Islands
+
+**What:** Each new page is an async RSC that performs all data fetching and computation server-side. Small client components handle interactivity (button handlers, chart animations, QR code rendering).
+**When to use:** All five new features follow this pattern. The heavy Prisma aggregations stay server-side — only interactivity needs `"use client"`.
+**Trade-offs:** Fast initial load, no client-side fetch spinners, no skeleton states for data. Mutations use fetch calls to API routes from within client islands.
+
+**Example (Optimization Page):**
 ```typescript
-// Each step follows this consistent pattern:
-function StepKeywords({ profileId, onNext, onBack }: StepProps) {
-  const [keywords, setKeywords] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Load existing data on mount
-  useEffect(() => {
-    fetch(`/api/onboarding/keywords?profileId=${profileId}`)
-      .then(r => r.json())
-      .then(data => { setKeywords(data.keywords); setLoading(false); });
-  }, [profileId]);
-
-  // AI generate
-  async function handleGenerate() {
-    setGenerating(true);
-    const res = await fetch(`/api/onboarding/keywords`, {
-      method: 'POST',
-      body: JSON.stringify({ profileId, action: 'generate' }),
-    });
-    const data = await res.json();
-    setKeywords(data.keywords);
-    setGenerating(false);
-  }
-
-  // Save and advance
-  async function handleNext() {
-    setSaving(true);
-    await fetch(`/api/onboarding/keywords`, {
-      method: 'PUT',
-      body: JSON.stringify({ profileId, keywords }),
-    });
-    onNext();
-  }
-
-  return (/* step UI with keyword list, edit controls, generate button */);
+// /dashboard/optimization/[profileId]/page.tsx (RSC)
+export default async function OptimizationPage({ params }) {
+  const { profileId } = await params;
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    include: { keywords: true, cities: true, descriptions: true,
+               services: true, onboardingProgress: true,
+               _count: { select: { posts: true } } },
+  });
+  const score = computeOptimizationScore(profile); // pure function, no await
+  return (
+    <>
+      <ScoreGauge score={score.total} />        {/* client component */}
+      <AuditGrid checks={score.checks} profileId={profileId} />  {/* client */}
+    </>
+  );
 }
 ```
 
-## GBP API Integration Layer
+### Pattern 2: Prisma Aggregation Directly in RSC (No API Route Needed)
 
-### New Wrapper: `google-business-info.ts`
+**What:** For read-only display features, run Prisma queries directly in the RSC page component rather than creating a dedicated API route.
+**When to use:** Dashboard upgrades (welcome banner, extended automations), business cards enrichment, reports website clicks chart, completed actions log. None of these need client-side re-fetching.
+**Trade-offs:** Fewer files. Filtering/sorting requires URL search param changes and a page reload — acceptable for an internal tool.
 
-Handles reading and updating location fields via `mybusinessbusinessinformation` v1 API.
-
+**Example (Business Cards enrichment):**
 ```typescript
-import { google } from "googleapis";
-import { createGoogleClient } from "./google";
-
-// Read current location data
-export async function getLocationDetails(
-  googleAccountId: string,
-  locationName: string
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  const res = await api.locations.get({
-    name: locationName,
-    readMask: "name,title,profile,serviceItems,websiteUri,categories",
-  });
-  return res.data;
-}
-
-// Update business description
-// PATCH /v1/locations/{id}?updateMask=profile
-// Body: { profile: { description: "..." } }
-export async function updateLocationDescription(
-  googleAccountId: string,
-  locationName: string,
-  description: string
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  await api.locations.patch({
-    name: locationName,
-    updateMask: "profile",
-    requestBody: { profile: { description } },
-  });
-}
-
-// Update services (replaces entire list -- API limitation)
-// PATCH /v1/locations/{id}?updateMask=serviceItems
-export async function updateLocationServices(
-  googleAccountId: string,
-  locationName: string,
-  serviceItems: ServiceItem[]
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  await api.locations.patch({
-    name: locationName,
-    updateMask: "serviceItems",
-    requestBody: { serviceItems },
-  });
-}
+// /dashboard/profiles/page.tsx — extend existing query
+const profiles = await prisma.profile.findMany({
+  where: { isConnected: true, isOnboarded: true },
+  include: {
+    reviews: { select: { rating: true } },
+    _count: { select: { posts: true } },          // NEW
+    keywords: { select: { keyword: true }, take: 3 }, // NEW
+    descriptions: { where: { isPushed: true }, take: 1 }, // NEW (for score badge)
+  },
+  orderBy: { name: "asc" },
+});
 ```
 
-### New Wrapper: `google-attributes.ts`
+### Pattern 3: Derived Score as Pure Function Over Existing Data
 
+**What:** The optimization score is computed as a pure TypeScript function from data already in the database. No new GBP API calls, no new Prisma models required.
+**When to use:** Score computation in `/src/lib/optimization-score.ts`, used by both the optimization page and as an inline badge on profile cards.
+**Trade-offs:** Score reflects the Prisma database state, not the live GBP state. Acceptable — all optimization writes go through the app, so DB state is authoritative.
+
+**Recommended 100-point formula:**
 ```typescript
-// List available attributes for a category/region
-export async function listAvailableAttributes(
-  googleAccountId: string,
-  categoryName: string,  // e.g. "gcid:restaurant"
-  regionCode: string = "US"
-) {
-  // GET /v1/attributes?regionCode=US&languageCode=EN&categoryName=gcid:restaurant
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  const res = await api.attributes.list({ regionCode, languageCode: "EN", categoryName });
-  return res.data.attributeMetadata || [];
+// src/lib/optimization-score.ts
+export interface OptimizationCheck {
+  id: string;
+  label: string;
+  weight: number;
+  pass: boolean;
+  cta?: string; // What action fixes this
 }
 
-// Get current attribute values for a location
-export async function getLocationAttributes(
-  googleAccountId: string,
-  locationName: string
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  const res = await api.locations.getAttributes({ name: `${locationName}/attributes` });
-  return res.data.attributes || [];
+export interface OptimizationScore {
+  total: number;    // 0-100
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  checks: OptimizationCheck[];
 }
 
-// Update attributes
-// PATCH /v1/locations/{id}/attributes?attributeMask=attr1,attr2
-export async function updateLocationAttributes(
-  googleAccountId: string,
-  locationName: string,
-  attributes: Attribute[],
-  attributeMask: string
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const api = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
-
-  await api.locations.updateAttributes({
-    name: `${locationName}/attributes`,
-    attributeMask,
-    requestBody: { attributes },
-  });
-}
-```
-
-### New Wrapper: `google-media.ts`
-
-```typescript
-// Upload logo via Media API (v4 endpoint -- still active for media operations)
-// POST /v4/accounts/{accountId}/locations/{locationId}/media
-export async function uploadLocationMedia(
-  googleAccountId: string,
-  accountResourceName: string,
-  locationName: string,
-  sourceUrl: string,
-  category: "LOGO" | "COVER" | "ADDITIONAL"
-) {
-  const oauth2Client = await createGoogleClient(googleAccountId);
-  const parent = `${accountResourceName}/${locationName}`;
-  const url = `https://mybusiness.googleapis.com/v4/${parent}/media`;
-
-  const response = await oauth2Client.request({
-    url,
-    method: "POST",
-    data: {
-      mediaFormat: "PHOTO",
-      locationAssociation: { category },
-      sourceUrl,
+export function computeOptimizationScore(profile: ProfileWithRelations): OptimizationScore {
+  const checks: OptimizationCheck[] = [
+    {
+      id: 'description',
+      label: 'SEO Description published',
+      weight: 25,
+      pass: profile.descriptions.some(d => d.isPushed),
+      cta: 'Push your AI description to Google',
     },
-  });
-
-  return response.data;
+    {
+      id: 'services',
+      label: 'Services optimized',
+      weight: 20,
+      pass: profile.services.some(s => s.isPushed),
+      cta: 'Approve and push your service descriptions',
+    },
+    {
+      id: 'keywords',
+      label: 'Target keywords set',
+      weight: 15,
+      pass: profile.keywords.length >= 3,
+      cta: 'Add at least 3 target keywords in Onboarding',
+    },
+    {
+      id: 'attributes',
+      label: 'Attributes configured',
+      weight: 15,
+      pass: profile.onboardingProgress?.completedSteps.includes(4) ?? false,
+      cta: 'Complete the Attributes step in Onboarding',
+    },
+    {
+      id: 'posts_active',
+      label: 'Active post schedule',
+      weight: 10,
+      pass: (profile._count?.posts ?? 0) > 0,
+      cta: 'Generate and publish your first post',
+    },
+    {
+      id: 'cities',
+      label: 'Target cities defined',
+      weight: 10,
+      pass: profile.cities.length >= 1,
+      cta: 'Add target cities in Onboarding',
+    },
+    {
+      id: 'reviews_responded',
+      label: 'Reviews responded to',
+      weight: 5,
+      pass: false, // computed from review data passed in separately
+    },
+  ];
+  const total = checks.reduce((sum, c) => sum + (c.pass ? c.weight : 0), 0);
+  const grade = total >= 90 ? 'A' : total >= 75 ? 'B' : total >= 60 ? 'C' : total >= 45 ? 'D' : 'F';
+  return { total, grade, checks };
 }
 ```
 
-### Social Links: Manual Only (API Not Available)
+### Pattern 4: URL Search Params for Filter State
 
-Social links are NOT available via the GBP API as of March 2026. The wizard should display a note directing users to manage social links manually via the GBP dashboard. Store social link URLs in the database for internal reference, but do not attempt API push. Supported platforms (for the note): Instagram, LinkedIn, Pinterest, TikTok, X (Twitter), YouTube, Facebook.
+**What:** All filtering (business selector, date range, rating filter) is driven by URL search params, not React state.
+**When to use:** Dashboard business filter, review metrics date range, reports month filter. This is the pattern already used in the reviews page (`?profileId=&rating=&responseStatus=`).
+**Trade-offs:** Shareable URLs, back-button works, no hydration issues. Requires `router.push` or a `<form>` for updates. The existing `getSelectedProfileId()` cookie mechanism already provides global profile selection.
 
-## AI Generation Architecture
+---
 
-### Keyword Generator
+## Data Flow
 
-```typescript
-// Input: profile name, category, address, website URL
-// Output: 10 suggested keywords with reasoning
-// Uses structured output (Zod schema) -- same pattern as post-generator.ts
+### Optimization Score Flow
 
-const KeywordSuggestionsSchema = z.object({
-  keywords: z.array(z.object({
-    keyword: z.string(),
-    reasoning: z.string(),  // Displayed to user as context for the suggestion
-    isPrimary: z.boolean(), // Top 3 marked as primary
-  })).length(10),
-});
+```
+GET /dashboard/optimization/[profileId]
+    ↓ prisma.profile.findUnique (includes all optimization relations)
+    ↓ computeOptimizationScore(profile)  [pure function, <1ms]
+    ↓ result: { total: 72, grade: 'B', checks: [...] }
+    ↓ RSC renders:
+<ScoreGauge score={72} grade="B" />         [client, SVG arc animation]
+<AuditGrid checks={checks} />               [client, maps to AuditCard items]
+  → each AuditCard shows pass/fail + CTA button
+  → CTA links to onboarding step OR triggers re-optimization API
 ```
 
-### Description Generator
+### Review Metrics Flow
 
-```typescript
-// Input: profile name, category, address, keywords[], targetCities[]
-// Output: SEO-optimized business description (750 char GBP limit)
-// Keywords and cities are injected into the prompt to ensure SEO alignment
-
-const DescriptionSchema = z.object({
-  description: z.string().max(750),
-  keywordsUsed: z.array(z.string()),  // Which keywords were woven in
-});
+```
+GET /dashboard/reviews/metrics/[profileId]
+    ↓ parallel Prisma queries:
+    prisma.review.groupBy({ by: ['rating'], _count: true })
+        → rating distribution [{ rating: 5, _count: 42 }, ...]
+    prisma.review.findMany({ orderBy: reviewDate, select: { reviewDate, rating } })
+        → all reviews for trend bucketing (group by month in JS)
+    prisma.profile.findUnique({ select: { placeId, name } })
+        → for QR code URL construction
+    ↓ RSC renders:
+<RatingDistribution data={distribution} />  [client, horizontal bars]
+<ReviewTrendChart data={monthlyTrend} />     [client, recharts LineChart]
+<QRCodeSection placeId={placeId} />          [client, qrcode.react]
 ```
 
-### Service Generator
+### Dashboard Activity Feed Extension
 
-```typescript
-// Input: profile name, category, keywords[], existing services (if any from GBP)
-// Output: array of service descriptions optimized for SEO
-// Each service gets its own description for user to approve individually or in bulk
-
-const ServicesSchema = z.object({
-  services: z.array(z.object({
-    serviceName: z.string(),
-    description: z.string().max(300),  // GBP service description limit
-    categoryId: z.string(),           // For free-form service items
-  })),
-});
+```
+/dashboard/page.tsx (RSC — extend existing Promise.all block)
+    Current queries:
+        recentPublishedPosts, recentPublishedResponses
+    NEW additions:
+        prisma.profileDescription.findMany({
+          where: { isPushed: true, ...profileFilter },
+          take: 3, orderBy: { pushedAt: desc },
+          include: { profile: { select: { name: true } } }
+        })
+        prisma.profileService.findMany({
+          where: { isPushed: true, ...profileFilter },
+          take: 3, orderBy: { pushedAt: desc },
+          include: { profile: { select: { name: true } } }
+        })
+    → Merge into automations[] with type: 'optimization_push'
+    → Welcome banner: conditional block using session.user.name (already in session)
 ```
 
-### Feeding Keywords/Cities into Post Generation (Existing File Modified)
+### Business Cards Upgrade Flow
 
-The existing `post-generator.ts` (`ProfileInput` interface) needs two new fields:
-
-```typescript
-interface ProfileInput {
-  name: string;
-  category: string | null;
-  address: string | null;
-  keywords: string[];      // NEW -- loaded from ProfileKeyword
-  targetCities: string[];  // NEW -- loaded from ProfileCity
-}
-
-// In the user message construction, add:
-// "Target keywords to naturally incorporate: [keyword list]"
-// "Target cities/areas to reference when relevant: [city list]"
+```
+/dashboard/profiles/page.tsx (RSC — extend existing include)
+    Current: { reviews: true, googleAccount: true }
+    Extended: {
+      reviews: { select: { rating: true } },
+      _count: { select: { posts: true } },
+      keywords: { select: { keyword: true }, take: 3 },
+      descriptions: { where: { isPushed: true }, take: 1 },
+    }
+    ↓ card render:
+<ProfileCard>
+  <LogoPlaceholder />     // styled initials avatar (no logo API needed)
+  <MapThumbnail />        // <img src="maps.googleapis.com/staticmap?..."> if placeId
+  <RatingBadge />         // already computed from reviews[]
+  <OptimizationBadge />   // inline computeOptimizationScore(profile).total
+  <PostCountBadge />      // profile._count.posts
+</ProfileCard>
 ```
 
-## Patterns to Follow
+### Reports Enhancement Flow
 
-### Pattern 1: Draft-First with Approval (Existing, Extend)
-**What:** All AI-generated content starts as DRAFT, requires user approval, then pushes to GBP.
-**When:** Descriptions, services -- same as existing posts and review responses.
-**Why:** Already proven in the codebase. Users trust the workflow. Prevents bad AI output from going live on 200 profiles.
+```
+/dashboard/reports/page.tsx (RSC — extend existing queries)
+    Current: prisma.report.findMany, prisma.profile.findMany
+    NEW additions:
+        prisma.dailyMetric.findMany({
+          where: { profileId: selectedProfileId, date: { gte: last30days } },
+          orderBy: { date: 'asc' }, select: { date: true, websiteClicks: true }
+        })
+        prisma.post.findMany({
+          where: { status: 'PUBLISHED', publishedAt: { gte: last30days }, ...profileFilter },
+          orderBy: { publishedAt: 'desc' }, take: 20,
+          include: { profile: { select: { name: true } } }
+        })
+        prisma.profileDescription.findMany({
+          where: { isPushed: true, ...profileFilter },
+          orderBy: { pushedAt: 'desc' }, take: 10
+        })
+    ↓ renders:
+<WebsiteClicksChart data={dailyClicks} />        [client, recharts LineChart]
+<CompletedActionsLog posts={...} descs={...} />  [client or static RSC table]
+<CompetitorCard />                               [static "Coming soon" placeholder]
+```
 
-### Pattern 2: Server Components + Client Islands (Existing, Extend)
-**What:** Server components for data fetching; client components for interactivity.
-**When:** The wizard page itself is a server component that loads the profile and initial progress. Step components are client components with local state.
-**Example:** Profile detail page already does this -- server component fetches data, renders static layout, client components handle interactive elements.
+---
 
-### Pattern 3: Structured AI Output with Zod (Existing, Extend)
-**What:** Use `anthropic.messages.parse()` with `zodOutputFormat()` for all AI generation.
-**When:** Keywords, descriptions, services -- all use Zod schemas for type-safe parsing.
-**Why:** Already used in `post-generator.ts` and `review-responder.ts`. Consistent pattern across the codebase.
+## New API Endpoints
 
-### Pattern 4: API Route per Resource (Existing, Extend)
-**What:** Each new data type gets its own API route with GET/POST/PUT handlers.
-**When:** Keywords, cities, descriptions, services, attributes, progress -- each at their own `/api/onboarding/[resource]` path.
-**Why:** Matches existing pattern (`/api/posts`, `/api/reviews`, `/api/profiles`, etc.).
+| Endpoint | Method | Query Params | Purpose | Notes |
+|----------|--------|--------------|---------|-------|
+| `/api/profiles/[id]/score` | GET | — | Return optimization score + checks | Used when client components need to re-fetch score after actions |
+| `/api/reviews/metrics` | GET | `?profileId=` | Rating distribution + monthly trend aggregation | Callable from client if needed for date range filtering |
+| `/api/reviews/qr-code` | GET | `?profileId=` | Return review request URL from `Profile.placeId` | Generates `https://search.google.com/local/writereview?placeid={id}` |
 
-### Pattern 5: Direct GBP Calls for User-Initiated Actions (New)
-**What:** For onboarding pushes (description, services, attributes), call the GBP API directly from the API route instead of queuing via BullMQ.
-**When:** User clicks "Approve & Push" in the wizard.
-**Why:** The user is waiting for confirmation. Onboarding is one-time per profile, not a scheduled batch. Posts use BullMQ because they are scheduled for future times; onboarding is immediate.
+**Most v1.2 features require NO new API routes** — they extend existing RSC page queries. New API routes are only needed for endpoints that client components re-call after page load (e.g., re-scoring after approve action).
 
-## Anti-Patterns to Avoid
+---
 
-### Anti-Pattern 1: Wizard State in URL Query Params
-**What:** Encoding wizard step and form data in URL search params.
-**Why bad:** Breaks on refresh with complex data, creates ugly URLs, back button causes confusion.
-**Instead:** Store current step in DB via `OnboardingProgress`, load on mount.
+## Integration Points with Existing Pages
 
-### Anti-Pattern 2: Single Monolithic Onboarding API Route
-**What:** One `/api/onboarding` route handling all steps via action type discrimination.
-**Why bad:** Becomes a 500+ line route file, hard to test independently, mixed concerns.
-**Instead:** Separate route per resource (`/api/onboarding/keywords`, `/api/onboarding/description`, etc.).
+### `/dashboard/page.tsx` — Dashboard Upgrades
 
-### Anti-Pattern 3: Pushing to GBP Without Approval
-**What:** Auto-pushing AI-generated descriptions/services to GBP immediately after generation.
-**Why bad:** AI can hallucinate services, descriptions may be off-brand, no safety net.
-**Instead:** Follow the existing draft-first pattern. User reviews and approves before any GBP push.
+**Existing queries touched:** `Promise.all` block at top of component. Add 2 new queries (description pushes, service pushes) to the parallel fetch array.
 
-### Anti-Pattern 4: Caching Attributes Locally
-**What:** Storing all available attribute values in your DB and syncing bidirectionally.
-**Why bad:** Google can add/remove attributes without notice. Cache goes stale silently. The set of available attributes varies by category and region.
-**Instead:** Always read available attributes fresh from GBP API when the attributes step loads. Only store attribute values you actually push.
+**Welcome banner:** Rendered as a conditional block above the stats grid when `totalProfiles === 0 && !selectedProfileId`. References `session.user.name` available via `getServerSession(authOptions)` already called in layout.
 
-### Anti-Pattern 5: BullMQ for Onboarding Pushes
-**What:** Queuing GBP description/service/attribute updates through BullMQ.
-**Why bad:** Onboarding pushes are user-initiated and synchronous (user is waiting for confirmation). Posts use queues because they are scheduled for future delivery.
-**Instead:** Push directly from the API route, return success/failure to the UI. Reserve BullMQ for scheduled/batched ongoing operations.
+**Business filter bar:** The `getSelectedProfileId()` cookie mechanism already powers per-profile filtering throughout the dashboard. The filter bar is a `"use client"` component that sets/clears the cookie via a new `/api/profiles/select` route (or reuse the existing mechanism). Renders as pill buttons, one per profile.
 
-### Anti-Pattern 6: Replacing Services Partially
-**What:** Trying to update individual service items via the API.
-**Why bad:** The GBP API requires replacing the ENTIRE service list in a single PATCH call. Individual updates are not supported.
-**Instead:** Always read current services, merge with changes, and send the full list.
+### `/dashboard/profiles/page.tsx` — Business Cards
 
-## Suggested Build Order
+**Current query:** `prisma.profile.findMany({ include: { googleAccount: true, reviews: true } })`.
 
-Build order accounts for data dependencies: later features depend on data from earlier ones.
+**Problem:** Loading all review rows for avgRating computation is wasteful at 200 profiles. Replace `reviews: true` with `_count: { select: { reviews: true } }` and a separate `prisma.review.groupBy` for rating computation, OR compute avgRating with a raw `prisma.$queryRaw` aggregate. The simplest fix is `include: { reviews: { select: { rating: true } } }` (already fetching only `rating` column — acceptable at scale).
 
-| Order | What to Build | Dependency Rationale |
-|-------|---------------|---------------------|
-| 1 | Prisma schema changes + migration | Everything depends on the data models existing |
-| 2 | `OnboardingProgress` API + wizard shell UI | Framework for all steps; can stub step components |
-| 3 | `keyword-generator.ts` + keywords API route + step UI | Keywords are foundational -- description and post generation depend on them |
-| 4 | Cities API route + step UI | Simple CRUD (no AI), feeds into description generation |
-| 5 | `description-generator.ts` + description API + GBP push (`google-business-info.ts`) + step UI | Depends on keywords + cities being available |
-| 6 | `service-generator.ts` + services API + GBP push + step UI | Depends on keywords; independent of description |
-| 7 | `google-attributes.ts` + attributes API + step UI | Independent of other steps, but later in wizard |
-| 8 | Settings step (post frequency field on Profile, `google-media.ts` for logo) | Independent, straightforward |
-| 9 | Review/complete step + mark `onboardingCompletedAt` | Final integration of wizard |
-| 10 | Modify `post-generator.ts` + `defaults.ts` to use keywords/cities | Connects onboarding data to ongoing post management |
-| 11 | Re-optimization on profile detail page | Reuses API routes from wizard, add "Optimize" button |
-| 12 | Social links reference storage + manual instructions note | Lowest priority -- no API integration possible |
+**Map thumbnail:** `<img src={googleStaticMapsUrl} />` requires `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. If `profile.placeId` is null, render a styled placeholder with the MapPin icon already imported. This is purely additive — no query change needed.
 
-## Integration Points Summary
+### `/dashboard/profiles/[id]/page.tsx` — Profile Detail
 
-| Existing Component | Integration | What Changes |
-|-------------------|-------------|--------------|
-| `Profile` model | Extended | New fields: `postFrequency`, `onboardingCompletedAt`, `logoUrl` + 5 new relations |
-| `post-generator.ts` | Modified | `ProfileInput` gains `keywords[]` and `targetCities[]`, injected into prompts |
-| `prompts/defaults.ts` | Modified | Templates updated to incorporate keyword/city context when available |
-| `sidebar.tsx` | Modified | New "Onboarding" nav link added to `navItems` array |
-| `profiles/[id]/page.tsx` | Modified | Shows keywords, cities, description status; adds "Re-optimize" button |
-| `api/profiles/route.ts` | Modified | Returns `onboardingCompletedAt` in profile list response |
-| `google.ts` | Unchanged | Reused for OAuth client creation by all new GBP wrappers |
-| `google-locations.ts` | Unchanged | Existing profile sync stays as-is |
-| `claude.ts` | Unchanged | Reused as the Anthropic client by all new AI generators |
-| BullMQ queues | Unchanged | Onboarding uses direct API calls, not queues |
-| `business-selector.tsx` | Unchanged | Already supports profile selection; wizard uses URL param instead |
-| Dashboard layout | Unchanged | New pages render within existing layout shell |
+**Current:** Fetches all profile relations, renders stats grid, posts/reviews/metrics sections, re-optimize section.
+
+**v1.2 addition:** Add an optimization score row above the stats grid. The profile with all optimization relations is already fetched — pass it to `computeOptimizationScore()` inline. Add a "View Optimization" link button pointing to `/dashboard/optimization/${id}`.
+
+**No new Prisma query needed** — the page already fetches `onboardingProgress`, which is one of the score inputs.
+
+### `/dashboard/reviews/page.tsx` — Reviews List
+
+**No structural changes.** Add a "View Metrics" button to the page header, linking to `/dashboard/reviews/metrics/[profileId]`. If no profile is selected, the button is hidden (metrics are per-profile).
+
+### `/dashboard/reports/page.tsx` — Reports Enhancement
+
+**Current queries:** `prisma.report.findMany` + `prisma.profile.findMany`.
+
+**New additions:** 3 new Prisma queries added to a second `Promise.all` block (separate from the report list query to avoid blocking it). Only runs when `selectedProfileId` is set — these charts are per-profile.
+
+**PDF generator:** The `src/lib/pdf/report-generator.ts` and `report-template.tsx` may be extended to add the new data sections (website clicks over time, completed actions). This is optional for v1.2 — the web UI enhancements and PDF enhancements are separable. PDF changes carry higher risk (generated files).
+
+---
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| Current (100-200 profiles) | Direct Prisma queries in RSC are fine. Score computed in <5ms. Business cards page is the only query to watch: includes reviews for all profiles. |
+| 1k profiles | Cache optimization scores with 1-hour Redis TTL. Invalidate on profile mutation. Business cards: paginate to 50 per page. |
+| 10k profiles | Materialized view for optimization scores. Paginate business cards. Consider dedicated analytics service for metrics aggregation. |
+
+**Immediate concern for v1.2:** The current `/dashboard/profiles/page.tsx` fetches `include: { reviews: true }` for all profiles. At 200 profiles × 50 reviews avg = 10,000 rows per page load. The fix is to use `reviews: { select: { rating: true } }` (already in place — only the `rating` field is loaded, which is minimal). At 200 profiles this is fine; add pagination if profiles exceed 500.
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: New Prisma Models for Derived Data
+
+**What people do:** Create an `OptimizationScore` model to persist the computed score.
+**Why it's wrong:** Score is a pure derivation of 6 existing models. Persisting it creates a sync problem — the score goes stale whenever `ProfileDescription`, `ProfileService`, `ProfileKeyword`, `ProfileCity`, or `OnboardingProgress` changes.
+**Do this instead:** Compute score in a pure TypeScript function from a single joined Prisma query. At 200 profiles, this is <10ms per page load. Only cache in Redis if profiling proves it necessary.
+
+### Anti-Pattern 2: Client-Side Fetching for Charts
+
+**What people do:** Fetch chart data in a `useEffect`, show skeleton → spinner → chart.
+**Why it's wrong:** All chart data (DailyMetric, Review history) lives in PostgreSQL and is accessible server-side. The RSC pattern makes spinners unnecessary for initial page load.
+**Do this instead:** Query in RSC, serialize to a typed array prop, pass to a `"use client"` chart component that only renders the data it receives. Only the Recharts component itself needs to be a client component.
+
+### Anti-Pattern 3: GBP API Calls for Score Computation
+
+**What people do:** Fetch live GBP profile data to check description length, service count, etc., as part of the optimization audit.
+**Why it's wrong:** GBP API is rate-limited, slow (network call), and the data is already mirrored in the database from v1.1 onboarding writes.
+**Do this instead:** Compute entirely from Prisma DB state. The data is authoritative — all optimization writes go through the app.
+
+### Anti-Pattern 4: Server-Side QR Code Generation
+
+**What people do:** Create a Next.js API route that generates QR codes as PNG buffers.
+**Why it's wrong:** QR codes are deterministic per profile (based on the static `placeId`). Generating server-side adds latency, an API round-trip, and a file buffer for data that could be rendered in the browser in milliseconds.
+**Do this instead:** Use `qrcode.react` (client component). Pass `placeId` as a prop. QR renders client-side with zero API calls. The review URL is `https://search.google.com/local/writereview?placeid=${profile.placeId}`.
+
+### Anti-Pattern 5: Modifying the PDF Generator Alongside UI Changes
+
+**What people do:** Bundle PDF template changes with web UI changes in the same phase.
+**Why it's wrong:** The PDF generator (`report-generator.ts` + `report-template.tsx`) uses `@react-pdf/renderer`, which has different rendering semantics than web React. Bugs in the PDF break report downloads for all users.
+**Do this instead:** Ship the web UI enhancements to the reports page first. Add the PDF template enhancements in a follow-up phase after the web changes are validated.
+
+---
+
+## Build Order (Feature Dependencies)
+
+```
+Phase A: Foundation — no visual output, pure lib/infra
+  1. src/lib/optimization-score.ts          Pure function, can be unit-tested immediately
+  2. Verify/add recharts to package.json    Only new npm dep the milestone likely needs
+  3. Verify/add qrcode.react                For review QR codes
+
+Phase B: Business Cards — lowest risk (modifies existing page, no new routes)
+  4. Upgrade /dashboard/profiles/page.tsx
+     - Extend Prisma query (_count.posts, descriptions where isPushed)
+     - Swap Building2 for styled initials avatar
+     - Add map thumbnail (conditional on placeId)
+     - Add inline optimization score badge (uses lib from Phase A)
+
+Phase C: Dashboard Upgrades — extends existing complex page
+  5. Upgrade /dashboard/page.tsx
+     - Welcome banner (session.user.name, totalProfiles === 0 condition)
+     - Extend automations query to include optimization pushes
+     - Business filter bar component + cookie/URL param logic
+
+Phase D: Optimization Page — new route, uses Phase A lib
+  6. src/components/optimization/score-gauge.tsx     SVG arc client component
+  7. src/components/optimization/audit-card.tsx      Per-check card with CTA
+  8. src/components/optimization/audit-grid.tsx      Grid wrapper
+  9. /dashboard/optimization/[profileId]/page.tsx    RSC page
+  10. /api/profiles/[id]/score/route.ts               API endpoint for client re-fetch
+  11. Modify sidebar.tsx: add Optimization nav item
+  12. Modify profiles/[id]/page.tsx: add score widget + link
+
+Phase E: Review Metrics — new route, independent of Phase D
+  13. src/components/reviews/rating-distribution.tsx  Horizontal bar chart
+  14. src/components/reviews/review-trend-chart.tsx   Recharts line chart
+  15. /dashboard/reviews/metrics/[profileId]/page.tsx  RSC page
+  16. QR code section (qrcode.react, client component)
+  17. Add "View Metrics" button to /dashboard/reviews/page.tsx header
+  18. /api/reviews/metrics/route.ts                   API for client-side re-fetch
+
+Phase F: Reports Enhancement — highest operational risk (touches PDF)
+  19. Add website clicks chart to /dashboard/reports/page.tsx
+  20. Add completed actions log (posts + description pushes)
+  21. Add competitor card (static "Coming soon" UI)
+  22. Optional: extend src/lib/pdf/report-generator.ts (deferred if risky)
+```
+
+**Rationale for this order:**
+- Business Cards (B) is safest first — no new routes, no new models, isolated to one page.
+- Dashboard (C) extends an already-complex page — do after gaining confidence from B.
+- Optimization Page (D) depends on the score lib from A; added to sidebar after the page exists.
+- Review Metrics (E) is fully independent but introduces a chart library — establish the pattern after D.
+- Reports Enhancement (F) is last because PDF changes are operationally sensitive and can be separated from web UI changes.
+
+---
+
+## External Dependencies Assessment
+
+| Dependency | Status | Purpose | Notes |
+|------------|--------|---------|-------|
+| `recharts` | Likely not installed — verify | LineChart for metrics/review trends | Standard for Next.js RSC+client chart pattern. ~60KB gzipped. Only add if not present. |
+| `qrcode.react` | Not installed | Client-side QR code rendering | Tiny library, zero backend required. |
+| Google Static Maps API | Requires API key | Map thumbnail on business cards | Needs `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` env var. The key may already be available in the Google OAuth project. Fallback: styled placeholder if `placeId` is null. |
+| All other v1.1 deps | Already installed | All GBP operations, AI, PDF | `googleapis`, `@anthropic-ai/sdk`, `@react-pdf/renderer` all remain unchanged. |
+
+**Verify before starting:**
+```bash
+cat /Users/christopherballlard/Projects/MapsAI/package.json | grep -E "recharts|qrcode"
+```
+
+---
 
 ## Sources
 
-- [GBP Business Information API reference](https://developers.google.com/my-business/reference/businessinformation/rest) -- HIGH confidence
-- [GBP attributes management guide](https://developers.google.com/my-business/content/attributes) -- HIGH confidence
-- [GBP services management guide](https://developers.google.com/my-business/content/services) -- HIGH confidence
-- [GBP location data guide](https://developers.google.com/my-business/content/location-data) -- HIGH confidence
-- [GBP media upload guide](https://developers.google.com/my-business/content/upload-photos) -- HIGH confidence
-- [GBP locations.updateAttributes reference](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/updateAttributes) -- HIGH confidence
-- Social links API availability: multiple sources confirm not available via API as of 2026 -- MEDIUM confidence
-- Existing codebase analysis of `src/lib/google-*.ts`, `src/lib/post-generator.ts`, `src/lib/review-responder.ts`, `prisma/schema.prisma` -- HIGH confidence
+- Direct codebase inspection: `/src/app/dashboard/`, `/src/app/api/`, `/src/lib/`, `/prisma/schema.prisma`, `/src/components/` — HIGH confidence
+- Architecture patterns derived from existing v1.0/v1.1 patterns (RSC + client island, direct Prisma in RSC, Server Actions pattern, cookie-based profile selection)
+- Optimization score formula derived from `OnboardingProgress.completedSteps` logic in existing `/src/app/api/onboarding/summary/route.ts`
+- Score inputs mapped directly to existing Prisma models: `ProfileDescription.isPushed`, `ProfileService.isPushed`, `ProfileKeyword`, `ProfileCity`, `OnboardingProgress.completedSteps`, `Post._count`
+
+---
+*Architecture research for: Rankmaps.io v1.2 Profile Optimization & UI Enhancements*
+*Researched: 2026-04-02*

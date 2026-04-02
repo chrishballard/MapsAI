@@ -1,242 +1,339 @@
-# Feature Landscape: Onboarding & Profile Optimization (v1.1)
+# Feature Research: v1.2 Profile Optimization & UI Enhancements
 
-**Domain:** GBP onboarding wizard and AI-powered profile optimization
-**Researched:** 2026-03-04
-**Builds on:** Existing MapsAI MVP (OAuth, posts, reviews, reports already shipped)
+**Domain:** GBP management platform — UI/analytics layer on top of existing management tooling
+**Researched:** 2026-04-02
+**Confidence:** HIGH (existing codebase fully understood; competitor patterns well-established)
+**Builds on:** MapsAI v1.0 (posts, reviews, reports) + v1.1 (onboarding, optimization wizard)
 
-## Table Stakes
+---
 
-Features that any GBP management tool with "optimization" in its pitch must have. Without these, the onboarding flow feels like a toy.
+## Overview
 
-| Feature | Why Expected | Complexity | Dependencies | Notes |
-|---------|--------------|------------|--------------|-------|
-| Target keywords per profile | Keywords are the backbone of all GBP optimization -- descriptions, services, and posts all revolve around them | Low | Profile model (exists) | Store up to 10 keywords per profile. Feed into all AI generation. |
-| Target cities/service areas | Local SEO is geo-modified keyword strategy; "plumber Denver" != "plumber Aurora" | Low | Profile model (exists) | Store up to 3 cities. Combine with keywords for geo-targeted content. |
-| AI-generated business description | The 750-char GBP description is the single highest-impact optimization field | Medium | Keywords, cities, GBP API patch | Generate SEO-optimized description using profile category + keywords + cities. Approve then push via `locations.patch` with `updateMask=profile.description`. |
-| AI-optimized service descriptions | Services section is underused but powerful for local SEO; each service can have a keyword-rich description | High | Keywords, categories API, GBP API patch | Must fetch available structured services per category first, then generate descriptions. Push via `updateMask=serviceItems`. Full replacement only (no individual updates). |
-| Configurable post frequency | Different businesses need different cadences; a dentist needs 4/month, a restaurant might want 8/month | Low | Existing scheduling system | Store frequency on profile. Feed into existing BullMQ scheduling. |
-| Re-optimization on demand | Businesses pivot, add services, change focus; optimization is not one-and-done | Low | All optimization features | "Re-optimize" button on profile page that re-runs description + services generation with current keywords. |
+v1.2 adds five UI/analytics upgrades to an already-shipping platform. None of these features require new GBP API capabilities or new backend infrastructure — they are primarily data aggregation, visualization, and UX pattern improvements. The risk profile is LOW. The complexity is front-end and query complexity, not integration complexity.
 
-## Differentiators
+---
 
-Features that elevate MapsAI beyond "yet another GBP tool" for Vineyard Growth's workflow. Not expected, but high-value.
+## Feature 1: Profile Optimization Page
 
-| Feature | Value Proposition | Complexity | Dependencies | Notes |
-|---------|-------------------|------------|--------------|-------|
-| AI-suggested keywords | Zero manual keyword research; Claude analyzes business name, category, address, and existing GBP data to suggest 10 relevant keywords | Medium | Profile data (category, name, address) | Use Claude to generate keyword suggestions based on business context. No third-party keyword API needed -- the AI suggestions are "good enough" for GBP optimization (confirmed as project decision). |
-| Multi-step onboarding wizard | Guided flow replaces the manual "go optimize each field" approach; ensures nothing is missed across 100-200 profiles | Medium | All optimization features | Steps: select profile -> logo -> keywords -> cities -> description -> services -> attributes -> social profiles -> post frequency. Each step saves independently. |
-| Keywords feed into post generation | Keywords set during onboarding automatically inform all future AI-generated posts, creating a coherent SEO strategy | Low | Keywords stored on profile, existing post-generator | Modify `post-generator.ts` to include profile keywords and cities in the Claude prompt. Currently only uses name, category, address. |
-| Approve-then-push workflow for GBP updates | AI generates content, human reviews it, only then does it push to live GBP -- prevents bad AI output from going live | Medium | GBP API write endpoints | Critical for trust. Same pattern as existing post approval flow. Store draft description/services, show diff, push on approval. |
+### What It Is
 
-## Anti-Features
+A per-profile page showing an optimization score (0-100 gauge), GBP audit cards (each scoring one signal), and AI-generated content suggestions with approve/ignore workflows.
 
-Features to explicitly NOT build in this milestone. Each has been considered and rejected for a specific reason.
+### Table Stakes
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| Social profile links via API | GBP API does NOT support social links programmatically (confirmed: "cannot be added via the API, bulk upload sheets, or most bulk management tools"). Building a fake version that just stores data locally without pushing to GBP is misleading. | Store social links locally for reference. Display a note that social links must be set manually in GBP dashboard. Provide direct link to GBP edit page. |
-| Optimization score / completeness gauge | Explicitly out of scope per PROJECT.md. Scores create anxiety and false urgency. The wizard itself ensures completeness. | The wizard's step-by-step flow IS the completeness check. Mark steps as done/skipped. |
-| Keyword search volume / difficulty data | Requires third-party API (SEMrush, Ahrefs, Google Ads API) adding cost and complexity. AI suggestions are sufficient for GBP keyword targeting. | AI-suggested keywords based on business context. If a keyword is relevant to the business, it belongs in the GBP -- volume data does not change that. |
-| Auto-push without approval | Pushing AI-generated descriptions directly to live GBP profiles is too risky for a tool managing 100-200 client businesses | Always require human approval before any GBP write operation. Draft -> Review -> Approve -> Push. |
-| Bulk onboarding (wizard for multiple profiles at once) | The wizard is profile-specific by nature; each business has unique keywords, services, and descriptions | Onboard profiles one at a time through the wizard. The wizard should be fast enough (5-10 minutes per profile) that bulk is unnecessary. |
-| Photo/media optimization beyond logo | PROJECT.md marks this as manual. Photo AI analysis and optimization is a separate, complex domain. | Logo upload only during onboarding. All other photos managed manually in GBP. |
-| GBP category management | Changing a business's primary category has major ranking implications and should be done carefully by an SEO expert, not automated | Read-only display of current category. Use category data to inform keyword suggestions and service lookups. |
-| Hours of operation management | Risk of corrupting hours data across 200 profiles; hours are rarely optimized -- they are factual | Read-only display. Edit in GBP directly. |
+Features users expect from any optimization tool. Missing these makes the page feel like a toy.
 
-## Feature Details
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Optimization score gauge (0-100) | Every GBP audit tool from HighLevel to Localo to Merchantynt shows a numeric score — users have been trained to expect one | MEDIUM | Computed from weighted factors: review frequency, post frequency, star rating, images uploaded, description present, services present, attributes set. Store as computed DB field or calculate on load. |
+| Audit cards per signal | Breaking down the score makes it actionable — users need to know *why* the score is what it is, not just the number | MEDIUM | One card per signal: review frequency, post frequency, rating, image count, review keywords in responses, description quality. Each card: current value, benchmark, status (good/warning/critical), recommendation. |
+| AI description suggestion with approve/ignore | Already built in v1.1 re-optimization — this is surfacing that same workflow on the new page | LOW | Re-use existing re-optimization API routes. Add "ignore" state to suppress repeated suggestions. |
+| AI services suggestion with approve/ignore | Same as above — v1.1 built this | LOW | Same re-use pattern as description. |
+| Attributes toggles | Already built in v1.1 — just surface here | LOW | Re-use existing attribute management UI as an embedded section. |
+| Bulk approve action | Any approval workflow at scale needs bulk operations — reviewing 200 profiles one-at-a-time is not viable | MEDIUM | "Approve all suggestions" action. Confirm dialog showing what will be pushed. |
 
-### 1. Multi-Step Onboarding Wizard
+### Differentiators
 
-**What it does:** Guides team through optimizing a newly connected GBP profile step-by-step.
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Review keywords audit card | Paige/competitors don't surface this as a scored signal — checking whether review responses include target keywords is a concrete SEO improvement loop | MEDIUM | Compare profile keywords against recent AI-generated review responses. Flag profiles where responses aren't using keywords. Score component. |
+| Score trend over time | Showing the score improving over time demonstrates value to the team managing Vineyard Growth clients | HIGH | Requires storing historical scores — snapshots in DB. Skip for MVP; add in v1.3. |
+| Competitor audit comparison | Showing how the profile scores relative to nearby competitors on review count/frequency | HIGH | Requires competitor data via GBP API or external source. Out of scope for v1.2. |
 
-**Expected flow:**
-1. **Select profile** -- pick from synced but un-onboarded profiles
-2. **Logo upload** -- upload business logo via GBP Media API (category: LOGO)
-3. **Keywords** -- AI suggests 10 keywords; team can edit, add, remove, reorder
-4. **Target cities** -- select up to 3 cities/service areas (auto-suggest from address)
-5. **Business description** -- AI generates 750-char SEO description using keywords + cities; team edits and approves; pushes to GBP
-6. **Services** -- fetch available structured services for category; AI generates descriptions for each; team reviews; push entire service list to GBP
-7. **Attributes** -- fetch available attributes for category; toggle relevant ones; push to GBP
-8. **Social profiles** -- enter social links (stored locally only; manual GBP entry required)
-9. **Post frequency** -- set weekly/monthly cadence for auto-generation
+### Anti-Features
 
-**Key UX decisions:**
-- Each step saves independently (not all-or-nothing)
-- Steps can be skipped and revisited
-- Progress persists across sessions
-- Wizard state stored in database, not just client-side
+| Anti-Feature | Why Avoid | Alternative |
+|--------------|-----------|-------------|
+| Auto-push all suggestions | Risky for 100-200 live client profiles — a bad AI generation pushed automatically could corrupt live GBP data | Bulk approve with explicit confirmation dialog showing what will change |
+| Score breakdown that requires external data | Keyword volume, competitor ranking, citation consistency require third-party APIs and add cost | Keep all signals derivable from data already in the DB (reviews, posts, attributes, description fields) |
+| Real-time score recalculation on every page load | Expensive query for 200 profiles | Calculate on profile sync completion and cache; expose "recalculate" button |
 
-### 2. AI Keyword Suggestions
+---
 
-**What it does:** Claude analyzes business name, category, address, and website to suggest 10 relevant target keywords.
+## Feature 2: Dashboard Upgrades
 
-**How it works:**
-- Input: profile name, category, address, website URL (all from existing profile data)
-- AI prompt: "Suggest 10 target keywords for this local business that would help it rank in Google Maps and local search results"
-- Output: ranked list of keywords with brief rationale
-- Team can accept, reject, edit, or add their own
-- Keywords stored as JSON array on profile
+### What It Is
 
-**GBP description optimization context:**
-- First 250 characters are visible in search results -- front-load primary keywords and location
-- Full description is 750 characters max
-- Structure: who you are + what you do + where you do it
-- Natural keyword inclusion, not stuffing
-- No URLs, HTML, or promotional content allowed by Google
+Four additions to the existing dashboard: (1) recent automations feed, (2) My Tasks table, (3) welcome banner, (4) business filter.
 
-### 3. Business Description Generation
+**Note:** The dashboard already has a `tasks-table.tsx` component and `getSelectedProfileId` filter logic. This milestone is enhancing what exists, not rebuilding.
 
-**What it does:** AI generates a 750-character SEO-optimized business description using the profile's keywords and target cities.
+### Table Stakes
 
-**GBP API integration:**
-- Read current: `GET locations/{id}?readMask=profile` (the `profile.description` field)
-- Write: `PATCH locations/{id}?updateMask=profile.description`
-- Auth scope: `https://www.googleapis.com/auth/business.manage`
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Recent automations feed | Any automation platform needs an audit trail visible on the dashboard — users need to see what the system did without checking every individual resource | MEDIUM | Show last 10-20 automated actions: "Post published for [Business]", "Review responded to for [Business]", "Description pushed for [Business]". Source from existing Post/ReviewResponse/ProfileDescription tables filtered by `publishedAt` or `approvedAt`. |
+| My Tasks table | The `tasks-table.tsx` already exists but likely needs refinement for v1.2 — surfacing pending posts, pending review responses, and profiles needing attention as actionable rows | LOW | Already partially built. Check what's implemented vs what the milestone spec calls for. Confirm the table already queries pending items correctly. |
+| Business filter / profile selector | Managing 100-200 profiles without filtering is unusable — users need to focus on one business at a time | LOW | `getSelectedProfileId` already exists in the codebase. This is surfacing that filter as a prominent UI element (dropdown in header or top of dashboard). |
+| Welcome banner | Orientation for new users; also a natural place for onboarding prompt ("3 profiles not yet onboarded") | LOW | Static or semi-dynamic banner. Low complexity. |
 
-**AI generation rules:**
-- Max 750 characters (hard limit)
-- Front-load primary keyword + primary city in first 250 characters
-- Include business name, category, key services
-- Weave in target keywords naturally
-- End with a call to action or unique value proposition
-- No URLs, HTML, prices, or promotional language (Google policy)
+### Differentiators
 
-### 4. Service Descriptions Optimization
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Automations feed with profile-level drill-down | Clicking an automation event navigates to the relevant profile/post/review | LOW | Link each feed item to its source resource. Minimal extra work. |
+| Dashboard summary stats scoped to selected profile | When a profile is selected via the business filter, all stat cards update to show that profile's data only | LOW | Already architected via `profileFilter` in existing dashboard queries. Just needs UI to surface the selection control. |
 
-**What it does:** Fetches available services for the business's GBP category, lets team select which are offered, and generates keyword-rich descriptions for each.
+### Anti-Features
 
-**GBP API integration:**
-- Discover available services: `GET /v1/categories?regionCode=US&languageCode=en&filter=displayname={categoryName}&view=FULL`
-- Read current: `GET locations/{id}?readMask=serviceItems`
-- Write: `PATCH locations/{id}?updateMask=serviceItems`
-- CRITICAL: Must send entire `serviceItems` array on update (no individual service updates)
-- Check `canModifyServiceList` metadata before attempting writes
+| Anti-Feature | Why Avoid | Alternative |
+|--------------|-----------|-------------|
+| Full activity log with search/filter | Dashboard is overview; full log is a separate concern | Keep feed to last 20 items; link to a future "Activity Log" page |
+| Real-time WebSocket updates | Adds infra complexity (Pusher, Ably, or SSE) for marginal value on an internal tool | Reload-on-visit is fine; the team isn't watching the dashboard live |
+| Notification system / email alerts | Out of scope for v1.2; the dashboard is pull not push | Defer to v1.3 |
 
-**Service item types:**
-- `structuredServiceItem`: uses Google's predefined `serviceTypeId` (preferred -- better for SEO)
-- `freeFormServiceItem`: custom service with `categoryId` and display name (for services not in Google's list)
+---
 
-**AI generation approach:**
-- For each selected service, generate a concise description incorporating relevant keywords
-- Descriptions should be specific to the business, not generic
-- Include target city names where natural
+## Feature 3: Business Cards View
 
-### 5. GBP Attributes Management
+### What It Is
 
-**What it does:** Fetches available attributes for the business's category and lets team toggle them on/off.
+Replace the current list/table view of the profiles page with a 4-column card grid. Each card shows: business logo, business name, star rating, review count, address, and a static Google Maps thumbnail.
 
-**GBP API integration:**
-- List available: `GET /v1/attributes?categoryName={gcid}&regionCode=US&languageCode=en` or `parent=locations/{id}`
-- Read current: `GET locations/{id}?readMask=attributes`
-- Write: `PATCH /v1/locations/{id}?attributeMask={attribute_names}`
+### Table Stakes
 
-**Attribute value types:**
-- `BOOL`: simple on/off (e.g., wheelchair accessible, has WiFi)
-- `ENUM`: single selection (e.g., WiFi type: free vs paid)
-- `REPEATED_ENUM`: multi-select (e.g., payment types accepted)
-- `URL`: link values (e.g., menu URL, order URL)
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| 4-column card grid layout | Any multi-location management tool (BrightLocal, LocalViking, Paige) uses a card grid for profile list — table rows feel generic and hard to scan for 50+ profiles | LOW | Tailwind grid layout. Cards already partially exist in the profiles page (`Card` component used). Replace list rows with cards. |
+| Star rating display with numeric count | Review rating is the single most visible GBP metric — not showing it on the card is an omission users will notice | LOW | Rating and review count already fetched from `reviews` relation on Profile. Render stars (filled/half/empty) + "(N reviews)" |
+| Business address display | Cards need enough info to identify the business at a glance — address distinguishes multi-location clients | LOW | Already in profile data. |
+| Profile status badge | Users need to know at a glance if a profile is connected, onboarded, or has issues | LOW | `isConnected`, `isOnboarded` already on Profile model. Badge: "Active", "Needs Onboarding", "Disconnected". |
 
-**UX approach:**
-- Group attributes by heading (Google provides grouping metadata)
-- Show only attributes relevant to the business's category
-- Pre-populate with current values from GBP
-- Toggle/select interface per value type
+### Differentiators
 
-### 6. Logo Upload
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Google Maps thumbnail | Visual wayfinding — seeing the map pin location makes profiles immediately recognizable, especially for multi-location clients | MEDIUM | Use Google Static Maps API: `https://maps.googleapis.com/maps/api/staticmap?center={lat},{lng}&zoom=14&size=400x200&markers={lat},{lng}&key={key}`. Requires lat/lng on Profile (may need to add or geocode from address). API key already used in project. |
+| Business logo | Branded cards look more professional and make profiles recognizable | LOW | GBP profiles have a logo media item. May need to store `logoUrl` on Profile after v1.1 logo upload. Or use a fallback icon. |
+| Optimization score badge on card | Quick at-a-glance health indicator without navigating to the profile | LOW | Once optimization score is computed (Feature 1), add a small badge to each card: score with color coding (green/yellow/red). |
+| Posts published this month on card | Shows activity level at a glance | LOW | Count from existing Post data. Small stat line on card. |
 
-**What it does:** Upload business logo during onboarding via the GBP Media API.
+### Anti-Features
 
-**GBP API integration:**
-- Still uses v4 API: `POST accounts/{accountId}/locations/{locationId}/media`
-- Two upload methods: from URL (`sourceUrl` param) or from bytes (3-step process)
-- Set `mediaFormat: PHOTO` and category: `LOGO`
-- Requirements: JPG or PNG, 10 KB - 5 MB, recommended 1080x1080px
+| Anti-Feature | Why Avoid | Alternative |
+|--------------|-----------|-------------|
+| Sortable/filterable grid with complex state | Adds client-side complexity for 100-200 profiles that can be managed with simple alphabetical ordering + search | Add a search input (client-side filter); defer advanced sorting to v1.3 |
+| Animated map with interactive pins | Heavy (Mapbox/Google Maps JS SDK) for no additional value on a list page | Static thumbnail from Static Maps API is sufficient |
+| Pagination | 200 cards load fine in a 4-column grid. Server pagination adds routing complexity. | Load all; add search/filter to narrow |
 
-**Simpler approach:** Accept file upload in wizard, upload to GBP via URL method (store temporarily, send URL to Google). Avoid the byte-upload complexity unless URL method fails.
+---
 
-### 7. Post Frequency Configuration
+## Feature 4: Review Metrics Dashboard
 
-**What it does:** Set how many posts per month should be auto-generated for each profile.
+### What It Is
 
-**Integration with existing system:**
-- Store `postFrequency` on Profile model (e.g., 4, 8, 12 posts/month)
-- Existing BullMQ scheduling reads this value when queuing next generation batch
-- Default: 4 posts/month (1/week)
+A dedicated review analytics section showing: total reviews with trend, star rating distribution (5-bar chart), monthly review volume line chart, days since last review, QR code review request panel, and AI tips for getting more reviews.
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Total reviews with trend | The most basic review stat — any review management tool shows this with a period-over-period trend | LOW | Count from existing Review table. Trend: compare this month vs last month count. |
+| Star rating distribution | Users expect to see the breakdown of 1-star through 5-star — it reveals whether there are suppressed negative reviews or a skewed profile | LOW | GROUP BY rating query on Review table. Bar chart (could be simple CSS bars or recharts). |
+| Monthly reviews line chart | Shows review velocity over time — Google's algorithm weights recent reviews more heavily, making this the most important review metric for local SEO | MEDIUM | GROUP BY month query. recharts LineChart. Date range selector. |
+| Days since last review | Review recency is a Google ranking signal — surfacing this prominently prompts action | LOW | MAX(createdAt) from reviews for profile. Show "3 days ago" or "47 days — action needed". |
+| Review request panel with QR code | Paige specifically advertises QR code review request as a feature — users expect a mechanism to drive new reviews | MEDIUM | Generate review link from GBP `place_id`. QR code from `qrcode` npm package (tiny, no server required). Display download button. |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| AI tips for getting more reviews | Actionable, context-aware suggestions — "Your last review was 47 days ago. Consider sending a follow-up email to recent customers." — is more valuable than generic advice | MEDIUM | Claude prompt taking current review metrics → generate 2-3 specific actionable tips. Cache per profile per week to control AI cost. |
+| Review keyword analysis | Showing which keywords appear most in reviews (customer language) vs. whether those match target keywords | HIGH | NLP/counting on review text. Useful but complex. Defer to v1.3. |
+| Rating trend line (separate from volume) | Showing whether average rating is improving over time | MEDIUM | Monthly average query. Add as second line on the monthly chart (dual-line). |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | Alternative |
+|--------------|-----------|-------------|
+| Automated review request emails/SMS | Requires email/SMS infrastructure (Postmark, Twilio), compliance concerns (CAN-SPAM, TCPA), and Google ToS review for solicitation patterns | Show QR code + copy-link — team sends manually. Defer automation. |
+| Sentiment analysis with ML | Over-engineering for a tool that already surfaces review text. Star rating IS the sentiment. | Show rating distribution + review text; team reads context |
+| Response rate metric | Only meaningful if you have a baseline; and the tool auto-responds via BullMQ — response rate will always be high | Don't surface metrics that look bad and can't be actioned |
+
+---
+
+## Feature 5: Reports Enhancement
+
+### What It Is
+
+Four additions to the existing PDF report generator: (1) competitor comparison card, (2) Views on Google dual-line chart (Search vs Maps), (3) website clicks sparkline, (4) completed actions log. Plus date range controls for the report.
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Date range controls | Any reporting tool must allow the user to set the period being reported | LOW | Date range picker UI. Pass range to existing report generation API. |
+| Website clicks chart | Website clicks from GBP are a primary conversion metric — any agency reporting tool tracks this | MEDIUM | Already synced via GBP Insights API into existing `GBPMetric` or similar model. Surface as sparkline in existing report. Verify field names in Prisma schema. |
+| Views on Google dual-line chart (Search vs Maps) | Google provides separate views for Search and Maps — showing both lines demonstrates total visibility, which is a key metric agencies report on | MEDIUM | Two data series from existing metrics: `businessImpressionsDesktopSearch` + `businessImpressionsMobileSearch` (one line) vs `businessImpressionsDesktopMaps` + `businessImpressionsMobileMaps` (other line). Already available in GBP Insights API response. |
+| Completed actions log | Demonstrates the value of the service — "Here are the 47 actions we took this month" is the agency's proof of work | LOW | Query posts published, reviews responded to, optimizations pushed in the date range. Render as a table in the PDF. |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Competitor comparison card | Shows the profile's review count and rating vs. top 2-3 local competitors — powerful for justifying ongoing management fees | HIGH | Requires competitor data. GBP API does not expose competitor data. Would need Google Places API calls (Places Nearby Search or Text Search for category+location). Quota implications. Flag as HIGH complexity. |
+| Report scheduling / auto-delivery | Monthly reports sent automatically reduce manual work for agency team | HIGH | Requires email integration. Defer to v1.3. |
+| Executive summary AI narrative | A 3-sentence Claude-generated summary of the month: "Your profile received X views, Y calls, and Z new reviews this month. Post frequency was maintained at 4/week. Rating improved from 4.2 to 4.6." | LOW | Claude prompt with metric data. Cheap (one small call per report). High perceived value. |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | Alternative |
+|--------------|-----------|-------------|
+| Interactive web-based reports | PDF is already working and serves the use case (send to client or print) — interactive reports require a separate UI surface and auth model | Keep PDF; add date range controls to existing PDF generator |
+| Keyword ranking data in reports | Would require rank tracking API (BrightLocal, SEMrush) — adds cost and dependency | GBP Insights metrics (views, clicks, calls) are sufficient for the report |
+| Competitor tracking over time | Requires scheduling competitor data pulls, storing competitor history — significant infra for marginal value | One-time competitor snapshot on the report; no history tracking |
+
+---
 
 ## Feature Dependencies
 
 ```
-Profile sync (exists) -> Onboarding wizard entry point
-                      |
-                      v
-              Keywords + Cities (step 2-3)
-                      |
-          +-----------+-----------+
-          |           |           |
-          v           v           v
-    Description   Services   Post generation
-    generation    optimization  (existing, enhanced)
-          |           |
-          v           v
-    Approve+Push  Approve+Push
-    to GBP        to GBP
+Feature 1 (Profile Optimization Page)
+    ├──requires──> Optimization score computed (new DB field or computed query)
+    ├──reuses──> Re-optimization API routes (v1.1, already built)
+    ├──reuses──> Attribute management UI (v1.1, already built)
+    └──feeds into──> Feature 3 (Business Cards View) — score badge on card
 
-Attributes management -- independent (no keyword dependency)
-Logo upload -- independent
-Social profiles -- independent (local storage only)
-Post frequency -- independent (config change)
+Feature 2 (Dashboard Upgrades)
+    ├──reuses──> getSelectedProfileId (already built)
+    ├──reuses──> TasksTable component (already built, tasks-table.tsx)
+    └──independent of Features 1, 3, 4, 5
+
+Feature 3 (Business Cards View)
+    ├──reuses──> Profile data with reviews (already fetched)
+    ├──requires──> Google Static Maps API key (already in project for GBP auth)
+    └──enhanced by──> Feature 1 score badge (nice-to-have, not blocking)
+
+Feature 4 (Review Metrics Dashboard)
+    ├──reuses──> Review data (already in DB from review sync)
+    ├──requires──> QR code library (qrcode npm, new small dep)
+    └──feeds into──> Feature 5 (completed actions log includes review responses)
+
+Feature 5 (Reports Enhancement)
+    ├──reuses──> Existing PDF generator (@react-pdf/renderer, already built)
+    ├──reuses──> GBPMetric data (already synced for existing reports)
+    ├──requires──> Date range controls (new UI, simple)
+    └──competitor card──requires──> Google Places API calls (HIGH complexity, HIGH risk)
 ```
 
-**Critical path:** Keywords -> Description -> Services (this ordering matters because descriptions and services both consume keywords)
+### Dependency Notes
 
-**Independent features:** Attributes, logo, social profiles, and post frequency can be built in any order and do not depend on the keyword/description/services chain.
+- **Feature 1 score badge → Feature 3 cards:** Score badge is additive to cards. Cards can ship without it. No blocking dependency.
+- **Feature 5 competitor card:** This is the only feature with a non-trivial external dependency (Google Places API for competitor data). It should be evaluated separately — potentially deferred.
+- **Feature 2 is fully independent:** Dashboard upgrades don't depend on any other v1.2 feature. Can be built first or last.
+- **Review data freshness:** Features 1 and 4 depend on review data being current. The existing review sync worker handles this.
 
-## Complexity Assessment
+---
 
-| Feature | Complexity | Rationale |
-|---------|------------|-----------|
-| Keywords + cities storage | Low | New fields on Profile model, simple CRUD UI |
-| AI keyword suggestions | Medium | New Claude prompt, structured output parsing, editable list UI |
-| AI description generation | Medium | Claude prompt with constraints (750 char, keyword inclusion), GBP API write, approval UI |
-| AI service optimization | High | Category-based service discovery API call, structured vs freeform service types, full-array replacement requirement, per-service AI generation, bulk approval UI |
-| GBP attributes management | Medium | Dynamic attribute fetching per category, 4 different value types to render, grouped UI |
-| Logo upload | Medium | File upload handling, GBP Media API (still v4), image validation |
-| Social profiles | Low | Local-only storage, simple form with platform dropdown + URL input |
-| Post frequency | Low | Single field on profile, dropdown selector |
-| Onboarding wizard shell | Medium | Multi-step form state management, progress tracking, skip/revisit logic, persistence |
-| Re-optimization | Low | Re-invoke existing generation functions with current keywords |
-| Keywords in post generation | Low | Modify existing prompt template to include keywords array |
+## MVP Definition
 
-## MVP Recommendation for v1.1
+### Launch With (v1.2 Core)
 
-**Priority 1 -- Core optimization pipeline (build first):**
-1. Keywords + cities on Profile model (foundation for everything)
-2. AI keyword suggestions (makes the wizard valuable immediately)
-3. AI business description generation + approve + push to GBP (highest-impact single optimization)
-4. Keywords integrated into existing post generation (immediate ROI from keywords)
+These features deliver the highest visible value per complexity unit.
 
-**Priority 2 -- Full wizard experience:**
-5. AI service descriptions + approve + push to GBP (high complexity, high value)
-6. Onboarding wizard shell wrapping all steps
-7. Post frequency configuration
-8. Re-optimization from profile page
+- [x] **Business Cards View** — replaces existing list; purely front-end; zero API changes; high visual impact. Easiest win.
+- [x] **Dashboard Upgrades: automations feed + business filter polish** — reuses existing data and components; makes the home screen feel alive.
+- [x] **Profile Optimization Page: score gauge + audit cards** — the single feature that most distinguishes a "management tool" from a "management platform". Core to the Paige replacement goal.
+- [x] **Review Metrics Dashboard: total/trend + rating distribution + monthly chart + QR code** — table stakes for review management. QR code is a differentiator that Paige advertises.
+- [x] **Reports Enhancement: Views dual-line chart + website clicks + completed actions log + date range** — strengthens existing reporting without adding complexity.
 
-**Priority 3 -- Nice-to-have completeness:**
-9. GBP attributes management
-10. Logo upload
-11. Social profiles (local storage only)
+### Add After Validation (v1.2 Stretch)
 
-**Rationale:** The keyword + description pipeline is the highest-value, lowest-risk path. Services optimization is highest complexity due to the category-based service discovery and full-array replacement requirement. Attributes, logo, and social profiles add completeness but don't drive core SEO value.
+Features to add if core ships with time remaining.
+
+- [ ] **Optimization page: bulk approve action** — valuable but adds confirmation flow complexity. Add after core approve/ignore works.
+- [ ] **Reports: AI executive summary narrative** — low effort, high perceived value. Add as last step if time allows.
+- [ ] **Dashboard: welcome banner with onboarding prompt** — nice UX touch, low priority.
+
+### Future Consideration (v1.3+)
+
+Features to defer until v1.2 is shipped and validated.
+
+- [ ] **Reports: competitor comparison card** — HIGH complexity due to Google Places API dependency, quota risks, and data storage requirements.
+- [ ] **Optimization score trend over time** — requires historical score snapshots; adds schema complexity.
+- [ ] **Review keyword analysis** — NLP complexity, unclear ROI.
+- [ ] **Automated review request emails/SMS** — requires email infra + compliance research.
+- [ ] **Report scheduling/auto-delivery** — requires email integration.
+
+---
+
+## Feature Prioritization Matrix
+
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Business Cards View | HIGH | LOW | P1 |
+| Dashboard: Business filter polish + automations feed | HIGH | LOW | P1 |
+| Profile Optimization: Score gauge + audit cards | HIGH | MEDIUM | P1 |
+| Review Metrics: Total/trend + distribution + monthly chart | HIGH | MEDIUM | P1 |
+| Review Metrics: QR code panel | MEDIUM | MEDIUM | P1 |
+| Reports: Views dual-line + website clicks sparkline | MEDIUM | LOW | P1 |
+| Reports: Completed actions log | MEDIUM | LOW | P1 |
+| Reports: Date range controls | MEDIUM | LOW | P1 |
+| Profile Optimization: Approve/ignore suggestions (reuse v1.1) | HIGH | LOW | P1 |
+| Profile Optimization: Bulk approve | MEDIUM | MEDIUM | P2 |
+| Reports: AI executive summary | MEDIUM | LOW | P2 |
+| Dashboard: Welcome banner | LOW | LOW | P2 |
+| Reports: Competitor comparison card | MEDIUM | HIGH | P3 |
+| Optimization score trend over time | LOW | HIGH | P3 |
+| Review keyword analysis | LOW | HIGH | P3 |
+
+**Priority key:**
+- P1: Must have for v1.2 launch
+- P2: Should have, add if time allows within v1.2
+- P3: Defer to v1.3+
+
+---
+
+## Competitor Feature Analysis
+
+| Feature | Paige (Merchynt) | BrightLocal | HighLevel | Our Approach |
+|---------|-----------------|-------------|-----------|--------------|
+| Optimization score | Yes — "GBP audit" + score | Yes — profile audit tool | Yes — completeness score with alerts | Computed from DB data; weighted 0-100 gauge |
+| Audit cards with signals | Yes | Yes — 25+ criteria | Alert icons + tooltips | Cards per signal: review frequency, post frequency, rating, images, description, attributes |
+| Review analytics dashboard | Basic review count/rating | Full review reporting tab | Via Reputation tab | Per-profile: total, distribution, monthly chart, recency |
+| QR code review requests | Yes — advertised prominently | No (uses separate tools) | Via Reputation | Generate from GBP place_id; `qrcode` npm package |
+| Business card grid | No (list-based) | Card grid style | Card grid style | 4-column grid with logo, rating, map thumbnail |
+| Google Maps thumbnails on cards | No | No | No | Static Maps API — differentiator |
+| Dashboard automations feed | Weekly progress emails | No | Activity log | Real-time feed of last 20 automated actions |
+| Reports: Views on Search vs Maps | Via GBP Insights embed | Separate chart | No | Dual-line chart in PDF report |
+| Reports: Competitor card | Basic competitor citations | Competitor rank comparison | No | Google Places API lookup — v1.3 |
+| Reports: Completed actions log | Yes — "all completed actions" feature | No | No | Query posts/reviews/optimizations in date range |
+| AI description/services suggestions | Yes — full optimization | No (audit only) | No | Reuse v1.1 re-optimization workflow |
+
+---
+
+## Complexity Summary by Feature
+
+| Feature | Overall Complexity | Primary Complexity Driver |
+|---------|-------------------|--------------------------|
+| Business Cards View | LOW | CSS/layout only; data already fetched |
+| Dashboard Upgrades | LOW-MEDIUM | Automations feed query; existing components reused |
+| Profile Optimization Page (score + cards) | MEDIUM | Score computation logic; audit signal definitions |
+| Profile Optimization Page (suggestions workflow) | LOW | Reuses v1.1 API routes entirely |
+| Review Metrics Dashboard | MEDIUM | recharts integration; QR code generation |
+| Reports: Views/clicks charts | LOW-MEDIUM | Data already in DB; recharts in PDF context |
+| Reports: Actions log | LOW | Query + table in existing PDF template |
+| Reports: Date range controls | LOW | UI only; pass params to existing generator |
+| Reports: Competitor card | HIGH | External API, quota, data storage |
+
+---
 
 ## Sources
 
-- [GBP Business Information API - locations.patch](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch) (HIGH confidence)
-- [GBP API - Add Services](https://developers.google.com/my-business/content/services) (HIGH confidence)
-- [GBP API - Add Attributes](https://developers.google.com/my-business/content/attributes) (HIGH confidence)
-- [GBP API - Upload Media](https://developers.google.com/my-business/content/upload-photos) (HIGH confidence)
-- [GBP API - Work with Location Data](https://developers.google.com/my-business/content/location-data) (HIGH confidence)
-- [Social links not available via API](https://gmbapi.com/news/add-social-media-links-to-google-business-profile/) (HIGH confidence)
-- [GBP Description Best Practices - BrightLocal](https://www.brightlocal.com/learn/google-business-profile-description/) (MEDIUM confidence)
-- [GBP Services Optimization - OllyOlly](https://www.ollyolly.com/tutorials/how-to-optimize-google-business-profile-services/) (MEDIUM confidence)
-- [GBP Attributes Guide 2026](https://daltonluka.com/blog/google-my-business-attributes) (MEDIUM confidence)
-- [Google Support - Social Media Links](https://support.google.com/business/answer/13580646?hl=en) (HIGH confidence)
+- [Paige by Merchynt — feature overview](https://www.merchynt.com/paige) (MEDIUM confidence — marketing page)
+- [HighLevel GBP Optimization Tool — score and alerts](https://help.gohighlevel.com/support/solutions/articles/155000005837-easily-optimize-your-google-business-profile-in-highlevel) (HIGH confidence — official docs)
+- [AgencyAnalytics — Top 8 GBP Metrics to Track in 2026](https://agencyanalytics.com/blog/google-business-profile-metrics) (HIGH confidence)
+- [AgencyAnalytics — GBP Insights guide](https://agencyanalytics.com/blog/google-business-profile-insights) (HIGH confidence)
+- [EmbedSocial — 22 Best GBP Management Tools 2026](https://embedsocial.com/blog/best-google-business-profile-management-tools/) (MEDIUM confidence)
+- [Localo GBP Audit Tool](https://localo.com/local-seo-tool/gmb-audit-tool) (MEDIUM confidence)
+- [Spokk GBP Audit Tool with AI Insights](https://www.spokk.io/tools/google-business-profile-audit) (MEDIUM confidence)
+- [EmbedMyReviews — QR Codes for Google Reviews](https://www.embedmyreviews.com/features/qr-codes/) (MEDIUM confidence)
+- [GMBMantra — Review Link & QR Generator](https://gmbmantra.ai/review-link-qr-generator) (MEDIUM confidence)
+- [Search Engine Land — 5-step GBP audit](https://searchengineland.com/google-business-profile-audit-local-rankings-472990) (HIGH confidence)
+- [Sterling Sky — Interpreting GBP Performance Metrics](https://www.sterlingsky.ca/interpret-google-business-profile-performance/) (HIGH confidence)
+- Existing MapsAI codebase (v1.0 + v1.1) — confirmed shipped features (HIGH confidence)
+
+---
+
+*Feature research for: GBP management platform — v1.2 Profile Optimization & UI Enhancements*
+*Researched: 2026-04-02*

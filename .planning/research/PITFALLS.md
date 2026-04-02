@@ -1,213 +1,293 @@
-# Domain Pitfalls: GBP Onboarding Wizard & Profile Optimization
+# Pitfalls Research
 
-**Domain:** Adding guided onboarding and AI-powered profile optimization to existing GBP management tool
-**Researched:** 2026-03-04
-**Focus:** Integration pitfalls when adding write operations, wizard UX, and AI content generation to an existing read-heavy system
+**Domain:** Adding optimization scoring UI, chart dashboards, card grid layouts, and review analytics to an existing Next.js + Prisma GBP management platform
+**Researched:** 2026-04-02
+**Confidence:** HIGH (based on existing codebase analysis + verified patterns)
+
+---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, data loss, or client damage.
+### Pitfall 1: Pulling Chart.js Into Server Components — Hydration Bombs
 
-### Pitfall 1: Service Updates Replace the Entire List (No Partial Updates)
-**What goes wrong:** The GBP API `locations.patch` with `updateMask=serviceItems` replaces ALL services on the profile, not just the ones you send. If you push 5 AI-generated services without fetching the existing 12 services first, 7 services disappear from the live profile.
-**Why it happens:** Developers assume PATCH means partial update. For most GBP fields it does, but `serviceItems` specifically requires sending the complete list every time. The API docs state: "Updating individual services is not supported."
-**Consequences:** Client loses existing services from their live GBP listing. Google may take time to re-index. Client trust destroyed.
-**Prevention:**
-- ALWAYS fetch current `serviceItems` before any update
-- Merge AI-generated services INTO the existing list, never replace
-- Store a snapshot of the pre-update service list in the database before pushing
-- Show a diff view in the UI: "Adding 3 services, keeping 12 existing"
-- Build a rollback capability using the stored snapshot
-**Detection:** Compare service count before and after update. Alert if count decreased unexpectedly.
-**Phase:** Must be addressed in the service optimization implementation. No shortcuts.
-**Confidence:** HIGH -- confirmed via official Google documentation.
+**What goes wrong:**
+Chart.js (already in package.json as `chart.js`) is used only for server-side PDF rendering via `chartjs-node-canvas`. Adding interactive browser charts requires a different integration: a React wrapper like Recharts or shadcn/ui charts (which wraps Recharts). If you import Recharts directly in a page component or layout without `"use client"`, Next.js App Router will attempt server-side rendering, fail on browser-only APIs (SVG measurement, ResizeObserver), and throw hydration mismatch errors. The error only appears at runtime, not build time.
 
-### Pitfall 2: 10 Edits Per Minute Per Profile Hard Limit
-**What goes wrong:** The GBP API enforces a hard limit of 10 edits per minute per profile that CANNOT be increased (unlike the 300 QPM global limit which can be raised). During onboarding, if you push description + services + attributes + categories in rapid succession for one profile, you hit this limit and updates silently fail or error out.
-**Why it happens:** The wizard makes it natural to submit all optimizations at once. Developers batch all writes together for a "save all" experience. 10 edits/minute sounds generous until you realize each attribute update, each service push, and each field patch counts as a separate edit.
-**Consequences:** Some profile updates succeed, others fail. Profile ends up in an inconsistent state (description updated but services missing). No retry helps because retry storms hit the same limit.
-**Prevention:**
-- Consolidate writes: combine description + profile fields into a single `locations.patch` call with multiple fields in `updateMask` (e.g., `updateMask=profile.description,websiteUri,phoneNumbers`)
-- Attributes use a separate endpoint (`locations.updateAttributes`), so plan the call sequence
-- Services use `updateMask=serviceItems` in a separate call
-- Space sequential API calls with at least 6-second delays between distinct write operations to the same profile
-- Queue all GBP writes through BullMQ with per-profile rate limiting, not just global rate limiting
-- The wizard should collect all data first, then push in a controlled sequence on "Finish"
-**Detection:** Monitor for 429 errors specifically on write operations. Log the edit count per profile per minute.
-**Phase:** Must be designed into the wizard submission flow from the start.
-**Confidence:** HIGH -- confirmed in official GBP API usage limits documentation.
+**Why it happens:**
+The existing codebase uses `chart.js` + `chartjs-node-canvas` exclusively for server-side PDF rendering. New chart work naturally reaches for the same `chart.js` import, but browser charts need the React reconciler. Additionally, placing `"use client"` too high — on the page component itself rather than a leaf chart component — bloats the client bundle by pulling all sibling data-fetching server components into the client boundary.
 
-### Pitfall 3: Pushing AI Content Directly to Live GBP Without Human Review
-**What goes wrong:** AI generates a business description or service descriptions, and the system pushes them to the live Google Business Profile without team approval. The description contains inaccurate claims, keyword stuffing, or content that violates Google's guidelines.
-**Why it happens:** The wizard flow feels like a setup process, and developers assume "the user clicked next, so they approved it." But clicking through wizard steps is not the same as carefully reviewing AI-generated content that will appear publicly on Google.
-**Consequences:** Inaccurate business descriptions on Google. Google may flag the profile for policy violations. Keyword-stuffed descriptions can actually hurt local SEO rankings. Client calls asking why their profile says something wrong.
-**Prevention:**
-- Enforce a mandatory review step: AI generates draft, user sees full preview with the exact text that will be pushed, user explicitly approves with a confirmation dialog
-- Show a "This will update your live Google Business Profile" warning before any write operation
-- Never auto-push. The existing app already has a draft-first workflow for posts and reviews -- use the same pattern for profile optimization
-- Add a "Push to GBP" button that is separate from "Save Draft" -- saving locally should not trigger API writes
-- Log all content that gets pushed to GBP with timestamps for audit trail
-**Detection:** Track rejection rate of AI drafts. If users frequently edit AI suggestions before approving, the prompts need improvement.
-**Phase:** Must be the core UX pattern from the start. Retrofitting approval is much harder.
-**Confidence:** HIGH -- this is a universal pattern, and the existing app already uses draft-first for posts.
+**How to avoid:**
+- Create isolated `*-chart.tsx` leaf components with `"use client"` at the top. Pass pre-computed data as plain serializable props from the Server Component parent.
+- Do NOT add `"use client"` to any page or layout file for chart support.
+- Use shadcn/ui chart components (they wrap Recharts with `"use client"` already applied) rather than importing Recharts directly — avoids double-boundary mistakes.
+- The existing `chart-renderer.ts` (used for PDFs) is server-only. Never import it in a browser chart component.
+- Test with `next build` — hydration errors are silent in dev mode with React 18 tolerant mode but explode in production.
 
-### Pitfall 4: Google Updates Overwriting Your API-Pushed Changes
-**What goes wrong:** You push an optimized description via the API. A week later, Google's own automated systems propose an "update" to the description based on web data, user suggestions, or Google's AI. If nobody monitors and rejects these Google Updates, the optimized description gets overwritten with Google's version.
-**Why it happens:** Google actively crawls and updates business information from multiple sources. The API is just one input. Google may "correct" your changes based on what it finds elsewhere. Developers don't realize GBP is a living document that Google actively modifies.
-**Consequences:** All optimization work gets silently undone. The team doesn't notice because MapsAI only reads profile data on sync, and may not compare it against what was pushed.
-**Prevention:**
-- Store what you pushed to GBP (the "expected" state) in the database alongside the synced state
-- On every profile sync, compare current GBP data against expected data -- alert if they differ
-- Use the `locations.getGoogleUpdated` endpoint to check for pending Google Updates and surface them in the dashboard
-- Consider subscribing to GBP Pub/Sub notifications for real-time update alerts
-- Build a "Profile Health" indicator that shows when GBP data has drifted from the optimized state
-**Detection:** Automated comparison between stored "pushed" content and current GBP content on each sync.
-**Phase:** Should be implemented alongside or immediately after the optimization push feature.
-**Confidence:** HIGH -- Google Updates overwriting manual/API edits is a well-documented issue in the local SEO community.
+**Warning signs:**
+- `Error: Hydration failed because the server rendered HTML didn't match the client`
+- `ReferenceError: ResizeObserver is not defined` during SSR
+- Bundle analyzer showing chart library pulled into server component output
+- Charts flash blank then render on first interaction
 
-## Moderate Pitfalls
+**Phase to address:**
+Dashboard Upgrades and Review Metrics Dashboard phases — establish the chart component boundary pattern before writing any chart code.
 
-### Pitfall 5: Wizard State Lost on Navigation or Refresh
-**What goes wrong:** User completes 3 of 5 wizard steps, navigates away (clicks sidebar link), or browser refreshes. All wizard progress is lost. User has to start over.
-**Why it happens:** Wizard state stored in React component state (useState/useReducer) is ephemeral. Next.js App Router re-mounts components on navigation. No persistence layer.
-**Consequences:** Frustration, especially during onboarding when users need to gather business information (keywords, services, etc.) which may require leaving the wizard. Users abandon the wizard.
-**Prevention:**
-- Persist wizard state to the database after each step completion, not just on final submit
-- Use URL search params (via `nuqs` or manual `useSearchParams`) to track current step -- enables back/forward navigation
-- On wizard load, check for incomplete wizard state in the database and offer to resume
-- Each step should save independently: Step 1 saves keywords, Step 2 saves description draft, etc.
-- Do NOT use localStorage as primary storage -- it doesn't sync across devices and is unreliable
-**Detection:** Track wizard abandonment rate per step. High drop-off on a specific step indicates a problem.
-**Phase:** Must be designed into the wizard architecture from day one.
-**Confidence:** HIGH -- standard multi-step form challenge in Next.js App Router.
+---
 
-### Pitfall 6: Attributes Vary by Category and Country (Not a Fixed Set)
-**What goes wrong:** You hardcode a list of attributes to display in the wizard (e.g., "wheelchair accessible", "free wifi", "outdoor seating"). A plumber's GBP profile doesn't support "outdoor seating." The wizard shows irrelevant attributes, or worse, tries to push unsupported attributes and gets API errors.
-**Why it happens:** Developers look at one business profile's attributes, assume they're universal, and hardcode the UI. GBP attributes are dynamic: they differ by primary category, by country, and can change at any time.
-**Consequences:** Confusing UI showing irrelevant options. API errors when trying to set attributes that don't exist for that category. Wasted user time selecting attributes that can't be saved.
-**Prevention:**
-- ALWAYS call `attributes.list` with the profile's `categoryName` and `regionCode` to get the valid attribute set before rendering the attributes step
-- Cache attribute lists per category (they don't change frequently) but invalidate cache periodically
-- Build the attributes UI dynamically from the API response -- no hardcoded attribute lists
-- Handle the three value types correctly: BOOL (checkbox), ENUM (single select), REPEATED_ENUM (multi-select)
-- Show "No additional attributes available for this category" when the list is empty
-**Detection:** API errors on `updateAttributes` calls. Monitor for "invalid attribute" error responses.
-**Phase:** Attributes management step of the wizard.
-**Confidence:** HIGH -- confirmed in official attributes documentation.
+### Pitfall 2: Optimization Score That Contradicts Itself Across the App
 
-### Pitfall 7: Re-optimization Overwrites Manual Edits Without Warning
-**What goes wrong:** User manually tweaks the AI-generated description after it's pushed to GBP (directly in Google, or via the app). Later, they hit "Re-optimize" on the profile page. The AI generates a fresh description and pushes it, overwriting their careful manual edits.
-**Why it happens:** Re-optimization is designed as "start fresh with AI." Developers don't consider that the current live content may include manual refinements that should be preserved.
-**Consequences:** User loses manual edits they spent time crafting. Especially painful for descriptions that were edited to include specific details AI missed.
-**Prevention:**
-- Before re-optimization, fetch and display the CURRENT live content from GBP
-- Show a side-by-side comparison: "Current (live)" vs "AI Suggestion (new)"
-- Let users pick and choose: "Keep current description, update services only"
-- Include an "Edit AI suggestion" step before pushing -- never go straight from AI generation to GBP push
-- Store a history of all pushed content versions for each profile field
-**Detection:** Track whether users edit AI suggestions before approving (indicates AI quality issues or preservation needs).
-**Phase:** Re-optimization feature, but the data model for content history should be set up during initial optimization.
-**Confidence:** HIGH -- this is a predictable UX pitfall for any "regenerate" feature.
+**What goes wrong:**
+The optimization score for a profile is computed in multiple places: on the profile card in the Business Cards grid, on the Profile Optimization page, and potentially in the dashboard summary. If the score formula is not centralized, each view computes it differently (different weights, different input fields, different date windows). A profile shows 78% on the card grid but 91% on its detail page. Users notice and lose trust in the entire tool.
 
-### Pitfall 8: Logo Upload Hitting Serverless/Railway Payload Limits
-**What goes wrong:** User uploads a high-resolution logo (5-10MB) during onboarding. The Next.js API route on Railway has a default body size limit (typically 1-4MB). The upload fails silently or with a cryptic error.
-**Why it happens:** Railway runs Next.js as a Node.js process, not edge, so you avoid edge runtime limitations. But the default `bodyParser` limit in Next.js API routes is still restrictive. Large images also consume memory during processing.
-**Consequences:** Users can't complete the onboarding wizard. Error messages are unhelpful ("Request Entity Too Large" or just a failed fetch).
-**Prevention:**
-- Set explicit body size limits in the API route config: `export const config = { api: { bodyParser: { sizeLimit: '10mb' } } }`
-- Better approach: upload directly to cloud storage (S3/GCS pre-signed URL) from the client, bypassing the server entirely
-- Validate file type and size on the CLIENT before upload (show clear error messages)
-- Compress/resize images client-side before upload using canvas API or a library like `browser-image-compression`
-- For GBP logo upload, use the GBP Media API which may have its own requirements for dimensions and format
-- Show upload progress indicator -- logos are big enough that users need feedback
-**Detection:** Monitor failed uploads in error logs. Track wizard abandonment on the logo step.
-**Phase:** Onboarding wizard logo step.
-**Confidence:** MEDIUM -- Railway uses Node.js runtime (not edge), so limits are configurable, but the default still needs adjustment.
+**Why it happens:**
+Score computation feels simple at first — a quick inline calculation. Each developer or phase adds it independently to the component that needs it. The Prisma model has all the required data (keywords, descriptions, services, reviews, posts), so it's easy to inline. There is no existing `computeOptimizationScore()` utility in this codebase.
 
-### Pitfall 9: Description Length Validation Mismatch
-**What goes wrong:** AI generates a 900-character description. The app happily shows it in the preview. User approves. Push to GBP fails because the GBP description field has a 750-character hard limit. Or worse, the description gets truncated silently.
-**Why it happens:** The AI prompt doesn't enforce the character limit, and the app doesn't validate before pushing. 750 characters is not a standard limit developers would guess.
-**Consequences:** Failed API calls, frustrated users, or truncated descriptions that read poorly.
-**Prevention:**
-- Include explicit character limit in the AI system prompt: "Generate a business description of no more than 740 characters" (leave 10-char buffer)
-- Client-side character counter in the description editor showing "XXX / 750 characters"
-- Server-side validation before ANY GBP API write call
-- If AI exceeds the limit, automatically re-prompt or truncate intelligently (at sentence boundary)
-- Note: only the first ~250 characters are visible in search results, so front-load the most important keywords
-**Detection:** Pre-push validation catches this before it reaches the API.
-**Phase:** Description generation feature.
-**Confidence:** HIGH -- 750-character limit confirmed across multiple sources and Google's own help documentation.
+**How to avoid:**
+- Build a single `lib/optimization-score.ts` function that accepts a typed `ProfileWithRelations` object and returns a structured score object: `{ total: number, breakdown: { keywords: number, description: number, services: number, reviews: number, posts: number } }`.
+- Every UI that shows a score imports this one function. No exceptions.
+- The function must be a pure TypeScript function (no Prisma calls inside it) — it operates on already-fetched data. This keeps it testable and usable in both Server and Client Components.
+- Decide weights once and document them: e.g., keywords 20%, description 20%, services 20%, reviews 25%, posts 15%. Codify as named constants, not magic numbers.
+- Write a unit test for the scoring function before building any UI that consumes it.
 
-## Minor Pitfalls
+**Warning signs:**
+- Score logic written inline in a JSX component (not a shared function)
+- Score values differ between card and detail view for same profile
+- Score changes when the page filter changes (indicates it's reading from filtered data instead of full profile data)
 
-### Pitfall 10: AI Keyword Suggestions Without Context Produce Generic Results
-**What goes wrong:** AI suggests keywords like "plumber", "plumbing services", "plumbing repair" for every plumber. These are obvious and don't help differentiate. Users expected specific, strategic keyword suggestions.
-**Why it happens:** The AI only has the business name and category. Without location context, competitor data, or search volume information, it defaults to the most obvious generic keywords.
-**Prevention:**
-- Feed the AI: business name, category, address/city, existing GBP description, services already listed, and target cities
-- Prompt for specificity: "Suggest keywords that include geo-modifiers, specialty services, and long-tail variations, not just the obvious category terms"
-- Include examples in the prompt of what GOOD keyword suggestions look like vs. BAD ones
-- Let users edit/add/remove keywords before they feed into content generation
-- Accept that without search volume data, these are educated guesses -- label them as "AI Suggestions" not "Recommended Keywords"
-**Phase:** Keyword suggestion step of the wizard.
-**Confidence:** HIGH -- inherent limitation of AI keyword generation without search data.
+**Phase to address:**
+Profile Optimization Page phase — create `lib/optimization-score.ts` as the very first deliverable, before any UI work.
 
-### Pitfall 11: Schema Migration Breaks Existing Profiles
-**What goes wrong:** Adding new fields to the Profile model (keywords, targetCities, description, services, onboardingStatus) requires a database migration. If the migration has non-nullable fields without defaults, it fails on the 100+ existing profiles.
-**Prevention:**
-- ALL new fields on Profile must be nullable or have sensible defaults
-- `keywords` should be `String[]` defaulting to `[]` (empty array), not required
-- `onboardingStatus` should default to `COMPLETE` for existing profiles (they were set up manually, not through the wizard)
-- `description` field should be nullable -- existing profiles may not have one stored locally
-- Run migrations on a staging database first with production data volume
-**Phase:** First migration when adding optimization fields to the Profile model.
-**Confidence:** HIGH -- standard database migration concern with existing data.
+---
 
-### Pitfall 12: Structured vs. Free-Form Services Confusion
-**What goes wrong:** The wizard lets users type in service names as free text. But GBP has two service types: `StructuredServiceItem` (predefined by Google for the category, identified by `serviceTypeId`) and `FreeFormServiceItem` (custom text with `categoryId` and `label`). Pushing free-form services when a structured match exists means missing out on Google's enhanced display for recognized services.
-**Prevention:**
-- First fetch structured services available for the profile's category via the categories API
-- Show structured services as a checklist (toggle on/off) -- these are Google's predefined services
-- Only offer free-form entry for services NOT in the structured list
-- AI should suggest which structured services to enable, plus any custom free-form additions
-- In the UI, clearly distinguish "Google-recognized services" from "Custom services"
-**Phase:** Service optimization step.
-**Confidence:** MEDIUM -- the structured vs. free-form distinction is documented but the UX implications require careful design.
+### Pitfall 3: N+1 Queries When Loading 100–200 Business Cards with Metrics
 
-### Pitfall 13: Keywords Not Actually Flowing Into Post Generation
-**What goes wrong:** Keywords are stored on the profile during onboarding but never actually used by the existing post generation system. The post AI prompts don't reference the stored keywords, so the promised "keywords inform all content" value proposition is hollow.
-**Prevention:**
-- When the post generation prompt is built, include the profile's stored keywords and target cities
-- Update the existing PromptTemplate system to support keyword interpolation (e.g., `{{keywords}}` placeholder)
-- Verify the integration with a test: generate a post for a profile with keywords, confirm the keywords appear in the output
-- This is a cross-cutting concern that bridges the new optimization feature with the existing post system
-**Phase:** Must be addressed when keywords are first stored, not deferred. The integration is the whole point.
-**Confidence:** HIGH -- this is the core value proposition of the milestone.
+**What goes wrong:**
+The Business Cards View needs each card to show: profile name, address, average rating, recent post count, optimization score. The current `profiles/page.tsx` already does `include: { reviews: true }` which loads ALL review rows for all profiles in a single query — that is already loading hundreds to thousands of rows just for star ratings. Adding metrics (DailyMetric rows), posts, keywords, services, and descriptions to the card query for 150 profiles creates a monster query with massive data transfer.
 
-## Phase-Specific Warnings
+**Why it happens:**
+Prisma's `include` is convenient. Adding `include: { dailyMetrics: true }` feels like a one-liner, but for 150 profiles each with 90 days of DailyMetric rows, that's 13,500 rows returned to Node.js just for one section of one page. The existing `profiles/page.tsx` already uses `include: { reviews: true }` — a pattern that works at 10 profiles but degrades at 150.
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Database schema changes | New fields break existing profiles | All new fields nullable or defaulted; migration tested on staging |
-| Wizard UI architecture | State lost on navigation/refresh | Persist each step to database; URL-based step tracking |
-| AI keyword generation | Generic, non-strategic suggestions | Rich context in prompts; geo-modifiers; user editing |
-| AI description generation | Exceeds 750-char limit | Enforce in prompt + client validation + server validation |
-| Service optimization | Replacing instead of merging services | Always fetch first, merge, show diff, then push |
-| Attribute management | Hardcoded attribute list fails for different categories | Dynamic attribute fetching per category via API |
-| GBP write operations | Rate limit (10 edits/min/profile) hit during batch push | Consolidate writes, queue with per-profile throttling |
-| Re-optimization | Overwrites manual edits | Side-by-side comparison, selective updates, version history |
-| Logo upload | Payload size limits on server | Client-side resize + direct-to-cloud upload |
-| Post generation integration | Keywords stored but not used | Update post prompts to reference stored keywords |
-| Ongoing monitoring | Google Updates overwrite optimizations | Compare pushed vs. current state on sync, alert on drift |
+**How to avoid:**
+- Replace `include: { reviews: true }` on the profiles list query with a `_count` aggregate or a separate `groupBy` query for average ratings — never fetch all review rows just to compute an average.
+- Use Prisma's `_avg` aggregation: `prisma.review.groupBy({ by: ['profileId'], _avg: { rating: true }, where: { profileId: { in: profileIds } } })` — one query for all profiles.
+- For metrics on cards, query only the most recent 30-day aggregate, not all-time: `prisma.dailyMetric.groupBy({ by: ['profileId'], _sum: { websiteClicks: true, ... }, where: { date: { gte: thirtyDaysAgo } } })`.
+- Pre-compute optimization scores server-side in a single pass over already-fetched data — do not issue a query per profile.
+- Set a performance budget: the entire business cards page load should complete in under 1 second. Test with the full 150-profile dataset.
+
+**Warning signs:**
+- Slow Business Cards page load (over 2 seconds)
+- Railway memory spikes on page visits
+- `include` with relation arrays (not `_count`) on list endpoints
+
+**Phase to address:**
+Business Cards View phase — query design must be reviewed before implementation begins.
+
+---
+
+### Pitfall 4: Dashboard Aggregation Queries Blocking the Entire Page Render
+
+**What goes wrong:**
+The enhanced dashboard needs: recent automations feed (already exists), My Tasks table (already exists), optimization score averages across profiles, plus metrics summaries. Adding cross-profile metric aggregations (total impressions, avg rating across all profiles) to the existing `dashboard/page.tsx` Server Component stacks all queries serially — even with `Promise.all`, a slow aggregation query (e.g., summing 90 days of DailyMetric across 150 profiles) makes the entire page wait before rendering anything.
+
+**Why it happens:**
+`dashboard/page.tsx` is a single monolithic async Server Component. All data fetches happen at the top, all must complete before any HTML is sent. The existing page already runs 7 parallel queries. Adding heavy aggregations to this array makes the page noticeably slower for every visit.
+
+**How to avoid:**
+- Use React Suspense with streaming: wrap heavy analytics widgets in `<Suspense fallback={<Skeleton />}>` and split them into child async Server Components. The page shell renders immediately; slow stats stream in.
+- Move cross-profile metric aggregations to dedicated API routes called client-side (or via Server Actions with `cache()`) so they don't block initial page HTML.
+- For the dashboard, limit the scope: show metrics for the selected profile only (already the pattern via `getSelectedProfileId()`), not all-profile aggregations. All-profile aggregations belong in a dedicated analytics view, not the dashboard.
+- Add database indexes if they don't exist: `DailyMetric(profileId, date)` is the most critical composite index for time-range queries.
+
+**Warning signs:**
+- Dashboard Time to First Byte over 500ms
+- Page blank-screens for 2+ seconds before content appears
+- Adding a new `Promise.all` entry to `dashboard/page.tsx` without a Suspense boundary
+
+**Phase to address:**
+Dashboard Upgrades phase — Suspense boundary architecture must be established before adding any new dashboard metrics.
+
+---
+
+### Pitfall 5: Review Trend Calculations That Are Wrong at Period Boundaries
+
+**What goes wrong:**
+Review Metrics Dashboard needs trend data: "15% more reviews this month vs last month." The naive implementation compares `count(reviews WHERE date >= startOfMonth)` to `count(reviews WHERE date >= startOfLastMonth AND date < startOfMonth)`. This works mid-month but produces misleading results early in the month (3 reviews vs 45 = -93%) and at year-end boundaries (December vs January month numbering).
+
+**Why it happens:**
+JavaScript `Date` arithmetic at month boundaries is error-prone. `new Date(now.getFullYear(), now.getMonth() - 1, 1)` works for most months but fails for January (month index 0): `now.getMonth() - 1 = -1` which JavaScript handles by wrapping to December of the previous year — actually correct, but only if you know it. Developers who aren't aware of this behavior may try to "fix" it and break it. Similarly, comparing a partial current month to a complete previous month is inherently unfair and produces alarming negative trends.
+
+**How to avoid:**
+- Use a date utility for all period calculations — never inline month arithmetic in component files.
+- For trend comparisons, compare rolling 30-day windows (last 30 days vs prior 30 days) rather than calendar month vs last month. This produces stable, fair comparisons regardless of current date.
+- Alternatively, if calendar months are required, show "month to date" comparisons by comparing the same day-of-month range in the prior month (e.g., "first 8 days of this month vs first 8 days of last month").
+- Always surface the date range in the UI: "Apr 1–2 vs Mar 1–2" — users can then understand why numbers look different early in the month.
+- Store `reviewDate` as UTC in the database (already the case in the schema) and do all boundary calculations in UTC to avoid timezone drift at midnight.
+
+**Warning signs:**
+- Trend shows -90% on the 1st of a new month
+- Different users in different timezones see different trend numbers
+- Month boundary dates hardcoded in component files
+
+**Phase to address:**
+Review Metrics Dashboard phase — establish the date range utility before writing any trend calculation.
+
+---
+
+### Pitfall 6: Replacing the List View with Card Grid Breaks Existing URL-Based Filters
+
+**What goes wrong:**
+The existing `profiles/page.tsx` renders a card grid (already 4-column grid — `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`). The reviews page has URL-based filters via `searchParams` (`?profileId=&rating=&responseStatus=`). When upgrading the Business Cards View, it's tempting to rebuild the page from scratch. Rebuilding without preserving the `searchParams` filter pattern breaks deep links, browser history, and the existing `ReviewFilters` component that depends on URL state.
+
+**Why it happens:**
+The "upgrade" scope feels like a rewrite, so developers start fresh. The existing URL filter pattern is subtle — it uses Next.js `searchParams` as the source of truth (not React state), which is the correct App Router pattern but easy to accidentally replace with `useState`.
+
+**How to avoid:**
+- Treat the Business Cards View as an enhancement of `profiles/page.tsx`, not a replacement. Add features incrementally: logo placeholder, optimization score badge, map thumbnail — without touching the query structure or the page's routing contract.
+- If adding filters to the Business Cards View (e.g., filter by optimization score, filter by rating), use the same URL `searchParams` pattern already established in `reviews/page.tsx`.
+- Before touching any page that has `searchParams`, document every URL parameter it currently accepts and verify they all still work after changes.
+- The grid layout is already there (`xl:grid-cols-4`). The main work is enriching card data and adding new card slots — not rebuilding the grid.
+
+**Warning signs:**
+- New filter implemented with `useState` instead of URL params
+- Existing `?profileId=` deeplinks stopped working after card view update
+- `searchParams` import removed from a page that previously used it
+
+**Phase to address:**
+Business Cards View phase — read and document existing URL contracts before making any changes.
+
+---
+
+## Technical Debt Patterns
+
+Shortcuts that seem reasonable but create long-term problems.
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Inline score computation per component | Faster to build | Score diverges across pages; weight changes require hunting across files | Never — always centralize in `lib/optimization-score.ts` |
+| `include: { reviews: true }` on profiles list | Simple one-liner | 1000s of rows fetched just for avg rating at scale | Never for list endpoints — use `_avg` aggregation |
+| Monolithic dashboard page without Suspense | Simple code | Slow initial load blocks all widgets when one query is slow | Acceptable for MVP; refactor at first performance complaint |
+| Hardcoded 30-day lookback for metrics | Simple implementation | Wrong for profiles with no recent data; misleading empty state | Acceptable if documented and shown in UI |
+| `"use client"` on page-level for one chart | Fixes chart immediately | Entire page loses server-side rendering benefits | Never — push boundary to leaf chart component |
+| Rating distribution computed in-memory from fetched reviews | Simple | All reviews fetched from DB just to count them by star | Acceptable under 500 reviews per profile; use groupBy above that |
+
+---
+
+## Integration Gotchas
+
+Common mistakes when connecting the new features to the existing system.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Optimization score + onboarding status | Scoring un-onboarded profiles as 0% when they're intentionally out of scope | Filter score computation to only `isOnboarded: true` profiles; show "Not onboarded" state instead of 0 |
+| Chart.js (PDF) vs. browser charts | Importing `chart.js` or `chartjs-node-canvas` in a browser chart component | Create separate `lib/pdf/chart-renderer.ts` (server-only) vs. `components/charts/*.tsx` (client, Recharts) — never import from each other |
+| `getSelectedProfileId()` cookie in new pages | Forgetting to apply profile filter on new API endpoints | Every new endpoint reads `getSelectedProfileId()` and applies the filter — test with a profile selected AND with no profile selected |
+| GBP metrics 1–3 day lag on charts | Showing "data as of today" when last data point is 2 days ago | Display the actual last data point date: "Views on Google — through Apr 1" not "through today" |
+| DailyMetric date field (`@db.Date`) | Timezone drift — inserting as JavaScript `Date` object converts to UTC, shifts the date | Always construct dates as `new Date('YYYY-MM-DD')` (no time component) or use raw SQL for date-only fields |
+| Review QR code + profile selection | QR code URL pointing to `/review` without profile context | QR code URL must encode the specific Google review link (`writeReviewUrl`) from the GBP profile data, not a generic app URL |
+| Reports enhancement + existing PDF generator | Adding chart data to reports requires feeding it through `report-generator.ts`, not through React render | Report enhancements (competitor card, new charts) go in `lib/pdf/` using the existing `renderImpressionsChart` pattern — not React components |
+
+---
+
+## Performance Traps
+
+Patterns that work at small scale but fail as usage grows.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Loading all reviews per profile to compute avg rating on list view | Business Cards page takes 3–5 seconds | Use `prisma.review.groupBy({ by: ['profileId'], _avg: { rating: true } })` | At ~50 profiles with 50+ reviews each |
+| Animating all 150 business cards with staggered MotionDiv delays | Cards render for 15 seconds as animations cascade | Cap stagger at 20 items max; use `viewport` prop to animate only visible cards | At 50+ profiles with `delay: i * 0.03` |
+| Fetching full DailyMetric history for chart rendering | Report/chart page takes 10+ seconds | Always apply a date range `where` clause — never fetch all-time metrics | At 200 profiles × 365 days = 73,000 rows |
+| Running optimization score on all profiles without indexed queries | Dashboard loads slowly; Railway timeouts | Add DB index on `ProfileDescription(profileId, isApproved)`, `ProfileKeyword(profileId)` | At 150+ profiles |
+| Generating QR codes server-side for all profiles on page load | Business cards page slow; high CPU | Generate QR codes client-side (browser canvas API via `qrcode` library) or on-demand | At 50+ profiles |
+
+---
+
+## Security Mistakes
+
+Domain-specific security issues beyond general web security.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Exposing raw profile metrics in a public API endpoint without auth | Any user can scrape GBP performance data for all clients | All new `/api/` routes must check `getServerSession()` and return 401 if unauthenticated — audit every new route |
+| QR code review URL containing internal profile IDs | Enumerable profile IDs exposed in QR code links | QR codes should link to the GBP direct review URL (stored as `profile.websiteUrl` or fetched from GBP) — never to internal app routes with profile IDs |
+| Competitor data stored without client consent indication | Compliance risk if client data is used to train competitor benchmarks | Competitor data for v1.2 is illustrative/static (not API-sourced) — document this clearly; do not build competitor tracking from client data |
+
+---
+
+## UX Pitfalls
+
+Common user experience mistakes in this domain.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Optimization score changes daily (post count goes up, score goes up) | Score feels gameable and meaningless | Score should reflect SEO completeness (profile fields filled), not operational activity; posts/reviews are a maintenance indicator, not a completeness signal |
+| Showing optimization score for profiles with no GBP metrics yet (1–3 day lag) | Score appears low even though profile is well-optimized | Show a "Metrics syncing..." state for profiles where `DailyMetric` has no recent data; don't penalize score for API lag |
+| Chart date axis showing UTC dates shifting overnight | Charts show wrong day for users in non-UTC timezones | Display dates in `America/Los_Angeles` or use local format; GBP metrics are already date-only (`@db.Date`), not timestamps |
+| Displaying "0 reviews" on cards for profiles that have reviews but haven't synced | Misleading signal; team thinks profile has no reviews | Show `null` / "Not synced" state distinctly from verified 0-review state |
+| Bulk actions on card grid (approve all, re-optimize all) with no confirmation | Accidental mass GBP edits trigger the 10-edit/min rate limit across profiles | Bulk actions must show a confirmation modal with count and a progress indicator; process one profile at a time with visible feedback |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Optimization Score gauge:** Shows a number but doesn't explain the breakdown — verify there is a breakdown tooltip or expand section showing per-category scores (keywords: X/20, description: X/20, etc.)
+- [ ] **Review Metrics Dashboard:** Shows rating distribution chart but doesn't reflect the same date filter applied to trend charts — verify all charts on the page share the same date window state
+- [ ] **Business Cards with logos:** Logo placeholder renders but actual GBP logo URL is not stored in the `Profile` model — verify logo fetching from GBP API is wired up, or show a deterministic avatar (initials) that renders identically server and client (avoid hydration mismatch from random colors)
+- [ ] **Views on Google chart:** Chart renders but last data point is 2 days ago due to API lag — verify the "data through [date]" label is visible and accurate
+- [ ] **QR Code review request:** QR code renders but the review link behind it is the wrong URL (app URL vs. Google review URL) — verify QR code encodes the correct `maps.google.com/maps?cid=...&authuser=0#action=write-review` or equivalent link
+- [ ] **Competitor card in reports:** Renders static placeholder data, not real competitor data — verify it is clearly labeled as "Example" or "Industry Average" and is not presented as live data
+- [ ] **Profile filter + new pages:** All new routes respect `getSelectedProfileId()` — verify each new page endpoint with a profile selected shows only that profile's data
+
+---
+
+## Recovery Strategies
+
+When pitfalls occur despite prevention, how to recover.
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Hydration mismatch from chart in wrong component boundary | LOW | Move `"use client"` to leaf chart component; remove it from page/layout; clear `.next` cache |
+| Divergent optimization scores across pages | MEDIUM | Extract scoring to `lib/optimization-score.ts`; do a grep for all inline score calculations; replace all with the shared function; verify visually |
+| Slow Business Cards page (N+1 or over-fetching) | MEDIUM | Replace `include` with aggregation queries; add missing DB indexes; test with EXPLAIN ANALYZE |
+| Review trend showing -90% on month start | LOW | Replace calendar month comparison with rolling 30-day window; add date range label to UI |
+| Chart blank on production but works in dev | LOW | Usually a missing `"use client"` or SSR-incompatible import; check for dynamic imports as fallback (`next/dynamic` with `{ ssr: false }`) |
+| QR code pointing to wrong URL | LOW | Update QR code generation to use the correct GBP review URL field; resync profiles to populate the field if it was missing |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+How roadmap phases should address these pitfalls.
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Chart hydration + client boundary architecture | Dashboard Upgrades (first chart phase) | `next build` with no hydration errors; bundle analyzer shows charts in client bundle only |
+| Optimization score centralization | Profile Optimization Page (first phase) | Single `lib/optimization-score.ts` function; grep shows zero inline score calculations in components |
+| N+1 / over-fetching on Business Cards | Business Cards View phase | Page load time under 1s with 150 profiles; no `include` with relation arrays on list queries |
+| Dashboard aggregation blocking render | Dashboard Upgrades phase | Dashboard TTFB under 300ms; heavy widgets wrapped in Suspense |
+| Review trend period boundary bugs | Review Metrics Dashboard phase | Trend numbers stable on 1st of month; same result for users in different timezones |
+| URL filter preservation during card upgrade | Business Cards View phase | `?profileId=&rating=` deeplinks still work after changes |
+| GBP metrics lag not surfaced in UI | Reports Enhancement + Review Metrics phases | Every chart shows "Data through [last sync date]" label |
+| Staggered animation performance at scale | Business Cards View phase | Card grid renders under 500ms for 150 profiles; stagger capped at 20 items |
+
+---
 
 ## Sources
 
-- [GBP API Usage Limits](https://developers.google.com/my-business/content/limits) -- 300 QPM default, 10 edits/min/profile hard limit (HIGH confidence)
-- [locations.patch Method](https://developers.google.com/my-business/reference/businessinformation/rest/v1/locations/patch) -- updateMask, validateOnly parameters (HIGH confidence)
-- [GBP Services Documentation](https://developers.google.com/my-business/content/services) -- structured vs free-form, full list replacement (HIGH confidence)
-- [GBP Attributes Documentation](https://developers.google.com/my-business/content/attributes) -- dynamic by category/country, value types (HIGH confidence)
-- [Manage Google Updates](https://developers.google.com/my-business/content/accept-or-reject-updates) -- getGoogleUpdated, Pub/Sub notifications (HIGH confidence)
-- [Work with Location Data](https://developers.google.com/my-business/content/location-data) -- updateMask format, field names (HIGH confidence)
-- [GBP Description Limit](https://support.google.com/business/answer/3039617) -- 750 characters (HIGH confidence)
-- [GMB Services Character Limit Discussion](https://localsearchforum.com/threads/gmb-services-character-limit-change.56072/) -- community confirmation (MEDIUM confidence)
-- [Next.js File Upload Workarounds](https://www.pronextjs.dev/next-js-file-uploads-server-side-solutions) -- serverless payload limits (MEDIUM confidence)
+- Codebase analysis: `src/app/dashboard/profiles/page.tsx` — existing card grid with `include: { reviews: true }` over-fetch pattern identified
+- Codebase analysis: `src/lib/pdf/chart-renderer.ts` — server-only chart rendering with `chartjs-node-canvas`, must stay isolated from browser chart code
+- Codebase analysis: `prisma/schema.prisma` — `DailyMetric(profileId, date @db.Date)`, `Review(profileId, rating)`, `MonthlyKeyword(profileId, month)` — aggregation query opportunities identified
+- Codebase analysis: `src/app/dashboard/reviews/page.tsx` — URL `searchParams` filter pattern that must be preserved
+- [shadcn/ui Charts — Recharts wrapper with built-in `"use client"`](https://www.shadcn.io/charts) — HIGH confidence
+- [shadcn/ui Next.js 15 hydration bug with charts](https://github.com/shadcn-ui/ui/issues/5661) — confirmed hydration failure pattern in App Router — HIGH confidence
+- [Next.js "use client" placement best practice — push to leaves](https://nextjs.org/docs/app/getting-started/server-and-client-components) — HIGH confidence
+- [Prisma groupBy and aggregation — use `where` to filter before grouping](https://www.prisma.io/docs/orm/prisma-client/queries/aggregation-grouping-summarizing) — HIGH confidence
+- [Prisma groupBy date timezone pitfalls](https://github.com/prisma/prisma/issues/6653) — no native timezone-aware date grouping; requires raw SQL or UTC-normalized dates — HIGH confidence
+- [GBP Performance API data lag (up to 4 days)](https://support.powermyanalytics.com/portal/en/kb/articles/missing-or-delayed-data-in-google-business-profile) — MEDIUM confidence (multiple sources agree on 1–4 day lag)
+- [Next.js streaming + Suspense for slow aggregations](https://dev.to/kiravaughn/nextjs-performance-when-you-have-200000-database-rows-5ee0) — HIGH confidence
+
+---
+*Pitfalls research for: v1.2 Profile Optimization & UI Enhancements — MapsAI / Rankmaps.io*
+*Researched: 2026-04-02*
