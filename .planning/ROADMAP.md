@@ -33,7 +33,7 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
 
 - [x] **Phase 14: Score Library & Dependencies** - Pure optimization score function, recharts/qrcode.react install, shadcn chart primitives, DB indexes (completed 2026-04-02)
 - [x] **Phase 15: Business Cards View** - 4-column card grid with star rating, review count, address, optimization score badge, search (completed 2026-04-02)
-- [ ] **Phase 16: Dashboard Upgrades** - Recent automations feed, My Tasks table, business profile filter
+- [x] **Phase 16: Dashboard Upgrades** - Recent automations feed, My Tasks table, business profile filter (completed 2026-04-02)
 - [ ] **Phase 17: Profile Optimization Page** - Score gauge, per-signal audit cards, approve/ignore workflow, bulk actions
 - [ ] **Phase 18: Review Metrics Dashboard** - Review trends, rating distribution chart, monthly volume chart, recency indicator
 - [ ] **Phase 19: Reports Enhancement** - Date range controls, Views on Google chart, metric sparklines, completed actions log, AI narrative, PDF download
@@ -82,7 +82,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 16-01-PLAN.md — Sub-components, data functions, tests, TasksTable extension
-- [ ] 16-02-PLAN.md — Suspense shell refactor and end-to-end verification
+- [x] 16-02-PLAN.md — Suspense shell refactor and end-to-end verification
 **UI hint**: yes
 
 ### Phase 17: Profile Optimization Page
@@ -133,7 +133,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 14. Score Library & Dependencies | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 15. Business Cards View | v1.2 | 1/1 | Complete    | 2026-04-02 |
-| 16. Dashboard Upgrades | v1.2 | 1/2 | In Progress|  |
+| 16. Dashboard Upgrades | v1.2 | 2/2 | Complete   | 2026-04-02 |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
 | 18. Review Metrics Dashboard | v1.2 | 0/? | Not started | - |
 | 19. Reports Enhancement | v1.2 | 0/? | Not started | - |

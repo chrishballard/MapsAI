@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Profile Optimization & UI Enhancements
-status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-04-02T23:16:09.332Z"
+status: verifying
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-04-02T23:19:02.666Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 Phase: 16 (dashboard-upgrades) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-02
 
 Progress: [░░░░░░░░░░] 0%
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 14-score-library-dependencies P02 | 25min | 2 tasks | 4 files |
 | Phase 15-business-cards-view P01 | 15min | 3 tasks | 4 files |
 | Phase 16-dashboard-upgrades P01 | 5min | 2 tasks | 6 files |
+| Phase 16-dashboard-upgrades P02 | 5min | 1 tasks | 1 files |
 
 ### Decisions
 
@@ -69,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 15-business-cards-view]: Prisma select instead of _avg/_count aggregations — D-07 intent satisfied while meeting D-08 score function data requirements
 - [Phase 16-dashboard-upgrades]: Pure data-building functions co-located in server component files — testable without Prisma mock
 - [Phase 16-dashboard-upgrades]: start_onboarding TaskItem uses profile.id as task.id so Link href resolves to /dashboard/onboarding/{profileId}
+- [Phase 16-dashboard-upgrades]: Dashboard Suspense shell: page.tsx only awaits fast PK lookups, heavy queries moved to streaming sub-components
 
 ### Research Flags
 
@@ -86,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T23:16:09.330Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-04-02T23:19:02.664Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
