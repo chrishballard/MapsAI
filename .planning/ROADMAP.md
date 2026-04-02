@@ -51,7 +51,7 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
   4. Score thresholds are documented in code comments: green ≥70, amber 40-69, red <40
 **Plans**: 2 plans
 Plans:
-- [ ] 14-01-PLAN.md — TDD optimization score function with vitest setup
+- [x] 14-01-PLAN.md — TDD optimization score function with vitest setup
 - [ ] 14-02-PLAN.md — Install chart/QR deps, shadcn chart, Prisma index migration
 **UI hint**: yes
 
@@ -126,7 +126,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 14. Score Library & Dependencies | v1.2 | 0/2 | Planning | - |
+| 14. Score Library & Dependencies | v1.2 | 1/2 | In Progress|  |
 | 15. Business Cards View | v1.2 | 0/? | Not started | - |
 | 16. Dashboard Upgrades | v1.2 | 0/? | Not started | - |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
