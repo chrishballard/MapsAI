@@ -118,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 — Phase 14 complete: score library, chart/QR deps, DB index*
+*Last updated: 2026-04-02 — Phase 15 complete: business cards with score badges, search, optimized queries*
