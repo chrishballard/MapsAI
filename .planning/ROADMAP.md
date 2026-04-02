@@ -31,7 +31,7 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
 
 **Milestone Goal:** Upgrade the platform with optimization scoring, richer business cards, dashboard activity feeds, review analytics, and enhanced reporting — bringing parity with Paige by Merchynt's best UX patterns without manual work.
 
-- [ ] **Phase 14: Score Library & Dependencies** - Pure optimization score function, recharts/qrcode.react install, shadcn chart primitives, DB indexes
+- [x] **Phase 14: Score Library & Dependencies** - Pure optimization score function, recharts/qrcode.react install, shadcn chart primitives, DB indexes (completed 2026-04-02)
 - [ ] **Phase 15: Business Cards View** - 4-column card grid with star rating, review count, address, optimization score badge, search
 - [ ] **Phase 16: Dashboard Upgrades** - Recent automations feed, My Tasks table, business profile filter
 - [ ] **Phase 17: Profile Optimization Page** - Score gauge, per-signal audit cards, approve/ignore workflow, bulk actions
@@ -52,7 +52,7 @@ Phases 1-7: auth, GBP OAuth, posts, reviews, reports, dashboard, deploy. All com
 **Plans**: 2 plans
 Plans:
 - [x] 14-01-PLAN.md — TDD optimization score function with vitest setup
-- [ ] 14-02-PLAN.md — Install chart/QR deps, shadcn chart, Prisma index migration
+- [x] 14-02-PLAN.md — Install chart/QR deps, shadcn chart, Prisma index migration
 **UI hint**: yes
 
 ### Phase 15: Business Cards View
@@ -126,7 +126,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 14. Score Library & Dependencies | v1.2 | 1/2 | In Progress|  |
+| 14. Score Library & Dependencies | v1.2 | 2/2 | Complete   | 2026-04-02 |
 | 15. Business Cards View | v1.2 | 0/? | Not started | - |
 | 16. Dashboard Upgrades | v1.2 | 0/? | Not started | - |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
