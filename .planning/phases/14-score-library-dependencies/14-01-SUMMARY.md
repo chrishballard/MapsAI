@@ -119,3 +119,14 @@ None — no external service configuration required.
 ---
 *Phase: 14-score-library-dependencies*
 *Completed: 2026-04-02*
+
+## Self-Check: PASSED
+
+- FOUND: src/lib/optimization-score.ts
+- FOUND: tests/lib/optimization-score.test.ts
+- FOUND: vitest.config.mts
+- FOUND: .planning/phases/14-score-library-dependencies/14-01-SUMMARY.md
+- FOUND: 41f037d (chore: vitest infra)
+- FOUND: f5ae286 (test: RED phase)
+- FOUND: 5489790 (feat: GREEN phase)
+- FOUND: 771f929 (docs: metadata commit)
