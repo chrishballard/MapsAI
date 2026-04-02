@@ -16,9 +16,9 @@ Requirements for Milestone v1.2: Profile Optimization & UI Enhancements.
 
 ### Dashboard (DASH)
 
-- [ ] **DASH-01**: User can see a recent automations feed on the dashboard showing last 20 automated actions (posts published, reviews responded, descriptions pushed) with timestamps and "See details" links
-- [ ] **DASH-02**: User can see a My Tasks table showing pending items needing action (approve posts, review responses, profiles needing onboarding) with due date, business, task type, and action button
-- [ ] **DASH-03**: User can filter all dashboard data by selecting a specific business profile from the header dropdown
+- [x] **DASH-01**: User can see a recent automations feed on the dashboard showing last 20 automated actions (posts published, reviews responded, descriptions pushed) with timestamps and "See details" links
+- [x] **DASH-02**: User can see a My Tasks table showing pending items needing action (approve posts, review responses, profiles needing onboarding) with due date, business, task type, and action button
+- [x] **DASH-03**: User can filter all dashboard data by selecting a specific business profile from the header dropdown
 
 ### Business Cards (CARD)
 
@@ -93,9 +93,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPT-02 | Phase 17 | Pending |
 | OPT-03 | Phase 17 | Pending |
 | OPT-04 | Phase 17 | Pending |
-| DASH-01 | Phase 16 | Pending |
-| DASH-02 | Phase 16 | Pending |
-| DASH-03 | Phase 16 | Pending |
+| DASH-01 | Phase 16 | Complete |
+| DASH-02 | Phase 16 | Complete |
+| DASH-03 | Phase 16 | Complete |
 | CARD-01 | Phase 15 | Complete |
 | CARD-02 | Phase 15 | Complete |
 | CARD-03 | Phase 15 | Complete |
