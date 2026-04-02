@@ -133,7 +133,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 14. Score Library & Dependencies | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 15. Business Cards View | v1.2 | 1/1 | Complete    | 2026-04-02 |
-| 16. Dashboard Upgrades | v1.2 | 2/2 | Complete   | 2026-04-02 |
+| 16. Dashboard Upgrades | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
 | 18. Review Metrics Dashboard | v1.2 | 0/? | Not started | - |
 | 19. Reports Enhancement | v1.2 | 0/? | Not started | - |
