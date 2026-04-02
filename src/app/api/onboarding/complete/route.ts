@@ -11,6 +11,11 @@ import {
   parseMetricsResponse,
 } from "@/lib/google-performance";
 import { fetchSearchKeywords } from "@/lib/google-keywords";
+import { calculateScheduleDates } from "@/lib/scheduling";
+import { schedulePostPublish } from "@/lib/queue/publish-queue";
+import { initReviewSyncScheduler } from "@/lib/queue/review-sync-queue";
+import { initMetricsSyncScheduler } from "@/lib/queue/metrics-sync-queue";
+import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -107,21 +112,46 @@ async function initialSync(profileId: string) {
       profile.postFrequency ?? 4
     );
 
-    await Promise.all(
-      generated.posts.map((post) =>
+    // Create posts and auto-approve them with scheduled dates
+    const now = new Date();
+    let scheduleDates = calculateScheduleDates(
+      generated.posts.length,
+      now.getMonth(),
+      now.getFullYear()
+    );
+    if (scheduleDates.length === 0) {
+      const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
+      const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+      scheduleDates = calculateScheduleDates(generated.posts.length, nextMonth, nextYear);
+    }
+
+    const createdPosts = await Promise.all(
+      generated.posts.map((post, i) =>
         prisma.post.create({
           data: {
             profileId,
             type: post.suggestedType as PostType,
             content: post.content,
             callToAction: post.callToAction ?? null,
-            status: "DRAFT",
+            status: scheduleDates[i] ? "SCHEDULED" : "DRAFT",
+            scheduledAt: scheduleDates[i] ?? null,
           },
         })
       )
     );
 
-    console.log(`[onboarding-complete] Generated ${generated.posts.length} posts for ${profile.name}`);
+    // Queue scheduled posts for publishing via BullMQ
+    for (const post of createdPosts) {
+      if (post.status === "SCHEDULED" && post.scheduledAt) {
+        try {
+          await schedulePostPublish(post.id, post.scheduledAt);
+        } catch (err) {
+          console.warn(`[onboarding-complete] Failed to queue post ${post.id}:`, err);
+        }
+      }
+    }
+
+    console.log(`[onboarding-complete] Generated and scheduled ${createdPosts.filter(p => p.status === "SCHEDULED").length}/${generated.posts.length} posts for ${profile.name}`);
   } catch (err) {
     console.error(`[onboarding-complete] Post generation failed for ${profile.name}:`, err);
   }
@@ -169,13 +199,20 @@ async function initialSync(profileId: string) {
             reviewComment: review.comment,
           });
 
-          await prisma.reviewResponse.create({
+          const reviewResponse = await prisma.reviewResponse.create({
             data: {
               reviewId: review.id,
               content: aiResponse.response,
-              status: profile.autoApproveReviews ? "APPROVED" : "DRAFTED",
+              status: "APPROVED",
             },
           });
+
+          // Queue for immediate publishing to Google
+          try {
+            await scheduleReviewPublish(reviewResponse.id);
+          } catch (pubErr) {
+            console.warn(`[onboarding-complete] Failed to queue review response ${reviewResponse.id}:`, pubErr);
+          }
 
           synced++;
         } catch (aiErr) {
@@ -263,5 +300,31 @@ async function initialSync(profileId: string) {
     console.log(`[onboarding-complete] Synced ${parsedMetrics.length} metric days + ${keywords.length} keywords for ${profile.name}`);
   } catch (err) {
     console.error(`[onboarding-complete] Metrics sync failed for ${profile.name}:`, err);
+  }
+
+  // --- Initialize recurring schedulers (idempotent — safe to call multiple times) ---
+  try {
+    await initReviewSyncScheduler();
+    console.log(`[onboarding-complete] Review sync scheduler initialized (every 30 min)`);
+  } catch (err) {
+    console.error(`[onboarding-complete] Failed to init review sync scheduler:`, err);
+  }
+
+  try {
+    await initMetricsSyncScheduler();
+    console.log(`[onboarding-complete] Metrics sync scheduler initialized (every 24h)`);
+  } catch (err) {
+    console.error(`[onboarding-complete] Failed to init metrics sync scheduler:`, err);
+  }
+
+  // --- Enable auto-approve for ongoing review responses ---
+  try {
+    await prisma.profile.update({
+      where: { id: profileId },
+      data: { autoApproveReviews: true },
+    });
+    console.log(`[onboarding-complete] Auto-approve reviews enabled for ${profile.name}`);
+  } catch (err) {
+    console.error(`[onboarding-complete] Failed to enable auto-approve:`, err);
   }
 }

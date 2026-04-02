@@ -1,6 +1,7 @@
 /**
  * Unified worker entry point
  * Imports all worker files which auto-start their BullMQ Workers on import.
+ * Initializes recurring job schedulers.
  * Handles graceful shutdown on SIGTERM/SIGINT.
  */
 
@@ -18,6 +19,27 @@ console.log("[workers] Review publish worker started");
 
 import "./metrics-sync-worker";
 console.log("[workers] Metrics sync worker started");
+
+// Initialize recurring schedulers on startup (idempotent)
+import { initReviewSyncScheduler } from "../src/lib/queue/review-sync-queue";
+import { initMetricsSyncScheduler } from "../src/lib/queue/metrics-sync-queue";
+
+async function initSchedulers() {
+  try {
+    await initReviewSyncScheduler();
+    console.log("[workers] Review sync scheduler initialized (every 30 min)");
+  } catch (err) {
+    console.error("[workers] Failed to init review sync scheduler:", err);
+  }
+  try {
+    await initMetricsSyncScheduler();
+    console.log("[workers] Metrics sync scheduler initialized (every 24h)");
+  } catch (err) {
+    console.error("[workers] Failed to init metrics sync scheduler:", err);
+  }
+}
+
+initSchedulers();
 
 console.log("[workers] All workers running. Waiting for jobs...");
 
