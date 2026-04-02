@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Star, Building2 } from "lucide-react";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button-variants";
 import {
   Table,
   TableBody,
@@ -25,7 +27,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export interface TaskItem {
   id: string;
-  type: "approve_post" | "approve_review_reply";
+  type: "approve_post" | "approve_review_reply" | "start_onboarding";
   profileName: string;
   dueDate: string;
   postContent?: string;
@@ -61,6 +63,8 @@ function taskLabel(type: TaskItem["type"]): string {
       return "Approve Post";
     case "approve_review_reply":
       return "Approve Review Reply";
+    case "start_onboarding":
+      return "Start Onboarding";
   }
 }
 
@@ -156,13 +160,22 @@ export function TasksTable({ tasks }: { tasks: TaskItem[] }) {
                   <Badge variant="secondary">{taskLabel(task.type)}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedTask(task)}
-                  >
-                    Review
-                  </Button>
+                  {task.type === "start_onboarding" ? (
+                    <Link
+                      href={`/dashboard/onboarding/${task.id}`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      Start
+                    </Link>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTask(task)}
+                    >
+                      Review
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
