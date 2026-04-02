@@ -30,7 +30,7 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 ### Active
 
-(None — next milestone not yet planned)
+(Defined in REQUIREMENTS.md for v1.2)
 
 ### Out of Scope
 
@@ -43,13 +43,24 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 - Multi-platform support (Yelp, Facebook) — GBP only
 - White-labeling — internal tool
 - Mobile app — web-first
-- Optimization score/gauge — wizard is sufficient
 - Keyword search volume/difficulty data — AI suggestions are enough
+
+## Current Milestone: v1.2 Profile Optimization & UI Enhancements
+
+**Goal:** Upgrade the platform's UI with optimization scoring, richer business cards, dashboard activity feeds, review analytics, and enhanced reporting — bringing parity with Paige by Merchynt's best UX patterns.
+
+**Target features:**
+- Profile Optimization Page — optimization score gauge, GBP audit cards, approve/ignore workflow, bulk actions
+- Dashboard Upgrades — recent automations feed, My Tasks table, welcome banner, business filter
+- Business Cards View — 4-column card grid with logos, ratings, map thumbnails
+- Review Metrics Dashboard — review trends, rating distribution, QR code review requests, AI tips
+- Reports Enhancement — competitor card, Views on Google charts, website clicks, completed actions log
 
 ## Context
 
 - **v1.0 MVP** shipped: ongoing management (posts, reviews, reports)
 - **v1.1 Onboarding** shipped: guided optimization wizard, AI keywords/descriptions/services, re-optimization
+- **v1.2 in progress**: Profile optimization UI, dashboard/business/review/report upgrades
 - 129 TypeScript files, ~41k LOC
 - GBP API access application submitted (pending approval for write operations)
 - No sidebar link to onboarding page yet (users navigate directly)
@@ -89,5 +100,22 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 | Fetch-merge-push for services | Preserves existing GBP services not being optimized | ✓ Good |
 | Dynamic attribute fetching per category | No hardcoded attribute lists to maintain | ✓ Good |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-03-06 after v1.1 milestone completed*
+*Last updated: 2026-04-02 — v1.2 milestone started*

@@ -1,47 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Onboarding & Optimization
-status: completed
-last_updated: "2026-03-06T06:15:11.949Z"
-last_activity: 2026-03-06 -- Completed 13-01-PLAN.md (re-optimization API endpoints)
+milestone: v1.2
+milestone_name: Profile Optimization & UI Enhancements
+status: defining_requirements
+last_updated: "2026-04-02"
+last_activity: 2026-04-02 -- Milestone v1.2 started
 progress:
-  total_phases: 6
-  completed_phases: 5
-  total_plans: 12
-  completed_plans: 10
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # MapsAI -- Project State
 
 ## Current Position
 
-**Milestone:** v1.1 -- Onboarding & Optimization
-**Phase:** 13 -- Re-optimization
-**Plan:** 1/2 complete
-**Status:** v1.1 milestone complete
-**Progress:** [██████████] 100%
+**Milestone:** v1.2 -- Profile Optimization & UI Enhancements
+**Phase:** Not started (defining requirements)
+**Plan:** —
+**Status:** Defining requirements
+**Progress:** [░░░░░░░░░░] 0%
 
-Last activity: 2026-03-06 -- Completed 13-01-PLAN.md (re-optimization API endpoints)
+Last activity: 2026-04-02 -- Milestone v1.2 started
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-04)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Every client's GBP is fully managed end-to-end -- from initial optimization through ongoing posts, reviews, and reporting.
-**Current focus:** Milestone v1.1 -- Onboarding & Optimization (guided onboarding wizard + AI profile optimization)
-
-## Milestone v1.1 Phases
-
-| Phase | Status |
-|-------|--------|
-| 8. Wizard Shell & Data Foundation | Complete |
-| 9. Keywords & Cities | Complete (pending verification) |
-| 10. Description Optimization | Verified |
-| 11. Service Optimization | Complete |
-| 12. Attributes & Profile Settings | Complete |
-| 13. Re-optimization | In progress (1/2 plans) |
+**Current focus:** Milestone v1.2 -- Profile Optimization & UI Enhancements
 
 ## Accumulated Context
 
@@ -63,13 +52,13 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 - Dockerfile copies full node_modules for workers
 - Draft-first workflow for all AI-generated content
 
-### Milestone v1.1 Research Findings
+### From Milestone v1.1 (Onboarding & Optimization) -- All Complete
+- Phase 8-13 complete: wizard shell, keywords, descriptions, services, attributes, re-optimization
 - Keywords are the foundation: descriptions, services, and posts all depend on them
 - GBP writes should be direct API calls (not BullMQ) since user is waiting during onboarding
 - 10 edits/min/profile hard rate limit -- consolidate writes
 - Service updates replace entire list -- must fetch-merge-push
 - Attributes vary by category -- always fetch dynamically
-- Social links and logo upload deferred (not in v1.1 scope)
 - Zero new npm packages needed for core features
 - Same googleapis client already in codebase handles all GBP writes
 
@@ -77,27 +66,7 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 - Service description API replaces entire service list (must fetch-merge-push)
 - 10 edits/min/profile rate limit affects write sequencing
 - Google can auto-overwrite API-pushed optimizations (drift)
-- Service description character limit (~300 chars) not officially documented
-- GBP v4 Media API being deprecated piecemeal (not needed for v1.1)
-
-## Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| Phases completed | 5/6 |
-| Requirements delivered | 22/22 (ONBRD-01,02,03,04 + KWRD-01,02,03,04 + DESC-01,02,03 + SRVC-01,02,03,04 + ATTR-01,02,03 + PROF-01,02 + REOPT-01,02) |
-| Plans completed | 11 (phase 8-13) |
-| Phase 13 P02 | 187 | 2 tasks | 2 files |
-
-## Session Continuity
-
-**Last session:** 2026-03-06T02:42:12.504Z
-**Next action:** Execute Phase 13 Plan 02 (re-optimization frontend)
-**Key files:**
-- .planning/phases/12-attributes-profile-settings/12-CONTEXT.md -- phase context
-- .planning/ROADMAP.md -- phase structure and success criteria
-- .planning/REQUIREMENTS.md -- requirement definitions and traceability
-- .planning/research/SUMMARY.md -- technical research findings
+- GBP v4 Media API being deprecated piecemeal
 
 ---
-*State initialized: 2026-03-04*
+*State initialized: 2026-04-02*
