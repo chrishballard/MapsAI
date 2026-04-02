@@ -79,7 +79,10 @@ Plans:
   2. User can see a My Tasks table showing pending items that need action — each row shows due date, business name, task type, and an action button
   3. User can select a specific business profile from the header dropdown and all dashboard widgets update to show only that profile's data
   4. Dashboard widgets load progressively (Suspense skeletons) and never block the entire page render on slow aggregation queries
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 16-01-PLAN.md — Sub-components, data functions, tests, TasksTable extension
+- [ ] 16-02-PLAN.md — Suspense shell refactor and end-to-end verification
 **UI hint**: yes
 
 ### Phase 17: Profile Optimization Page
@@ -130,7 +133,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 14. Score Library & Dependencies | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 15. Business Cards View | v1.2 | 1/1 | Complete    | 2026-04-02 |
-| 16. Dashboard Upgrades | v1.2 | 0/? | Not started | - |
+| 16. Dashboard Upgrades | v1.2 | 0/2 | Not started | - |
 | 17. Profile Optimization Page | v1.2 | 0/? | Not started | - |
 | 18. Review Metrics Dashboard | v1.2 | 0/? | Not started | - |
 | 19. Reports Enhancement | v1.2 | 0/? | Not started | - |
