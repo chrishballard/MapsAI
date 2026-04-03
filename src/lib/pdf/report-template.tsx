@@ -154,6 +154,33 @@ const styles = StyleSheet.create({
     borderTop: "1px solid #E5E7EB",
     paddingTop: 8,
   },
+  narrativeBlock: {
+    borderLeft: "3px solid #7c3aed",
+    backgroundColor: "#F9FAFB",
+    padding: 10,
+    marginBottom: 16,
+  },
+  narrativeText: {
+    fontSize: 10,
+    fontStyle: "italic",
+    color: "#374151",
+    lineHeight: 1.5,
+  },
+  sparklineRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    marginBottom: 8,
+    gap: 12,
+  },
+  sparklineImage: {
+    width: 120,
+    height: 40,
+  },
+  sparklineLabel: {
+    fontSize: 10,
+    color: "#6B7280",
+    width: 120,
+  },
 });
 
 export interface ReportData {
@@ -194,6 +221,217 @@ function formatChange(current: number, previous: number): { text: string; style:
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
+}
+
+export interface DashboardReportData {
+  businessName: string;
+  address: string | null;
+  category: string | null;
+  periodLabel: string; // "Mar 1, 2026 - Mar 31, 2026"
+  narrativeText: string | null; // AI summary
+  currentMetrics: {
+    searchImpressions: number;
+    mapsImpressions: number;
+    websiteClicks: number;
+    callClicks: number;
+    directionRequests: number;
+  };
+  previousMetrics: {
+    searchImpressions: number;
+    mapsImpressions: number;
+    websiteClicks: number;
+    callClicks: number;
+    directionRequests: number;
+  };
+  impressionsChartUri: string | null;
+  callsSparkUri: string | null;
+  clicksSparkUri: string | null;
+  directionsSparkUri: string | null;
+  actions: Array<{ label: string; profileName: string; date: string }>;
+}
+
+export function DashboardReportDocument({
+  data,
+}: {
+  data: DashboardReportData;
+}) {
+  const searchChange = formatChange(
+    data.currentMetrics.searchImpressions,
+    data.previousMetrics.searchImpressions
+  );
+  const mapsChange = formatChange(
+    data.currentMetrics.mapsImpressions,
+    data.previousMetrics.mapsImpressions
+  );
+  const clickChange = formatChange(
+    data.currentMetrics.websiteClicks,
+    data.previousMetrics.websiteClicks
+  );
+  const callChange = formatChange(
+    data.currentMetrics.callClicks,
+    data.previousMetrics.callClicks
+  );
+  const dirChange = formatChange(
+    data.currentMetrics.directionRequests,
+    data.previousMetrics.directionRequests
+  );
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.businessName}>{data.businessName}</Text>
+          {data.address && <Text style={styles.subtitle}>{data.address}</Text>}
+          {data.category && (
+            <Text style={styles.subtitle}>{data.category}</Text>
+          )}
+          <Text style={styles.reportTitle}>
+            Performance Dashboard - {data.periodLabel}
+          </Text>
+        </View>
+
+        {/* AI Narrative Block */}
+        {data.narrativeText && (
+          <View style={styles.narrativeBlock}>
+            <Text style={styles.narrativeText}>{data.narrativeText}</Text>
+          </View>
+        )}
+
+        {/* Key Metrics — row 1: Search + Maps + Website */}
+        <Text style={styles.sectionTitle}>Key Metrics</Text>
+        <View style={styles.metricsRow}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Search Impressions</Text>
+            <Text style={styles.metricValue}>
+              {formatNumber(data.currentMetrics.searchImpressions)}
+            </Text>
+            <Text style={[styles.metricChange, searchChange.style]}>
+              {searchChange.text}
+            </Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Maps Impressions</Text>
+            <Text style={styles.metricValue}>
+              {formatNumber(data.currentMetrics.mapsImpressions)}
+            </Text>
+            <Text style={[styles.metricChange, mapsChange.style]}>
+              {mapsChange.text}
+            </Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Website Clicks</Text>
+            <Text style={styles.metricValue}>
+              {formatNumber(data.currentMetrics.websiteClicks)}
+            </Text>
+            <Text style={[styles.metricChange, clickChange.style]}>
+              {clickChange.text}
+            </Text>
+          </View>
+        </View>
+
+        {/* Key Metrics — row 2: Calls + Directions */}
+        <View style={styles.metricsRow}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Phone Calls</Text>
+            <Text style={styles.metricValue}>
+              {formatNumber(data.currentMetrics.callClicks)}
+            </Text>
+            <Text style={[styles.metricChange, callChange.style]}>
+              {callChange.text}
+            </Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Direction Requests</Text>
+            <Text style={styles.metricValue}>
+              {formatNumber(data.currentMetrics.directionRequests)}
+            </Text>
+            <Text style={[styles.metricChange, dirChange.style]}>
+              {dirChange.text}
+            </Text>
+          </View>
+          {/* Empty spacer to balance the 3-column grid */}
+          <View style={styles.metricBox} />
+        </View>
+
+        {/* Impressions Trend Chart */}
+        {data.impressionsChartUri && (
+          <>
+            <Text style={styles.sectionTitle}>Impressions Trend</Text>
+            <Image style={styles.chartImage} src={data.impressionsChartUri} />
+          </>
+        )}
+
+        {/* Sparkline Charts */}
+        {(data.callsSparkUri ||
+          data.clicksSparkUri ||
+          data.directionsSparkUri) && (
+          <>
+            <Text style={styles.sectionTitle}>Activity Trends</Text>
+            {data.callsSparkUri && (
+              <View style={styles.sparklineRow}>
+                <Text style={styles.sparklineLabel}>Phone Calls</Text>
+                <Image
+                  style={styles.sparklineImage}
+                  src={data.callsSparkUri}
+                />
+              </View>
+            )}
+            {data.clicksSparkUri && (
+              <View style={styles.sparklineRow}>
+                <Text style={styles.sparklineLabel}>Website Clicks</Text>
+                <Image
+                  style={styles.sparklineImage}
+                  src={data.clicksSparkUri}
+                />
+              </View>
+            )}
+            {data.directionsSparkUri && (
+              <View style={styles.sparklineRow}>
+                <Text style={styles.sparklineLabel}>Direction Requests</Text>
+                <Image
+                  style={styles.sparklineImage}
+                  src={data.directionsSparkUri}
+                />
+              </View>
+            )}
+          </>
+        )}
+
+        {/* Actions Log */}
+        {data.actions.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Actions Log</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableCellKeyword, styles.tableHeaderText]}>
+                  Action
+                </Text>
+                <Text
+                  style={[styles.tableCellImpressions, styles.tableHeaderText]}
+                >
+                  Date
+                </Text>
+              </View>
+              {data.actions.map((action, i) => (
+                <View style={styles.tableRow} key={i}>
+                  <Text style={styles.tableCellKeyword}>
+                    {action.label} - {action.profileName}
+                  </Text>
+                  <Text style={styles.tableCellImpressions}>{action.date}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Footer */}
+        <Text style={styles.footer}>
+          Generated by MapsAI - {new Date().toLocaleDateString("en-US")}
+        </Text>
+      </Page>
+    </Document>
+  );
 }
 
 export function ReportDocument({ data }: { data: ReportData }) {

@@ -88,3 +88,50 @@ export async function renderImpressionsChart(
 
   return await chartCanvas.renderToBuffer(config);
 }
+
+interface SparklineChartData {
+  date: string;
+  value: number;
+}
+
+export async function renderSparklineChart(
+  data: SparklineChartData[],
+  color: string
+): Promise<Buffer> {
+  // Create a separate small canvas for sparklines
+  const { ChartJSNodeCanvas } = await import("chartjs-node-canvas");
+  const smallCanvas = new ChartJSNodeCanvas({
+    width: 300,
+    height: 80,
+    backgroundColour: "white",
+  });
+
+  const sorted = [...data].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  const config: ChartConfiguration = {
+    type: "line",
+    data: {
+      labels: sorted.map((d) => d.date),
+      datasets: [
+        {
+          data: sorted.map((d) => d.value),
+          borderColor: color,
+          borderWidth: 2,
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      animation: false,
+      responsive: false,
+      plugins: { legend: { display: false }, title: { display: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  };
+
+  return await smallCanvas.renderToBuffer(config);
+}
