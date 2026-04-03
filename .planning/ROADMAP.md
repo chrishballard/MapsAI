@@ -132,7 +132,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [ ] 19-01-PLAN.md — TDD pure report-metrics functions + date range shell
-- [ ] 19-02-PLAN.md — Interactive dashboard UI (charts, sparklines, actions log, AI summary)
+- [x] 19-02-PLAN.md — Interactive dashboard UI (charts, sparklines, actions log, AI summary)
 - [ ] 19-03-PLAN.md — PDF export enhancement (sparkline renderer, dashboard report template, API route)
 **UI hint**: yes
 
