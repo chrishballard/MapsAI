@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MotionDiv } from "@/components/motion-wrapper";
 import { ReportsShell } from "./reports-shell";
+import { ReportsDashboardContent } from "./reports-dashboard-content";
 
 function ReportsDashboardSkeleton() {
   return (
@@ -89,11 +90,9 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
       {/* Date range controls */}
       <ReportsShell from={from} to={to} />
 
-      {/* Dashboard content — Plan 02 replaces the placeholder */}
+      {/* Dashboard content — live metrics dashboard */}
       <Suspense fallback={<ReportsDashboardSkeleton />}>
-        <div className="text-sm text-zinc-400 py-2">
-          Dashboard content loading...
-        </div>
+        <ReportsDashboardContent profileId={selectedProfileId} from={from} to={to} />
       </Suspense>
 
       {/* Generated Reports & Tools — collapsible section (per D-02) */}
