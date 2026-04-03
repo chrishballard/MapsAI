@@ -121,15 +121,17 @@ export function ProfilesGrid({ profiles, availableCount }: ProfilesGridProps) {
                 transition={{ delay: i * 0.03 }}
               >
                 <Card className="p-5 hover:border-brand-300 transition-colors group h-full flex flex-col relative">
-                  {/* Score badge in top-right corner (D-01, D-02) */}
-                  <Badge
-                    className={cn(
-                      GRADE_CLASSES[score.grade],
-                      'font-semibold text-xs absolute top-3 right-3'
-                    )}
-                  >
-                    {score.total}
-                  </Badge>
+                  {/* Score badge in top-right corner (D-01, D-02) — links to optimization page (D-14) */}
+                  <Link href={`/dashboard/optimization/${profile.id}`}>
+                    <Badge
+                      className={cn(
+                        GRADE_CLASSES[score.grade],
+                        'font-semibold text-xs absolute top-3 right-3 cursor-pointer hover:opacity-80'
+                      )}
+                    >
+                      {score.total}
+                    </Badge>
+                  </Link>
 
                   <div className="flex items-start gap-3 mb-3">
                     <div className="w-12 h-12 bg-zinc-100 rounded-xl flex items-center justify-center text-zinc-500 group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors shrink-0">

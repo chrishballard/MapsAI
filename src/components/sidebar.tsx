@@ -10,12 +10,14 @@ import {
   Settings,
   LayoutDashboard,
   ChevronRight,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/profiles", label: "Businesses", icon: Building2 },
+  { href: "/dashboard/optimization", label: "Optimization", icon: Gauge },
   { href: "/dashboard/posts", label: "Posts", icon: FileText },
   { href: "/dashboard/reviews", label: "Reviews", icon: MessageSquare },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
