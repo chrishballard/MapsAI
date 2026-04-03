@@ -14,6 +14,7 @@ import { MetricSparkCard } from "./metric-spark-card";
 import { ActionsLog } from "./actions-log";
 import { ExecutiveSummary } from "./executive-summary";
 import { cn } from "@/lib/utils";
+import { DashboardDownloadBtn } from "./dashboard-download-btn";
 
 interface ReportsDashboardContentProps {
   profileId: string | null;
@@ -112,6 +113,16 @@ export async function ReportsDashboardContent({
 
   return (
     <div className="space-y-6">
+      {/* Download PDF button — passes current date range and null narrative (per D-19, D-20) */}
+      <div className="flex justify-end">
+        <DashboardDownloadBtn
+          profileId={profileId}
+          from={from}
+          to={to}
+          narrativeText={null}
+        />
+      </div>
+
       {/* D-15: AI executive summary at top, non-blocking via Suspense */}
       <Suspense fallback={<NarrativeSkeleton />}>
         <ExecutiveSummary
