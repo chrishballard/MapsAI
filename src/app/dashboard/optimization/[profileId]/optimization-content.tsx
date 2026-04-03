@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { computeOptimizationScore } from '@/lib/optimization-score';
 import { OptimizationScoreGauge } from './optimization-score-gauge';
 import { AuditCardsGrid } from './audit-cards-grid';
+import { SuggestionsPanel } from './suggestions-panel';
 import type { ScoreStatus } from '@/lib/optimization-score';
 
 const STATUS_ORDER: Record<ScoreStatus, number> = {
@@ -95,8 +96,11 @@ export async function OptimizationContent({ profileId }: OptimizationContentProp
         <AuditCardsGrid checks={sortedChecks} />
       </div>
 
-      {/* Placeholder for Plan 03 suggestions panel */}
-      <div id="suggestions-section" />
+      {/* Suggestions — per D-06, D-07 */}
+      <div>
+        <h2 className="text-xl font-semibold text-zinc-900 mb-4">Pending Suggestions</h2>
+        <SuggestionsPanel profileId={profileId} />
+      </div>
     </div>
   );
 }
