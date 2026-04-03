@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Profile Optimization & UI Enhancements
-status: verifying
+status: executing
 stopped_at: Phase 19 context gathered
-last_updated: "2026-04-03T17:07:50.474Z"
-last_activity: 2026-04-03
+last_updated: "2026-04-03T17:28:37.261Z"
+last_activity: 2026-04-03 -- Phase 19 execution started
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 10
+  total_plans: 13
   completed_plans: 10
   percent: 0
 ---
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Every client's GBP is fully managed end-to-end -- from initial optimization through ongoing posts, reviews, and reporting.
-**Current focus:** Phase 18 — review-metrics-dashboard
+**Current focus:** Phase 19 — reports-enhancement
 
 ## Current Position
 
-Phase: 19
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-03
+Phase: 19 (reports-enhancement) — EXECUTING
+Plan: 1 of 3 complete
+Status: Executing Phase 19
+Last activity: 2026-04-03 -- Completed 19-01-PLAN.md (report-metrics functions + date range shell)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 34% (1/3 plans complete)
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 17-profile-optimization-page P02 | 8min | 2 tasks | 4 files |
 | Phase 18-review-metrics-dashboard P01 | 2min | 2 tasks | 4 files |
 | Phase 18-review-metrics-dashboard P02 | 2 | 2 tasks | 4 files |
+| Phase 19-reports-enhancement P01 | 10min | 2 tasks | 4 files |
 
 ### Decisions
 
@@ -83,6 +84,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 18-review-metrics-dashboard]: UTC-based date math throughout computeMonthlyData — matches PostgreSQL UTC storage
 - [Phase 18-review-metrics-dashboard]: allReviews fetched all-time for rating distribution; recentReviews (62-day) for trend only
 - [Phase 18-review-metrics-dashboard]: Right Y-axis domain locked to [1,5] — prevents misleading auto-scaling of avg rating
+- [Phase 19-reports-enhancement]: buildActionsLog has no .slice() limit — returns all items in date range (unlike buildAutomationItems)
+- [Phase 19-reports-enhancement]: computeDateRange defaults to last 30 days when no params (D-03); computePriorPeriod uses preceding equal-length period (D-04)
+- [Phase 19-reports-enhancement]: services and attributes not trackable in actions log — no timestamp fields on those models
 
 ### Research Flags
 
@@ -100,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T17:07:50.472Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-reports-enhancement/19-CONTEXT.md
+Last session: 2026-04-03T17:32:56Z
+Stopped at: Completed 19-01-PLAN.md (report-metrics functions + date range shell)
+Resume file: .planning/phases/19-reports-enhancement/19-01-SUMMARY.md
