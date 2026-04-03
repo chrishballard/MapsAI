@@ -4,15 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
 interface ReviewFiltersProps {
-  profiles: Array<{ id: string; name: string }>;
-  currentProfileId?: string;
   currentRating?: string;
   currentResponseStatus?: string;
 }
 
 export function ReviewFilters({
-  profiles,
-  currentProfileId,
   currentRating,
   currentResponseStatus,
 }: ReviewFiltersProps) {
@@ -34,19 +30,6 @@ export function ReviewFilters({
 
   return (
     <div className="flex flex-wrap gap-3 mb-6">
-      <select
-        value={currentProfileId || ""}
-        onChange={(e) => updateFilter("profileId", e.target.value)}
-        className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
-      >
-        <option value="">All Profiles</option>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-
       <select
         value={currentRating || ""}
         onChange={(e) => updateFilter("rating", e.target.value)}

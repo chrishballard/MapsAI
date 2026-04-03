@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   ChevronRight,
   Gauge,
-  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +20,6 @@ const navItems = [
   { href: "/dashboard/optimization", label: "Optimization", icon: Gauge },
   { href: "/dashboard/posts", label: "Posts", icon: FileText },
   { href: "/dashboard/reviews", label: "Reviews", icon: MessageSquare },
-  { href: "/dashboard/reviews/metrics", label: "Review Metrics", icon: TrendingUp },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

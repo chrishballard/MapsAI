@@ -66,7 +66,6 @@ const STATUS_LABEL: Record<string, string> = {
 
 interface ReviewsPageProps {
   searchParams: Promise<{
-    profileId?: string;
     rating?: string;
     responseStatus?: string;
   }>;
@@ -74,10 +73,8 @@ interface ReviewsPageProps {
 
 export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   const params = await searchParams;
-  const selectedProfileId = await getSelectedProfileId();
-  const { profileId: filterProfileId, rating, responseStatus } = params;
-
-  const profileId = filterProfileId || selectedProfileId;
+  const profileId = await getSelectedProfileId();
+  const { rating, responseStatus } = params;
 
   const where: Prisma.ReviewWhereInput = {};
   if (profileId) where.profileId = profileId;
@@ -89,27 +86,20 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
     };
   }
 
-  const [reviews, profiles] = await Promise.all([
-    prisma.review.findMany({
-      where,
-      include: {
-        profile: { select: { id: true, name: true, category: true } },
-        response: true,
-      },
-      orderBy: { reviewDate: "desc" },
-    }),
-    prisma.profile.findMany({
-      where: { isConnected: true, isOnboarded: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+  const reviews = await prisma.review.findMany({
+    where,
+    include: {
+      profile: { select: { id: true, name: true, category: true } },
+      response: true,
+    },
+    orderBy: { reviewDate: "desc" },
+  });
 
   const draftCount = reviews.filter(
     (r) => r.response?.status === "DRAFTED"
   ).length;
 
-  const hasFilters = profileId || rating || responseStatus;
+  const hasFilters = rating || responseStatus;
 
   return (
     <MotionDiv
@@ -154,8 +144,6 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
       </div>
 
       <ReviewFilters
-        profiles={profiles}
-        currentProfileId={profileId || undefined}
         currentRating={rating}
         currentResponseStatus={responseStatus}
       />
