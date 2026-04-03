@@ -31,10 +31,11 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 - ✓ DASH: Dashboard upgrades — automations feed, expanded tasks, Suspense streaming — v1.2 (Phase 16)
 - ✓ OPT: Profile optimization page — score gauge, audit cards, approve/ignore suggestions, bulk actions — v1.2 (Phase 17)
 - ✓ RVMT: Review metrics dashboard — review trends, rating distribution, monthly volume chart, recency indicator — v1.2 (Phase 18)
+- ✓ RPT: Reports enhancement — interactive dashboard, date range controls, Views on Google chart, metric sparklines, actions log, AI narrative, PDF download — v1.2 (Phase 19)
 
 ### Active
 
-(Defined in REQUIREMENTS.md for v1.2)
+(No active requirements — v1.2 complete)
 
 ### Out of Scope
 
@@ -64,8 +65,8 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 - **v1.0 MVP** shipped: ongoing management (posts, reviews, reports)
 - **v1.1 Onboarding** shipped: guided optimization wizard, AI keywords/descriptions/services, re-optimization
-- **v1.2 in progress**: Phase 18 (Review Metrics Dashboard) complete — review trends, rating distribution chart, monthly volume + avg rating dual-line chart, recency indicator. Next: Phase 19 (Reports Enhancement)
-- ~135 TypeScript files
+- **v1.2 complete**: All 6 phases shipped (14-19) — optimization scoring, business cards, dashboard upgrades, review metrics, reports enhancement
+- ~150 TypeScript files
 - GBP API access application submitted (pending approval for write operations)
 - No sidebar link to onboarding page yet (users navigate directly)
 
@@ -122,4 +123,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 — Phase 15 complete: business cards with score badges, search, optimized queries*
+*Last updated: 2026-04-03 — Phase 19 complete: v1.2 milestone finished — reports enhancement with interactive dashboard, AI narrative, PDF export*
