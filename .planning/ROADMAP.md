@@ -114,7 +114,7 @@ Plans:
   5. Every chart carries a "Data through [last sync date]" label to communicate GBP metrics lag to users
 **Plans**: 2 plans
 Plans:
-- [ ] 18-01-PLAN.md — Pure data transformation functions with TDD, sidebar nav, reviews page tab links
+- [x] 18-01-PLAN.md — Pure data transformation functions with TDD, sidebar nav, reviews page tab links
 - [ ] 18-02-PLAN.md — Metrics page shell, stat cards, Recharts chart components
 **UI hint**: yes
 
@@ -142,5 +142,5 @@ Plans:
 | 15. Business Cards View | v1.2 | 1/1 | Complete    | 2026-04-02 |
 | 16. Dashboard Upgrades | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 17. Profile Optimization Page | v1.2 | 2/3 | Complete    | 2026-04-03 |
-| 18. Review Metrics Dashboard | v1.2 | 0/2 | Not started | - |
+| 18. Review Metrics Dashboard | v1.2 | 1/2 | In Progress|  |
 | 19. Reports Enhancement | v1.2 | 0/? | Not started | - |

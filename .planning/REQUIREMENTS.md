@@ -29,11 +29,11 @@ Requirements for Milestone v1.2: Profile Optimization & UI Enhancements.
 
 ### Review Metrics (RVMT)
 
-- [ ] **RVMT-01**: User can see total review count with period-over-period trend badge (% change)
-- [ ] **RVMT-02**: User can see star rating distribution as a horizontal bar chart (5 to 1 stars with counts)
-- [ ] **RVMT-03**: User can see monthly review volume as a line chart with date range
-- [ ] **RVMT-04**: User can see days since last review with status indicator (good/warning/critical)
-- [ ] **RVMT-05**: User can see average rating trend over time as a second line on the monthly chart
+- [x] **RVMT-01**: User can see total review count with period-over-period trend badge (% change)
+- [x] **RVMT-02**: User can see star rating distribution as a horizontal bar chart (5 to 1 stars with counts)
+- [x] **RVMT-03**: User can see monthly review volume as a line chart with date range
+- [x] **RVMT-04**: User can see days since last review with status indicator (good/warning/critical)
+- [x] **RVMT-05**: User can see average rating trend over time as a second line on the monthly chart
 
 ### Reports (RPT)
 
@@ -100,11 +100,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CARD-02 | Phase 15 | Complete |
 | CARD-03 | Phase 15 | Complete |
 | CARD-04 | Phase 15 | Complete |
-| RVMT-01 | Phase 18 | Pending |
-| RVMT-02 | Phase 18 | Pending |
-| RVMT-03 | Phase 18 | Pending |
-| RVMT-04 | Phase 18 | Pending |
-| RVMT-05 | Phase 18 | Pending |
+| RVMT-01 | Phase 18 | Complete |
+| RVMT-02 | Phase 18 | Complete |
+| RVMT-03 | Phase 18 | Complete |
+| RVMT-04 | Phase 18 | Complete |
+| RVMT-05 | Phase 18 | Complete |
 | RPT-01 | Phase 19 | Pending |
 | RPT-02 | Phase 19 | Pending |
 | RPT-03 | Phase 19 | Pending |
