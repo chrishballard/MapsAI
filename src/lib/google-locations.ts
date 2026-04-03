@@ -1,3 +1,4 @@
+import { google } from "googleapis";
 import { createGoogleClient } from "./google";
 import { prisma } from "./prisma";
 
@@ -16,16 +17,6 @@ interface GoogleLocation {
   metadata?: { placeId?: string };
 }
 
-interface AccountsListResponse {
-  accounts?: Array<{ name: string; accountName?: string }>;
-  nextPageToken?: string;
-}
-
-interface LocationsListResponse {
-  locations?: GoogleLocation[];
-  nextPageToken?: string;
-}
-
 function formatAddress(address: GoogleLocation["storefrontAddress"]): string | null {
   if (!address) return null;
   const parts = [
@@ -40,14 +31,20 @@ function formatAddress(address: GoogleLocation["storefrontAddress"]): string | n
 export async function syncLocationsForAccount(googleAccountId: string) {
   const oauth2Client = await createGoogleClient(googleAccountId);
 
-  // Use the v4 umbrella API endpoint (has quota via Google My Business API allowlist)
-  // instead of the individual sub-API clients (which may have 0 quota)
-  const accountsRes = await oauth2Client.request<AccountsListResponse>({
-    url: "https://mybusiness.googleapis.com/v4/accounts",
-    method: "GET",
+  // Use the My Business sub-API clients (these have quota on the MapsAI project)
+  const mybusinessbusinessinformation = google.mybusinessbusinessinformation({
+    version: "v1",
+    auth: oauth2Client,
   });
 
+  const mybusinessaccountmanagement = google.mybusinessaccountmanagement({
+    version: "v1",
+    auth: oauth2Client,
+  });
+
+  const accountsRes = await mybusinessaccountmanagement.accounts.list();
   const accounts = accountsRes.data.accounts || [];
+
   const syncedProfiles = [];
 
   for (const account of accounts) {
@@ -56,18 +53,15 @@ export async function syncLocationsForAccount(googleAccountId: string) {
     let nextPageToken: string | undefined;
 
     do {
-      let url = `https://mybusiness.googleapis.com/v4/${account.name}/locations?readMask=name,title,storefrontAddress,phoneNumbers,categories,websiteUri,metadata&pageSize=100`;
-      if (nextPageToken) {
-        url += `&pageToken=${encodeURIComponent(nextPageToken)}`;
-      }
-
-      const locationsRes = await oauth2Client.request<LocationsListResponse>({
-        url,
-        method: "GET",
+      const locationsRes = await mybusinessbusinessinformation.accounts.locations.list({
+        parent: account.name,
+        readMask: "name,title,storefrontAddress,phoneNumbers,categories,websiteUri,metadata",
+        pageSize: 100,
+        pageToken: nextPageToken,
       });
 
-      const locations = locationsRes.data.locations || [];
-      nextPageToken = locationsRes.data.nextPageToken;
+      const locations = (locationsRes.data.locations || []) as GoogleLocation[];
+      nextPageToken = locationsRes.data.nextPageToken || undefined;
 
       for (const location of locations) {
         if (!location.name) continue;
