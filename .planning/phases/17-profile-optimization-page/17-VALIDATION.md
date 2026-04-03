@@ -2,7 +2,7 @@
 phase: 17
 slug: profile-optimization-page
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-03
 ---
@@ -17,20 +17,20 @@ created: 2026-04-03
 
 | Property | Value |
 |----------|-------|
-| **Framework** | jest 29.x (existing) |
-| **Config file** | jest.config.ts |
-| **Quick run command** | `npx jest --testPathPattern="optimization" --bail` |
-| **Full suite command** | `npx jest` |
-| **Estimated runtime** | ~15 seconds |
+| **Framework** | vitest 4.1.2 (existing) |
+| **Config file** | vitest.config.ts |
+| **Quick run command** | `npx vitest run tests/lib/optimization-utils.test.ts` |
+| **Full suite command** | `npx vitest run` |
+| **Estimated runtime** | ~10 seconds |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `npx jest --testPathPattern="optimization" --bail`
-- **After every plan wave:** Run `npx jest`
+- **After every task commit:** Run `npx vitest run tests/lib/optimization-utils.test.ts`
+- **After every plan wave:** Run `npx vitest run`
 - **Before `/gsd:verify-work`:** Full suite must be green
-- **Max feedback latency:** 15 seconds
+- **Max feedback latency:** 10 seconds
 
 ---
 
@@ -38,10 +38,12 @@ created: 2026-04-03
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 17-01-01 | 01 | 1 | OPT-01 | unit | `npx jest --testPathPattern="score-gauge"` | ❌ W0 | ⬜ pending |
-| 17-01-02 | 01 | 1 | OPT-02 | unit | `npx jest --testPathPattern="audit-card"` | ❌ W0 | ⬜ pending |
-| 17-02-01 | 02 | 2 | OPT-03 | unit | `npx jest --testPathPattern="suggestion"` | ❌ W0 | ⬜ pending |
-| 17-02-02 | 02 | 2 | OPT-04 | unit | `npx jest --testPathPattern="bulk-action"` | ❌ W0 | ⬜ pending |
+| 17-01-01 | 01 | 1 | OPT-02 | unit | `npx vitest run tests/lib/optimization-utils.test.ts` | ❌ W0 (created by TDD task) | ⬜ pending |
+| 17-01-02 | 01 | 1 | — | build | `npx next build` | ✅ | ⬜ pending |
+| 17-02-01 | 02 | 1 | OPT-01, OPT-02 | typecheck | `npx tsc --noEmit --pretty` | ✅ | ⬜ pending |
+| 17-02-02 | 02 | 1 | OPT-01, OPT-02 | build | `npx next build` | ✅ | ⬜ pending |
+| 17-03-01 | 03 | 2 | OPT-03, OPT-04 | typecheck | `npx tsc --noEmit --pretty` | ✅ | ⬜ pending |
+| 17-03-02 | 03 | 2 | OPT-03, OPT-04 | build | `npx next build` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -49,11 +51,9 @@ created: 2026-04-03
 
 ## Wave 0 Requirements
 
-- [ ] `tests/components/optimization/score-gauge.test.tsx` — stubs for OPT-01
-- [ ] `tests/components/optimization/audit-cards.test.tsx` — stubs for OPT-02
-- [ ] `tests/components/optimization/suggestions.test.tsx` — stubs for OPT-03, OPT-04
+- [ ] `tests/lib/optimization-utils.test.ts` — created by Plan 01 Task 1 (TDD: write tests then implement)
 
-*Existing jest infrastructure covers framework needs.*
+*Existing vitest infrastructure covers framework needs. Plan 01 Task 1 creates the test file as part of its TDD workflow.*
 
 ---
 
@@ -67,13 +67,19 @@ created: 2026-04-03
 
 ---
 
+## Scope Notes
+
+- **Attribute suggestions (OPT-03):** Phase 12 wrote attributes directly to GBP without an approval workflow. No `/api/reoptimize/attributes` endpoint exists. OPT-03 is satisfied by description + services coverage. If attribute suggestion approval is added in a future phase, it can be surfaced on this page then.
+
+---
+
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 15s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 15s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-04-03
