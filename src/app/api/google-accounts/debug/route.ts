@@ -15,7 +15,7 @@ export async function GET() {
   try {
     // 1. Check Google Accounts in DB
     const accounts = await prisma.googleAccount.findMany({
-      select: { id: true, email: true, tokenExpiry: true },
+      select: { id: true, googleEmail: true, tokenExpiry: true },
     });
     results.push({ step: "google_accounts", count: accounts.length, accounts });
 
