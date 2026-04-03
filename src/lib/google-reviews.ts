@@ -46,10 +46,11 @@ export async function fetchReviews(
 
   const parent = `${accountResourceName}/${locationName}`;
 
-  // Try the v1 mybusinessreviews API first, then fall back to legacy v4
+  // Try multiple URL formats — the GBP Reviews API has changed over time
+  // v4 uses accounts/{id}/locations/{id}, v1 uses just locations/{id}
   const endpoints = [
     `https://mybusiness.googleapis.com/v4/${parent}/reviews`,
-    `https://mybusinessreviews.googleapis.com/v1/${parent}/reviews`,
+    `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews`,
   ];
 
   let lastError: unknown;
@@ -61,11 +62,13 @@ export async function fetchReviews(
         url += `&pageToken=${encodeURIComponent(pageToken)}`;
       }
 
+      console.log(`[google-reviews] Trying: ${baseUrl}`);
       const response = await oauth2Client.request<FetchReviewsResponse>({
         url,
         method: "GET",
       });
 
+      console.log(`[google-reviews] Success with: ${baseUrl} — ${response.data.reviews?.length ?? 0} reviews`);
       return {
         reviews: response.data.reviews || [],
         nextPageToken: response.data.nextPageToken,
@@ -74,7 +77,8 @@ export async function fetchReviews(
       };
     } catch (err) {
       lastError = err;
-      console.warn(`[google-reviews] Failed with endpoint ${baseUrl}, trying next...`);
+      const status = (err as { response?: { status?: number } }).response?.status;
+      console.warn(`[google-reviews] Failed with ${baseUrl} (status: ${status}), trying next...`);
     }
   }
 
