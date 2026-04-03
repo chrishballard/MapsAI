@@ -10,7 +10,7 @@ Requirements for Milestone v1.2: Profile Optimization & UI Enhancements.
 ### Profile Optimization (OPT)
 
 - [ ] **OPT-01**: User can view an optimization score gauge (0-100%) for any business profile, computed from weighted signals (review frequency, post frequency, rating, images, description, services, attributes)
-- [ ] **OPT-02**: User can see individual GBP audit cards per signal showing current value, benchmark, status (good/warning/critical), and recommendation
+- [x] **OPT-02**: User can see individual GBP audit cards per signal showing current value, benchmark, status (good/warning/critical), and recommendation
 - [ ] **OPT-03**: User can approve or ignore AI-generated description, services, and attribute suggestions on the optimization page (reuses v1.1 re-optimization workflow)
 - [ ] **OPT-04**: User can bulk approve or bulk ignore all pending suggestions with a confirmation dialog
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | OPT-01 | Phase 17 | Pending |
-| OPT-02 | Phase 17 | Pending |
+| OPT-02 | Phase 17 | Complete |
 | OPT-03 | Phase 17 | Pending |
 | OPT-04 | Phase 17 | Pending |
 | DASH-01 | Phase 16 | Complete |

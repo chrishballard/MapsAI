@@ -97,8 +97,8 @@ Plans:
   5. Optimization sidebar nav item exists and links to the page without producing a dead link before the page is built
 **Plans**: 3 plans
 Plans:
-- [ ] 17-01-PLAN.md — Utility functions with tests, navigation wiring (sidebar, badge links, index route)
-- [ ] 17-02-PLAN.md — Score gauge, audit cards grid, Suspense shell page
+- [x] 17-01-PLAN.md — Utility functions with tests, navigation wiring (sidebar, badge links, index route)
+- [x] 17-02-PLAN.md — Score gauge, audit cards grid, Suspense shell page
 - [ ] 17-03-PLAN.md — Suggestions panel with approve/ignore and bulk actions
 **UI hint**: yes
 
@@ -138,6 +138,6 @@ Plans:
 | 14. Score Library & Dependencies | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 15. Business Cards View | v1.2 | 1/1 | Complete    | 2026-04-02 |
 | 16. Dashboard Upgrades | v1.2 | 2/2 | Complete    | 2026-04-02 |
-| 17. Profile Optimization Page | v1.2 | 0/3 | Planning complete | - |
+| 17. Profile Optimization Page | v1.2 | 2/3 | In Progress|  |
 | 18. Review Metrics Dashboard | v1.2 | 0/? | Not started | - |
 | 19. Reports Enhancement | v1.2 | 0/? | Not started | - |
