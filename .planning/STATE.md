@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Profile Optimization & UI Enhancements
-status: executing
-stopped_at: Completed 18-01-PLAN.md
-last_updated: "2026-04-03T16:48:56.626Z"
+status: verifying
+stopped_at: Completed 18-02-PLAN.md
+last_updated: "2026-04-03T16:53:20.491Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 Phase: 18 (review-metrics-dashboard) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-03
 
 Progress: [░░░░░░░░░░] 0%
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 17-profile-optimization-page P01 | 8 | 2 tasks | 5 files |
 | Phase 17-profile-optimization-page P02 | 8min | 2 tasks | 4 files |
 | Phase 18-review-metrics-dashboard P01 | 2min | 2 tasks | 4 files |
+| Phase 18-review-metrics-dashboard P02 | 2 | 2 tasks | 4 files |
 
 ### Decisions
 
@@ -80,6 +81,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 17-profile-optimization-page]: computeOptimizationScore called server-side in OptimizationContent — avoids Date serialization pitfall across server/client boundary
 - [Phase 18-review-metrics-dashboard]: Pure functions accept plain Date objects (no Prisma types) — safe for server and client contexts
 - [Phase 18-review-metrics-dashboard]: UTC-based date math throughout computeMonthlyData — matches PostgreSQL UTC storage
+- [Phase 18-review-metrics-dashboard]: allReviews fetched all-time for rating distribution; recentReviews (62-day) for trend only
+- [Phase 18-review-metrics-dashboard]: Right Y-axis domain locked to [1,5] — prevents misleading auto-scaling of avg rating
 
 ### Research Flags
 
@@ -97,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T16:48:56.624Z
-Stopped at: Completed 18-01-PLAN.md
+Last session: 2026-04-03T16:53:20.489Z
+Stopped at: Completed 18-02-PLAN.md
 Resume file: None
