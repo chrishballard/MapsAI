@@ -46,11 +46,11 @@ export async function fetchReviews(
 
   const parent = `${accountResourceName}/${locationName}`;
 
-  // Try multiple URL formats — the GBP Reviews API has changed over time
-  // v4 uses accounts/{id}/locations/{id}, v1 uses just locations/{id}
+  // Try multiple URL formats — the GBP Reviews API requires the v4 endpoint
+  // with "Google My Business API" enabled. Wildcard account (-) also works.
   const endpoints = [
     `https://mybusiness.googleapis.com/v4/${parent}/reviews`,
-    `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews`,
+    `https://mybusiness.googleapis.com/v4/accounts/-/${locationName}/reviews`,
   ];
 
   let lastError: unknown;
