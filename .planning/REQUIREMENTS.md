@@ -44,7 +44,7 @@ Requirements for Milestone v1.2: Profile Optimization & UI Enhancements.
 - [ ] **RPT-05**: User can see Direction Requests metric with last period vs this period comparison, % change badge, and sparkline chart
 - [ ] **RPT-06**: User can see a completed actions log showing all actions taken in the selected period (posts published, reviews responded, optimizations pushed)
 - [ ] **RPT-07**: User can see an AI-generated executive summary narrative (3-sentence month summary) on the reports page
-- [ ] **RPT-08**: User can download the current report view as a PDF
+- [x] **RPT-08**: User can download the current report view as a PDF
 
 ## v1.3+ Requirements (Deferred)
 
@@ -112,7 +112,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPT-05 | Phase 19 | Pending |
 | RPT-06 | Phase 19 | Pending |
 | RPT-07 | Phase 19 | Pending |
-| RPT-08 | Phase 19 | Pending |
+| RPT-08 | Phase 19 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 24 total

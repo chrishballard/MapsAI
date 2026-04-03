@@ -131,7 +131,7 @@ Plans:
   6. User can click "Download PDF" and receive a PDF export of the current report view
 **Plans**: 3 plans
 Plans:
-- [ ] 19-01-PLAN.md — TDD pure report-metrics functions + date range shell
+- [x] 19-01-PLAN.md — TDD pure report-metrics functions + date range shell
 - [x] 19-02-PLAN.md — Interactive dashboard UI (charts, sparklines, actions log, AI summary)
 - [ ] 19-03-PLAN.md — PDF export enhancement (sparkline renderer, dashboard report template, API route)
 **UI hint**: yes
@@ -147,4 +147,4 @@ Plans:
 | 16. Dashboard Upgrades | v1.2 | 2/2 | Complete    | 2026-04-02 |
 | 17. Profile Optimization Page | v1.2 | 2/3 | Complete    | 2026-04-03 |
 | 18. Review Metrics Dashboard | v1.2 | 2/2 | Complete    | 2026-04-03 |
-| 19. Reports Enhancement | v1.2 | 0/3 | Not started | - |
+| 19. Reports Enhancement | v1.2 | 2/3 | In Progress|  |
