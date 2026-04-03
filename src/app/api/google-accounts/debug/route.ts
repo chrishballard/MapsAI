@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createGoogleClient } from "@/lib/google";
+import { google } from "googleapis";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -23,59 +24,67 @@ export async function GET() {
       return NextResponse.json({ status: "no_google_accounts", results });
     }
 
-    // 2. Try to list accounts via v4 API
     const account = accounts[0];
     const oauth2Client = await createGoogleClient(account.id);
 
+    // 2. Try v4 accounts endpoint
     try {
-      const accountsRes = await oauth2Client.request<{ accounts?: unknown[] }>({
+      const res = await oauth2Client.request<{ accounts?: unknown[] }>({
         url: "https://mybusiness.googleapis.com/v4/accounts",
         method: "GET",
       });
-      results.push({
-        step: "v4_accounts_list",
-        success: true,
-        accountCount: accountsRes.data.accounts?.length ?? 0,
-        accounts: accountsRes.data.accounts,
-      });
-
-      // 3. Try to list locations for first account
-      const firstAccount = accountsRes.data.accounts?.[0] as { name?: string } | undefined;
-      if (firstAccount?.name) {
-        try {
-          const locationsRes = await oauth2Client.request<{ locations?: unknown[] }>({
-            url: `https://mybusiness.googleapis.com/v4/${firstAccount.name}/locations?readMask=name,title,storefrontAddress,phoneNumbers,categories,websiteUri,metadata&pageSize=100`,
-            method: "GET",
-          });
-          results.push({
-            step: "v4_locations_list",
-            success: true,
-            locationCount: locationsRes.data.locations?.length ?? 0,
-            locations: locationsRes.data.locations,
-          });
-        } catch (locErr: unknown) {
-          const e = locErr as { message?: string; response?: { status?: number; data?: unknown } };
-          results.push({
-            step: "v4_locations_list",
-            success: false,
-            error: e.message,
-            status: e.response?.status,
-            data: e.response?.data,
-          });
-        }
-      }
-    } catch (apiErr: unknown) {
-      const e = apiErr as { message?: string; response?: { status?: number; data?: unknown } };
-      results.push({
-        step: "v4_accounts_list",
-        success: false,
-        error: e.message,
-        status: e.response?.status,
-        data: e.response?.data,
-      });
+      results.push({ step: "v4_accounts", success: true, data: res.data });
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: unknown }; message?: string };
+      results.push({ step: "v4_accounts", success: false, status: e.response?.status, error: String(e.response?.data || e.message).slice(0, 200) });
     }
 
-    // 4. Check profiles in DB
+    // 3. Try Account Management API (sub-API)
+    try {
+      const mgmt = google.mybusinessaccountmanagement({ version: "v1", auth: oauth2Client });
+      const res = await mgmt.accounts.list();
+      results.push({ step: "account_mgmt_api", success: true, accounts: res.data.accounts });
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: unknown }; message?: string };
+      results.push({ step: "account_mgmt_api", success: false, status: e.response?.status, error: String(e.response?.data || e.message).slice(0, 300) });
+    }
+
+    // 4. Try Business Information API for locations (if we have account name from either source)
+    const accountName = (results.find(r => r.step === "v4_accounts" && r.success) as Record<string,unknown>)?.data as { accounts?: Array<{ name?: string }> } | undefined;
+    const mgmtAccounts = (results.find(r => r.step === "account_mgmt_api" && r.success) as Record<string,unknown>)?.accounts as Array<{ name?: string }> | undefined;
+    const firstAccountName = accountName?.accounts?.[0]?.name || mgmtAccounts?.[0]?.name;
+
+    if (firstAccountName) {
+      // Try v4 locations
+      try {
+        const res = await oauth2Client.request<{ locations?: unknown[] }>({
+          url: `https://mybusiness.googleapis.com/v4/${firstAccountName}/locations?pageSize=10`,
+          method: "GET",
+        });
+        results.push({ step: "v4_locations", success: true, count: res.data.locations?.length ?? 0, locations: res.data.locations });
+      } catch (err: unknown) {
+        const e = err as { response?: { status?: number; data?: unknown }; message?: string };
+        results.push({ step: "v4_locations", success: false, status: e.response?.status, error: String(e.response?.data || e.message).slice(0, 200) });
+      }
+
+      // Try Business Information API locations
+      try {
+        const biz = google.mybusinessbusinessinformation({ version: "v1", auth: oauth2Client });
+        const res = await biz.accounts.locations.list({
+          parent: firstAccountName,
+          readMask: "name,title",
+          pageSize: 10,
+        });
+        results.push({ step: "biz_info_locations", success: true, count: res.data.locations?.length ?? 0, locations: res.data.locations });
+      } catch (err: unknown) {
+        const e = err as { response?: { status?: number; data?: unknown }; message?: string };
+        results.push({ step: "biz_info_locations", success: false, status: e.response?.status, error: String(e.response?.data || e.message).slice(0, 300) });
+      }
+    } else {
+      results.push({ step: "locations_skip", reason: "no account name from either API" });
+    }
+
+    // 5. DB profiles
     const profiles = await prisma.profile.findMany({
       select: { id: true, name: true, isConnected: true, isOnboarded: true, locationName: true },
     });
