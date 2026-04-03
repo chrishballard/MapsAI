@@ -30,6 +30,7 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 - ✓ CARD: Business cards view with score badges, search, responsive grid — v1.2 (Phase 15)
 - ✓ DASH: Dashboard upgrades — automations feed, expanded tasks, Suspense streaming — v1.2 (Phase 16)
 - ✓ OPT: Profile optimization page — score gauge, audit cards, approve/ignore suggestions, bulk actions — v1.2 (Phase 17)
+- ✓ RVMT: Review metrics dashboard — review trends, rating distribution, monthly volume chart, recency indicator — v1.2 (Phase 18)
 
 ### Active
 
@@ -63,7 +64,7 @@ Every client's GBP is fully managed end-to-end — from initial optimization thr
 
 - **v1.0 MVP** shipped: ongoing management (posts, reviews, reports)
 - **v1.1 Onboarding** shipped: guided optimization wizard, AI keywords/descriptions/services, re-optimization
-- **v1.2 in progress**: Phase 17 (Profile Optimization Page) complete — score gauge, audit cards, approve/ignore suggestions, bulk actions. Next: Phase 18 (Review Metrics Dashboard)
+- **v1.2 in progress**: Phase 18 (Review Metrics Dashboard) complete — review trends, rating distribution chart, monthly volume + avg rating dual-line chart, recency indicator. Next: Phase 19 (Reports Enhancement)
 - ~135 TypeScript files
 - GBP API access application submitted (pending approval for write operations)
 - No sidebar link to onboarding page yet (users navigate directly)
