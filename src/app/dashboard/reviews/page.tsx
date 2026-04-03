@@ -1,4 +1,5 @@
 import { MessageSquare, Star, ThumbsUp, Reply, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ReviewFilters } from "./review-filters";
@@ -12,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { MotionDiv } from "@/components/motion-wrapper";
+import { cn } from "@/lib/utils";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -117,9 +119,25 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
-            Reviews
-          </h1>
+          <div className="flex items-center gap-4 mb-1">
+            <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
+              Reviews
+            </h1>
+            <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
+              <span className="px-3 py-1.5 rounded-md text-sm font-medium bg-white text-zinc-900 shadow-sm">
+                Reviews
+              </span>
+              <Link
+                href="/dashboard/reviews/metrics"
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  "text-zinc-500 hover:text-zinc-700"
+                )}
+              >
+                Metrics
+              </Link>
+            </div>
+          </div>
           <p className="text-zinc-500 mt-1">
             Monitor and respond to your customer reviews.
           </p>
