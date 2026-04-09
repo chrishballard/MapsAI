@@ -80,46 +80,64 @@ export interface ParsedDailyMetric {
   conversations: number;
 }
 
+interface InnerDailyMetricSeries {
+  dailyMetric?: string | null;
+  timeSeries?: {
+    datedValues?: Array<{
+      date?: { year?: number | null; month?: number | null; day?: number | null } | null;
+      value?: string | null;
+    }> | null;
+  } | null;
+}
+
+interface MultiDailyMetricSeriesGroup {
+  dailyMetricTimeSeries?: InnerDailyMetricSeries[] | null;
+}
+
 export function parseMetricsResponse(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  response: any,
+  response: { multiDailyMetricTimeSeries?: MultiDailyMetricSeriesGroup[] | null } | null | undefined,
   profileId: string
 ): ParsedDailyMetric[] {
   const byDate = new Map<string, ParsedDailyMetric>();
 
-  const timeSeries = response?.multiDailyMetricTimeSeries ?? [];
+  const groups = response?.multiDailyMetricTimeSeries ?? [];
 
-  for (const series of timeSeries) {
-    const metricName = series.dailyMetricTimeSeries?.dailyMetric as string;
-    const fieldName = METRIC_TO_FIELD[metricName];
-    if (!fieldName) continue;
+  for (const group of groups) {
+    // `dailyMetricTimeSeries` is an ARRAY in the v1 REST schema —
+    // one entry per requested dailyMetric. Iterate the array.
+    const innerSeries = group.dailyMetricTimeSeries ?? [];
 
-    const dataPoints =
-      series.dailyMetricTimeSeries?.timeSeries?.datedValues ?? [];
+    for (const metric of innerSeries) {
+      const metricName = metric.dailyMetric ?? "";
+      const fieldName = METRIC_TO_FIELD[metricName];
+      if (!fieldName) continue;
 
-    for (const dp of dataPoints) {
-      const dateStr = dateValueToString(dp.date ?? {});
+      const dataPoints = metric.timeSeries?.datedValues ?? [];
 
-      if (!byDate.has(dateStr)) {
-        byDate.set(dateStr, {
-          profileId,
-          date: new Date(dateStr + "T00:00:00Z"),
-          impressionsSearchDesktop: 0,
-          impressionsSearchMobile: 0,
-          impressionsMapsDesktop: 0,
-          impressionsMapsMobile: 0,
-          websiteClicks: 0,
-          callClicks: 0,
-          directionRequests: 0,
-          conversations: 0,
-        });
+      for (const dp of dataPoints) {
+        const dateStr = dateValueToString(dp.date ?? {});
+
+        if (!byDate.has(dateStr)) {
+          byDate.set(dateStr, {
+            profileId,
+            date: new Date(dateStr + "T00:00:00Z"),
+            impressionsSearchDesktop: 0,
+            impressionsSearchMobile: 0,
+            impressionsMapsDesktop: 0,
+            impressionsMapsMobile: 0,
+            websiteClicks: 0,
+            callClicks: 0,
+            directionRequests: 0,
+            conversations: 0,
+          });
+        }
+
+        const record = byDate.get(dateStr)!;
+        (record as unknown as Record<string, unknown>)[fieldName] = parseInt(
+          dp.value ?? "0",
+          10
+        );
       }
-
-      const record = byDate.get(dateStr)!;
-      (record as unknown as Record<string, unknown>)[fieldName] = parseInt(
-        dp.value ?? "0",
-        10
-      );
     }
   }
 
