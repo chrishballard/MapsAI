@@ -164,14 +164,55 @@ export async function GET() {
     const metricCount = await prisma.dailyMetric.count({
       where: { profileId: profile.id },
     });
-    const latestMetric = await prisma.dailyMetric.findFirst({
+    const allMetrics = await prisma.dailyMetric.findMany({
       where: { profileId: profile.id },
       orderBy: { date: "desc" },
+      take: 20,
     });
+
+    // Sum all numeric fields across all records — if any are > 0, the parser
+    // successfully extracted values from the API response.
+    const totalSums = allMetrics.reduce(
+      (acc, m) => ({
+        impressionsSearchDesktop: acc.impressionsSearchDesktop + m.impressionsSearchDesktop,
+        impressionsSearchMobile: acc.impressionsSearchMobile + m.impressionsSearchMobile,
+        impressionsMapsDesktop: acc.impressionsMapsDesktop + m.impressionsMapsDesktop,
+        impressionsMapsMobile: acc.impressionsMapsMobile + m.impressionsMapsMobile,
+        websiteClicks: acc.websiteClicks + m.websiteClicks,
+        callClicks: acc.callClicks + m.callClicks,
+        directionRequests: acc.directionRequests + m.directionRequests,
+        conversations: acc.conversations + m.conversations,
+      }),
+      {
+        impressionsSearchDesktop: 0,
+        impressionsSearchMobile: 0,
+        impressionsMapsDesktop: 0,
+        impressionsMapsMobile: 0,
+        websiteClicks: 0,
+        callClicks: 0,
+        directionRequests: 0,
+        conversations: 0,
+      }
+    );
+    const grandTotal = Object.values(totalSums).reduce((a, b) => a + b, 0);
+
     results.push({
       step: "db_daily_metric",
       count: metricCount,
-      latest: latestMetric,
+      parserExtractedValues: grandTotal > 0,
+      grandTotal,
+      totalSums,
+      records: allMetrics.map((m) => ({
+        date: m.date.toISOString().slice(0, 10),
+        iSd: m.impressionsSearchDesktop,
+        iSm: m.impressionsSearchMobile,
+        iMd: m.impressionsMapsDesktop,
+        iMm: m.impressionsMapsMobile,
+        wc: m.websiteClicks,
+        cc: m.callClicks,
+        dr: m.directionRequests,
+        cv: m.conversations,
+      })),
     });
 
     return NextResponse.json({ status: "debug_complete", results });
