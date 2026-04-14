@@ -80,7 +80,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
       include: {
         profile: { select: { id: true, name: true, category: true } },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }],
     }),
     prisma.profile.findMany({
       where: { isConnected: true, isOnboarded: true },

@@ -8,7 +8,8 @@
 export function calculateScheduleDates(
   postCount: number,
   targetMonth: number, // 0-indexed (Date.getMonth())
-  targetYear: number
+  targetYear: number,
+  takenDates?: Set<string> // ISO date strings (YYYY-MM-DD) to exclude
 ): Date[] {
   if (postCount <= 0) return [];
 
@@ -19,7 +20,8 @@ export function calculateScheduleDates(
   const date = new Date(Date.UTC(targetYear, targetMonth, 1, 10, 0, 0, 0));
   while (date.getUTCMonth() === targetMonth) {
     const day = date.getUTCDay();
-    if (day >= 1 && day <= 5 && date > now) {
+    const dateStr = date.toISOString().slice(0, 10);
+    if (day >= 1 && day <= 5 && date > now && (!takenDates || !takenDates.has(dateStr))) {
       weekdays.push(new Date(date));
     }
     date.setUTCDate(date.getUTCDate() + 1);

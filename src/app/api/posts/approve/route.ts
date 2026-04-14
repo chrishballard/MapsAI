@@ -33,20 +33,38 @@ export async function POST(request: Request) {
     );
   }
 
-  // Calculate schedule dates for all drafts
+  // Find dates that already have scheduled posts for this profile
   const now = new Date();
+  const existingScheduled = await prisma.post.findMany({
+    where: { profileId, status: "SCHEDULED", scheduledAt: { not: null } },
+    select: { scheduledAt: true },
+  });
+  const takenDates = new Set(
+    existingScheduled
+      .filter((p) => p.scheduledAt)
+      .map((p) => p.scheduledAt!.toISOString().slice(0, 10))
+  );
+
+  // Calculate schedule dates for all drafts, excluding already-taken dates
   let scheduleDates = calculateScheduleDates(
     drafts.length,
     now.getMonth(),
-    now.getFullYear()
+    now.getFullYear(),
+    takenDates
   );
 
   // If not enough dates this month, try next month
-  if (scheduleDates.length === 0) {
+  if (scheduleDates.length < drafts.length) {
     const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
     const nextYear =
       now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
-    scheduleDates = calculateScheduleDates(drafts.length, nextMonth, nextYear);
+    const extraDates = calculateScheduleDates(
+      drafts.length - scheduleDates.length,
+      nextMonth,
+      nextYear,
+      takenDates
+    );
+    scheduleDates = [...scheduleDates, ...extraDates];
   }
 
   if (scheduleDates.length === 0) {
