@@ -1,6 +1,9 @@
 /**
- * Calculate schedule dates for posts, distributing them across future Tuesdays
- * in the target month at 10:00 AM.
+ * Calculate schedule dates for posts, distributing them evenly across future
+ * weekdays (Mon–Fri) in the target month at 10:00 AM UTC.
+ *
+ * Never schedules two posts on the same day. If there are fewer available
+ * weekdays than posts requested, only as many dates as available are returned.
  */
 export function calculateScheduleDates(
   postCount: number,
@@ -10,29 +13,27 @@ export function calculateScheduleDates(
   if (postCount <= 0) return [];
 
   const now = new Date();
-  const tuesdays: Date[] = [];
+  const weekdays: Date[] = [];
 
-  // Find all Tuesdays in the target month
-  const date = new Date(targetYear, targetMonth, 1, 10, 0, 0, 0);
-  while (date.getMonth() === targetMonth) {
-    // Tuesday = 2
-    if (date.getDay() === 2 && date > now) {
-      tuesdays.push(new Date(date));
+  // Collect all future weekdays in the target month at 10:00 AM UTC
+  const date = new Date(Date.UTC(targetYear, targetMonth, 1, 10, 0, 0, 0));
+  while (date.getUTCMonth() === targetMonth) {
+    const day = date.getUTCDay();
+    if (day >= 1 && day <= 5 && date > now) {
+      weekdays.push(new Date(date));
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
 
-  if (tuesdays.length === 0) return [];
+  if (weekdays.length === 0) return [];
 
-  // Distribute posts evenly across available Tuesdays
+  // Evenly space posts across available weekdays — no duplicate dates
+  const count = Math.min(postCount, weekdays.length);
+  const step = weekdays.length / count;
   const scheduleDates: Date[] = [];
-  for (let i = 0; i < postCount; i++) {
-    const tuesdayIndex = i % tuesdays.length;
-    scheduleDates.push(new Date(tuesdays[tuesdayIndex]));
+  for (let i = 0; i < count; i++) {
+    scheduleDates.push(weekdays[Math.floor(i * step)]);
   }
-
-  // Sort chronologically
-  scheduleDates.sort((a, b) => a.getTime() - b.getTime());
 
   return scheduleDates;
 }

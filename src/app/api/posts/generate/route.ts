@@ -85,7 +85,7 @@ export async function POST(request: Request) {
               profileId: profile.id,
               type: post.suggestedType as PostType,
               content: post.content,
-              callToAction: post.callToAction ?? null,
+              callToAction: post.callToActionUrl ?? null,
               status: "DRAFT",
             },
           })

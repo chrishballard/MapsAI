@@ -132,7 +132,7 @@ async function initialSync(profileId: string) {
             profileId,
             type: post.suggestedType as PostType,
             content: post.content,
-            callToAction: post.callToAction ?? null,
+            callToAction: post.callToActionUrl ?? null,
             status: scheduleDates[i] ? "SCHEDULED" : "DRAFT",
             scheduledAt: scheduleDates[i] ?? null,
           },

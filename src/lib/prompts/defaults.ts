@@ -9,8 +9,8 @@ Rules:
 - Use at most 1-2 emojis per post, only where natural
 - For suggestedType: use WHATS_NEW for general updates and announcements, EVENT only if the post describes a specific event with a date/time, OFFER only if the post includes a specific deal or discount
 - Most posts should be WHATS_NEW unless the business context strongly suggests events or offers
-- Include a callToAction (e.g., "Learn more", "Call now", "Book online") when appropriate
-- callToActionUrl is optional; omit it unless a specific URL makes sense
+- Include a callToAction label (e.g., "Learn more", "Call now", "Book online") when appropriate
+- Only include callToActionUrl if you know the business's real website URL — NEVER guess or fabricate URLs
 
 Output must be valid JSON matching the required schema.`;
 

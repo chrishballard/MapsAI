@@ -10,7 +10,7 @@ export const GeneratedPostSchema = z.object({
 });
 
 export const BatchPostsSchema = z.object({
-  posts: z.array(GeneratedPostSchema).length(4),
+  posts: z.array(GeneratedPostSchema).min(1).max(12),
 });
 
 export type GeneratedPost = z.infer<typeof GeneratedPostSchema>;
