@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Check, CheckCheck, RotateCcw, Trash2 } from "lucide-react";
+import { Check, CheckCheck, RotateCcw, Trash2, Send } from "lucide-react";
 
 interface PostActionsProps {
   postId: string;
@@ -52,6 +52,26 @@ export function PostActions({ postId, status }: PostActionsProps) {
     }
   }
 
+  async function handlePublishNow() {
+    if (!confirm("Publish this post to Google now?")) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/posts/${postId}/publish`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to publish post");
+        return;
+      }
+      router.refresh();
+    } catch {
+      alert("Failed to publish post");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleRetry() {
     setLoading(true);
     try {
@@ -93,12 +113,35 @@ export function PostActions({ postId, status }: PostActionsProps) {
           {loading ? "Approving..." : "Approve"}
         </button>
         <button
+          onClick={handlePublishNow}
+          disabled={loading}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+        >
+          <Send size={14} />
+          {loading ? "Publishing..." : "Publish Now"}
+        </button>
+        <button
           onClick={handleDelete}
           disabled={loading}
           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
         >
           <Trash2 size={14} />
           Delete
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "APPROVED" || status === "SCHEDULED") {
+    return (
+      <div className="flex items-center gap-2 mt-3">
+        <button
+          onClick={handlePublishNow}
+          disabled={loading}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+        >
+          <Send size={14} />
+          {loading ? "Publishing..." : "Publish Now"}
         </button>
       </div>
     );
