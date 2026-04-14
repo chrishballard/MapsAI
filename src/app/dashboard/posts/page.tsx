@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { PostFilters } from "./post-filters";
 import { PostActions, BulkApproveButton } from "./post-actions";
+import { PostDetailDialog } from "./post-detail-dialog";
 import { getSelectedProfileId } from "@/lib/selected-profile";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -171,6 +172,19 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
             const StatusIcon = statusConfig.icon;
             const isFailed = post.status === "FAILED";
 
+            const dialogPost = {
+              id: post.id,
+              content: post.content,
+              type: post.type,
+              status: post.status,
+              callToAction: post.callToAction,
+              scheduledAt: post.scheduledAt?.toISOString() ?? null,
+              publishedAt: post.publishedAt?.toISOString() ?? null,
+              createdAt: post.createdAt.toISOString(),
+              errorMessage: post.errorMessage,
+              profileName: post.profile.name,
+            };
+
             return (
               <MotionDiv
                 key={post.id}
@@ -178,60 +192,62 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
               >
-                <Card
-                  className={`h-full flex flex-col hover:border-brand-300 transition-colors group ${
-                    isFailed ? "border-red-300 bg-red-50/50" : ""
-                  }`}
-                >
-                  <CardHeader className="flex-row items-center justify-between">
-                    <Badge
-                      variant={typeBadge.variant}
-                      className="text-[10px] uppercase tracking-wider font-bold"
-                    >
-                      {typeBadge.label}
-                    </Badge>
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon size={14} className={statusConfig.color} />
-                      <span
-                        className={`text-xs font-bold ${statusConfig.color}`}
+                <PostDetailDialog post={dialogPost}>
+                  <Card
+                    className={`h-full flex flex-col hover:border-brand-300 transition-colors group ${
+                      isFailed ? "border-red-300 bg-red-50/50" : ""
+                    }`}
+                  >
+                    <CardHeader className="flex-row items-center justify-between">
+                      <Badge
+                        variant={typeBadge.variant}
+                        className="text-[10px] uppercase tracking-wider font-bold"
                       >
-                        {statusConfig.label}
-                      </span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="flex-1">
-                    <p className="text-sm text-zinc-600 leading-relaxed line-clamp-4 italic">
-                      &ldquo;{post.content.length > 150
-                        ? `${post.content.slice(0, 150)}...`
-                        : post.content}&rdquo;
-                    </p>
+                        {typeBadge.label}
+                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <StatusIcon size={14} className={statusConfig.color} />
+                        <span
+                          className={`text-xs font-bold ${statusConfig.color}`}
+                        >
+                          {statusConfig.label}
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex-1">
+                      <p className="text-sm text-zinc-600 leading-relaxed line-clamp-4 italic">
+                        &ldquo;{post.content.length > 150
+                          ? `${post.content.slice(0, 150)}...`
+                          : post.content}&rdquo;
+                      </p>
 
-                    {post.status === "SCHEDULED" && post.scheduledAt && (
-                      <p className="text-xs text-amber-700 mt-2">
-                        Scheduled for {formatDate(post.scheduledAt)}
-                      </p>
-                    )}
-                    {post.status === "FAILED" && post.errorMessage && (
-                      <p
-                        className="text-xs text-red-600 mt-2 truncate"
-                        title={post.errorMessage}
-                      >
-                        Error: {post.errorMessage}
-                      </p>
-                    )}
-                  </CardContent>
-                  <div className="px-6 py-4 mt-auto border-t border-zinc-100 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold text-zinc-900">
-                        {post.profile.name}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">
-                        {formatDate(post.createdAt)}
-                      </p>
+                      {post.status === "SCHEDULED" && post.scheduledAt && (
+                        <p className="text-xs text-amber-700 mt-2">
+                          Scheduled for {formatDate(post.scheduledAt)}
+                        </p>
+                      )}
+                      {post.status === "FAILED" && post.errorMessage && (
+                        <p
+                          className="text-xs text-red-600 mt-2 truncate"
+                          title={post.errorMessage}
+                        >
+                          Error: {post.errorMessage}
+                        </p>
+                      )}
+                    </CardContent>
+                    <div className="px-6 py-4 mt-auto border-t border-zinc-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-zinc-900">
+                          {post.profile.name}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                          {formatDate(post.createdAt)}
+                        </p>
+                      </div>
+                      <PostActions postId={post.id} status={post.status} />
                     </div>
-                    <PostActions postId={post.id} status={post.status} />
-                  </div>
-                </Card>
+                  </Card>
+                </PostDetailDialog>
               </MotionDiv>
             );
           })}
