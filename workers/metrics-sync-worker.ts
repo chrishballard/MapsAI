@@ -32,10 +32,11 @@ const worker = new Worker(
         // Extract numeric location ID from locationName (e.g., "locations/12345" -> "12345")
         const locationId = profile.locationName.split("/").pop()!;
 
-        // Fetch last 7 days of daily metrics (rolling window to handle data lag)
+        // Fetch daily metrics — use job data for backfill window, default 90 days
+        const syncDays = (job.data as { days?: number })?.days || 90;
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
+        startDate.setDate(startDate.getDate() - syncDays);
 
         const metricsResponse = await fetchDailyMetrics(
           profile.googleAccountId,

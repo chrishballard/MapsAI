@@ -6,15 +6,19 @@ import {
   initMetricsSyncScheduler,
 } from "@/lib/queue/metrics-sync-queue";
 
-export async function POST() {
+export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Optional: pass ?days=365 to backfill historical data
+  const { searchParams } = new URL(request.url);
+  const days = parseInt(searchParams.get("days") || "90", 10);
+
   try {
-    // Trigger immediate sync
-    await metricsSyncQueue.add("manual-sync", {}, { delay: 0 });
+    // Trigger immediate sync with requested window
+    await metricsSyncQueue.add("manual-sync", { days }, { delay: 0 });
 
     // Ensure daily scheduler is active
     await initMetricsSyncScheduler();
@@ -25,5 +29,5 @@ export async function POST() {
     );
   }
 
-  return NextResponse.json({ message: "Metrics sync triggered" });
+  return NextResponse.json({ message: `Metrics sync triggered (${days} days)` });
 }
