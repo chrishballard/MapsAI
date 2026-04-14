@@ -12,6 +12,7 @@ export async function generateDescription(profile: {
   address: string | null;
   keywords: string[];
   cities: string[];
+  websiteText?: string | null;
 }): Promise<string> {
   const systemPrompt = `You are an expert local SEO copywriter specializing in Google Business Profile descriptions. Write an SEO-optimized business description following these rules:
 
@@ -23,7 +24,8 @@ export async function generateDescription(profile: {
 - Do NOT include phone numbers, URLs, or promotional language (e.g. "best", "#1", "call now")
 - Do NOT use ALL CAPS for emphasis
 - Focus on: what the business does, what makes it unique, and the areas it serves
-- Write in a professional, informative tone that builds trust`;
+- Write in a professional, informative tone that builds trust
+- If website content is provided, use it to understand the business's unique selling points, tone, and specific offerings`;
 
   const userMessage = [
     `Business name: ${profile.name}`,
@@ -34,6 +36,9 @@ export async function generateDescription(profile: {
       : null,
     profile.cities.length > 0
       ? `Service areas/cities: ${profile.cities.join(", ")}`
+      : null,
+    profile.websiteText
+      ? `\nWebsite content (extracted from their site):\n${profile.websiteText}`
       : null,
   ]
     .filter(Boolean)

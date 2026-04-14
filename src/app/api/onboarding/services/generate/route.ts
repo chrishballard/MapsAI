@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateServiceDescriptions } from "@/lib/service-generator";
+import { scrapeWebsiteText } from "@/lib/website-scraper";
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest) {
       }),
     ]);
 
+    let websiteText: string | null = null;
+    if (profile.websiteUrl) {
+      websiteText = await scrapeWebsiteText(profile.websiteUrl);
+    }
+
     const result = await generateServiceDescriptions({
       businessName: profile.name,
       category: profile.category,
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
       keywords: keywordRecords.map((k) => k.keyword),
       cities: cityRecords.map((c) => c.city),
       serviceNames,
+      websiteText,
     });
 
     return NextResponse.json({ services: result });

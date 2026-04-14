@@ -18,6 +18,7 @@ export async function generateServiceDescriptions(params: {
   keywords: string[];
   cities: string[];
   serviceNames: string[];
+  websiteText?: string | null;
 }): Promise<{ serviceName: string; description: string }[]> {
   const systemPrompt = `You are an expert local SEO copywriter specializing in Google Business Profile service descriptions. Write compelling, SEO-optimized descriptions for each service listed below.
 
@@ -32,7 +33,8 @@ Rules:
 - Each description should differentiate itself — avoid repetitive phrasing across descriptions
 - Focus on: what the service includes, why customers choose this business for it, and what makes their approach unique
 - Do NOT include phone numbers, URLs, or promotional language (e.g. "best", "#1", "call now")
-- Do NOT use ALL CAPS for emphasis`;
+- Do NOT use ALL CAPS for emphasis
+- If website content is provided, use it to understand how the business describes its own services and mirror that tone and detail`;
 
   const userMessage = [
     `Business name: ${params.businessName}`,
@@ -43,6 +45,9 @@ Rules:
       : null,
     params.cities.length > 0
       ? `Service areas/cities: ${params.cities.join(", ")}`
+      : null,
+    params.websiteText
+      ? `\nWebsite content (extracted from their site):\n${params.websiteText}`
       : null,
     `\nServices to describe:\n${params.serviceNames.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
   ]

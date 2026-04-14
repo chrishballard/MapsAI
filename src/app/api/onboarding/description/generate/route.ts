@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateDescription } from "@/lib/description-generator";
+import { scrapeWebsiteText } from "@/lib/website-scraper";
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
       name: true,
       category: true,
       address: true,
+      websiteUrl: true,
     },
   });
 
@@ -49,12 +51,18 @@ export async function POST(request: NextRequest) {
       }),
     ]);
 
+    let websiteText: string | null = null;
+    if (profile.websiteUrl) {
+      websiteText = await scrapeWebsiteText(profile.websiteUrl);
+    }
+
     const description = await generateDescription({
       name: profile.name,
       category: profile.category,
       address: profile.address,
       keywords: keywordRecords.map((k) => k.keyword),
       cities: cityRecords.map((c) => c.city),
+      websiteText,
     });
 
     return NextResponse.json({ description });
