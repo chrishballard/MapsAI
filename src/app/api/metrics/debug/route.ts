@@ -4,16 +4,19 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createGoogleClient } from "@/lib/google";
 import { google } from "googleapis";
+import {
+  fetchDailyMetrics,
+  parseMetricsResponse,
+} from "@/lib/google-performance";
+import { fetchSearchKeywords } from "@/lib/google-keywords";
 
 /**
- * GET /api/metrics/debug
+ * GET /api/metrics/debug?backfill=30
  *
  * Diagnostic endpoint for the Business Profile Performance API.
- * Calls fetchMultiDailyMetricsTimeSeries synchronously for the first onboarded
- * profile and returns the raw response body so we can see exactly what Google
- * is returning (empty timeseries? data being dropped by parser? suppressed error?).
+ * Optional ?backfill=N param runs an inline N-day sync before returning diagnostics.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -45,10 +48,92 @@ export async function GET() {
     const locationId = profile.locationName.split("/").pop()!;
     results.push({ step: "parse_location_id", locationId, raw: profile.locationName });
 
-    // 2. Build auth client
+    // 2. Optional backfill — ?backfill=N triggers an inline N-day sync
+    const url = new URL(request.url);
+    const backfillDays = parseInt(url.searchParams.get("backfill") ?? "0", 10);
+
+    if (backfillDays > 0) {
+      try {
+        const backfillEnd = new Date();
+        const backfillStart = new Date();
+        backfillStart.setDate(backfillStart.getDate() - backfillDays);
+
+        const metricsResponse = await fetchDailyMetrics(
+          profile.googleAccountId,
+          locationId,
+          backfillStart,
+          backfillEnd
+        );
+
+        const parsedMetrics = parseMetricsResponse(metricsResponse, profile.id);
+
+        for (const metric of parsedMetrics) {
+          await prisma.dailyMetric.upsert({
+            where: {
+              profileId_date: {
+                profileId: metric.profileId,
+                date: metric.date,
+              },
+            },
+            create: metric,
+            update: {
+              impressionsSearchDesktop: metric.impressionsSearchDesktop,
+              impressionsSearchMobile: metric.impressionsSearchMobile,
+              impressionsMapsDesktop: metric.impressionsMapsDesktop,
+              impressionsMapsMobile: metric.impressionsMapsMobile,
+              websiteClicks: metric.websiteClicks,
+              callClicks: metric.callClicks,
+              directionRequests: metric.directionRequests,
+              conversations: metric.conversations,
+            },
+          });
+        }
+
+        // Also backfill keywords for current month
+        const now = new Date();
+        const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const keywords = await fetchSearchKeywords(
+          profile.googleAccountId,
+          locationId,
+          currentMonth,
+          currentMonth
+        );
+        for (const kw of keywords) {
+          await prisma.monthlyKeyword.upsert({
+            where: {
+              profileId_month_keyword: {
+                profileId: profile.id,
+                month: currentMonth,
+                keyword: kw.keyword,
+              },
+            },
+            create: {
+              profileId: profile.id,
+              month: currentMonth,
+              keyword: kw.keyword,
+              impressions: kw.impressions,
+            },
+            update: { impressions: kw.impressions },
+          });
+        }
+
+        results.push({
+          step: "backfill",
+          success: true,
+          days: backfillDays,
+          metricsInserted: parsedMetrics.length,
+          keywordsInserted: keywords.length,
+        });
+      } catch (err: unknown) {
+        const e = err as { message?: string };
+        results.push({ step: "backfill", success: false, error: e.message });
+      }
+    }
+
+    // 3. Build auth client
     const auth = await createGoogleClient(profile.googleAccountId);
 
-    // 3. Hit Performance API v1 — fetchMultiDailyMetricsTimeSeries
+    // 4. Hit Performance API v1 — fetchMultiDailyMetricsTimeSeries
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 30);
