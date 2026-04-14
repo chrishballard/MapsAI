@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostType } from "@/generated/prisma/client";
 import { createGoogleClient } from "@/lib/google";
+import { schedulePostPublish } from "@/lib/queue/publish-queue";
 
 const POST_TYPE_TO_GBP: Record<PostType, "STANDARD" | "EVENT" | "OFFER"> = {
   [PostType.WHATS_NEW]: "STANDARD",
@@ -34,7 +35,41 @@ export async function GET(request: Request) {
   const results: Record<string, unknown>[] = [];
 
   try {
-    // 0. Quick DB fix — mark a post as PUBLISHED without re-publishing
+    // 0a. Test scheduling — ?test-schedule=5 creates a post and schedules it N minutes from now
+    const testMinutes = parseInt(url.searchParams.get("test-schedule") ?? "0", 10);
+    if (testMinutes > 0) {
+      const profile = await prisma.profile.findFirst({
+        where: { isConnected: true, isOnboarded: true },
+        select: { id: true, name: true },
+      });
+      if (!profile) {
+        return NextResponse.json({ error: "No onboarded profile found" }, { status: 404 });
+      }
+
+      const scheduledAt = new Date(Date.now() + testMinutes * 60 * 1000);
+      const post = await prisma.post.create({
+        data: {
+          profileId: profile.id,
+          type: "WHATS_NEW",
+          content: `Test post from Rankmaps.io — scheduled publish test at ${scheduledAt.toISOString()}. This post confirms automated scheduling is working correctly.`,
+          status: "SCHEDULED",
+          scheduledAt,
+        },
+      });
+
+      await schedulePostPublish(post.id, scheduledAt);
+
+      return NextResponse.json({
+        status: "test_scheduled",
+        postId: post.id,
+        profileName: profile.name,
+        scheduledAt: scheduledAt.toISOString(),
+        publishesIn: `${testMinutes} minutes`,
+        checkAfter: `Hit /api/posts/debug after ${scheduledAt.toLocaleTimeString()} to see if it published or failed`,
+      });
+    }
+
+    // 0b. Quick DB fix — mark a post as PUBLISHED without re-publishing
     if (fixPostId) {
       const updated = await prisma.post.update({
         where: { id: fixPostId },
