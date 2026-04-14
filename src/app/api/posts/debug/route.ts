@@ -28,10 +28,31 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const shouldRetry = url.searchParams.get("retry") === "true";
+  const fixPostId = url.searchParams.get("fix");
+  const fixGoogleId = url.searchParams.get("googlePostId");
 
   const results: Record<string, unknown>[] = [];
 
   try {
+    // 0. Quick DB fix — mark a post as PUBLISHED without re-publishing
+    if (fixPostId) {
+      const updated = await prisma.post.update({
+        where: { id: fixPostId },
+        data: {
+          status: "PUBLISHED",
+          publishedAt: new Date(),
+          googlePostId: fixGoogleId ?? null,
+          errorMessage: null,
+        },
+      });
+      return NextResponse.json({
+        status: "fixed",
+        postId: fixPostId,
+        newStatus: updated.status,
+        googlePostId: updated.googlePostId,
+      });
+    }
+
     // 1. Find failed posts
     const failedPosts = await prisma.post.findMany({
       where: { status: "FAILED" },
@@ -130,11 +151,23 @@ export async function GET(request: Request) {
           method: "POST",
           data: body,
         });
+        // Update DB on successful retry
+        const resData = response.data as { name?: string };
+        await prisma.post.update({
+          where: { id: post.id },
+          data: {
+            status: "PUBLISHED",
+            publishedAt: new Date(),
+            googlePostId: resData.name ?? null,
+            errorMessage: null,
+          },
+        });
         results.push({
           step: "retry_publish",
           success: true,
           httpStatus: response.status,
           responseData: response.data,
+          dbUpdated: true,
         });
       } catch (err: unknown) {
         const e = err as {
