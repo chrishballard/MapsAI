@@ -88,6 +88,50 @@ export async function GET(request: Request) {
       });
     }
 
+    // 0c. Show all posts summary — ?status=all
+    const showAll = url.searchParams.get("status") === "all";
+    if (showAll) {
+      const allPosts = await prisma.post.findMany({
+        orderBy: { scheduledAt: "asc" },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          content: true,
+          callToAction: true,
+          scheduledAt: true,
+          publishedAt: true,
+          errorMessage: true,
+          googlePostId: true,
+          profile: { select: { name: true } },
+        },
+      });
+      const summary = {
+        total: allPosts.length,
+        byStatus: allPosts.reduce((acc, p) => {
+          acc[p.status] = (acc[p.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+      };
+      return NextResponse.json({
+        status: "all_posts",
+        summary,
+        posts: allPosts.map((p) => ({
+          id: p.id,
+          type: p.type,
+          status: p.status,
+          profile: p.profile.name,
+          scheduledAt: p.scheduledAt,
+          publishedAt: p.publishedAt,
+          contentPreview: p.content.slice(0, 80) + (p.content.length > 80 ? "..." : ""),
+          callToAction: p.callToAction,
+          hasValidCta: p.callToAction ? p.callToAction.startsWith("http") : null,
+          errorMessage: p.errorMessage,
+          googlePostId: p.googlePostId,
+        })),
+      });
+    }
+
     // 1. Find failed posts
     const failedPosts = await prisma.post.findMany({
       where: { status: "FAILED" },
