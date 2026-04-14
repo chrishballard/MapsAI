@@ -13,6 +13,11 @@ interface Suggestion {
   reasoning: string;
 }
 
+interface CitySuggestion {
+  city: string;
+  reasoning: string;
+}
+
 export function KeywordsCitiesStep({
   profileId,
   onComplete,
@@ -20,7 +25,9 @@ export function KeywordsCitiesStep({
   const [keywords, setKeywords] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [citySuggestions, setCitySuggestions] = useState<CitySuggestion[] | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatingCities, setGeneratingCities] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
   const [newCity, setNewCity] = useState("");
@@ -69,6 +76,23 @@ export function KeywordsCitiesStep({
     }
   };
 
+  const generateCitySuggestions = async () => {
+    setGeneratingCities(true);
+    try {
+      const res = await fetch("/api/onboarding/cities/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCitySuggestions(data.cities ?? []);
+      }
+    } finally {
+      setGeneratingCities(false);
+    }
+  };
+
   const addKeyword = (kw: string) => {
     const trimmed = kw.trim();
     if (!trimmed || keywords.length >= 10 || keywords.includes(trimmed)) return;
@@ -114,6 +138,10 @@ export function KeywordsCitiesStep({
 
   const filteredSuggestions = suggestions?.filter(
     (s) => !keywords.includes(s.keyword)
+  );
+
+  const filteredCitySuggestions = citySuggestions?.filter(
+    (s) => !cities.some((c) => c.toLowerCase() === s.city.toLowerCase())
   );
 
   if (loading) {
@@ -233,15 +261,58 @@ export function KeywordsCitiesStep({
 
       {/* Section 2: Target Cities */}
       <div>
-        <div className="mb-4">
-          <h3 className="text-base font-semibold text-foreground flex items-center gap-1.5">
-            <MapPin className="w-4 h-4" />
-            Target Cities
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Up to 3 cities or service areas
-          </p>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-foreground flex items-center gap-1.5">
+              <MapPin className="w-4 h-4" />
+              Target Cities
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Up to 3 cities or service areas
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateCitySuggestions}
+            disabled={generatingCities}
+            className="flex items-center gap-1.5 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5 text-sm whitespace-nowrap"
+          >
+            {generatingCities ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            Suggest Cities
+          </button>
         </div>
+
+        {/* AI City Suggestions Panel */}
+        {filteredCitySuggestions && filteredCitySuggestions.length > 0 && (
+          <div className="bg-emerald-50 border border-emerald-100 rounded-md p-3 mb-4 space-y-2">
+            {filteredCitySuggestions.map((s) => (
+              <div
+                key={s.city}
+                className="flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <span className="font-semibold text-sm text-foreground">{s.city}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {s.reasoning}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addCity(s.city)}
+                  disabled={cities.length >= 3}
+                  className="flex items-center gap-1 border border-border bg-white text-foreground hover:bg-zinc-50 disabled:opacity-50 rounded-md px-2 py-1 text-xs shrink-0"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* City Chips */}
         {cities.length > 0 && (
@@ -298,7 +369,7 @@ export function KeywordsCitiesStep({
       <button
         type="button"
         onClick={handleSave}
-        disabled={saving || keywords.length === 0}
+        disabled={saving}
         className="w-full bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
       >
         {saving ? (

@@ -218,16 +218,27 @@ export function WizardShell({
             </button>
           )}
         </div>
-        {currentStep === 0 && (
-          <button
-            type="button"
-            onClick={completeCurrentStep}
-            className="flex items-center gap-1 bg-primary text-white hover:bg-primary/90 rounded-md px-4 py-2 text-sm"
-          >
-            Continue
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {currentStep > 0 && currentStep < WIZARD_STEPS.length - 1 && (
+            <button
+              type="button"
+              onClick={completeCurrentStep}
+              className="text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              Skip this step
+            </button>
+          )}
+          {currentStep === 0 && (
+            <button
+              type="button"
+              onClick={completeCurrentStep}
+              className="flex items-center gap-1 bg-primary text-white hover:bg-primary/90 rounded-md px-4 py-2 text-sm"
+            >
+              Continue
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

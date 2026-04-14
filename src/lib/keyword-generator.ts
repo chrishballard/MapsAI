@@ -18,6 +18,7 @@ export async function generateKeywordSuggestions(profile: {
   name: string;
   category: string | null;
   address: string | null;
+  websiteText?: string | null;
 }): Promise<{ keyword: string; reasoning: string }[]> {
   const systemPrompt = `You are an expert local SEO strategist specializing in Google Business Profile optimization. Generate 8-10 service-focused target keywords for the business described below.
 
@@ -29,12 +30,16 @@ Rules:
 - Mix broad service keywords with specific specialty keywords
 - Do NOT include the business name as a keyword
 - Each keyword should be something real customers would search on Google
-- Focus on the specific services and specialties this type of business offers`;
+- Focus on the specific services and specialties this type of business offers
+- If website content is provided, use it to identify specific services, specialties, and unique offerings the business promotes`;
 
   const userMessage = [
     `Business name: ${profile.name}`,
     profile.category ? `Category: ${profile.category}` : null,
     profile.address ? `Address: ${profile.address}` : null,
+    profile.websiteText
+      ? `\nWebsite content (extracted from their site):\n${profile.websiteText}`
+      : null,
   ]
     .filter(Boolean)
     .join("\n");

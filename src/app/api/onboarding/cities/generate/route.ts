@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateKeywordSuggestions } from "@/lib/keyword-generator";
+import { generateCitySuggestions } from "@/lib/city-generator";
 import { scrapeWebsiteText } from "@/lib/website-scraper";
 
 export async function POST(request: Request) {
@@ -30,23 +30,22 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Scrape website content if URL is available
     let websiteText: string | null = null;
     if (profile.websiteUrl) {
       websiteText = await scrapeWebsiteText(profile.websiteUrl);
     }
 
-    const keywords = await generateKeywordSuggestions({
+    const cities = await generateCitySuggestions({
       name: profile.name,
       category: profile.category,
       address: profile.address,
       websiteText,
     });
-    return NextResponse.json({ keywords });
+    return NextResponse.json({ cities });
   } catch (error) {
-    console.error("Keyword generation failed:", error);
+    console.error("City generation failed:", error);
     return NextResponse.json(
-      { error: "Failed to generate keywords" },
+      { error: "Failed to generate city suggestions" },
       { status: 500 }
     );
   }
