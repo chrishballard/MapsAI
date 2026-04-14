@@ -23,7 +23,6 @@ function formatDueDate(date: Date): string {
 export function buildTaskItems(
   draftPosts: Array<{ id: string; createdAt: Date; content: string; type: string; callToAction: string | null; profile: { name: string } }>,
   draftedReviews: Array<{ id: string; createdAt: Date; reviewerName: string | null; rating: number; comment: string | null; profile: { name: string }; response: { content: string } | null }>,
-  incompleteProfiles: Array<{ id: string; name: string; createdAt: Date }>
 ): TaskItem[] {
   const postTasks: TaskItem[] = draftPosts.map((post) => ({
     id: post.id,
@@ -48,21 +47,14 @@ export function buildTaskItems(
       responseContent: review.response!.content,
     }));
 
-  const onboardingTasks: TaskItem[] = incompleteProfiles.map((profile) => ({
-    id: profile.id,
-    type: "start_onboarding" as const,
-    profileName: profile.name,
-    dueDate: formatDueDate(profile.createdAt),
-  }));
-
-  return [...postTasks, ...reviewTasks, ...onboardingTasks];
+  return [...postTasks, ...reviewTasks];
 }
 
 export async function TasksSection() {
   const selectedProfileId = await getSelectedProfileId();
   const profileFilter = selectedProfileId ? { profileId: selectedProfileId } : {};
 
-  const [draftPosts, draftedResponses, incompleteProfiles] = await Promise.all([
+  const [draftPosts, draftedResponses] = await Promise.all([
     prisma.post.findMany({
       where: { ...profileFilter, status: "DRAFT" },
       orderBy: { createdAt: "desc" },
@@ -79,17 +71,9 @@ export async function TasksSection() {
         response: true,
       },
     }),
-    prisma.profile.findMany({
-      where: {
-        isOnboarded: false,
-        ...(selectedProfileId ? { id: selectedProfileId } : {}),
-      },
-      select: { id: true, name: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    }),
   ]);
 
-  const tasks = buildTaskItems(draftPosts, draftedResponses, incompleteProfiles);
+  const tasks = buildTaskItems(draftPosts, draftedResponses);
 
   return (
     <div>

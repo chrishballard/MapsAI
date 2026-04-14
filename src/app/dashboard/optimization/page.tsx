@@ -24,8 +24,9 @@ export default async function OptimizationIndexPage() {
     }
   }
 
-  // Cookie missing or stale — fall back to first profile
+  // Cookie missing or stale — fall back to first onboarded profile
   const firstProfile = await prisma.profile.findFirst({
+    where: { isOnboarded: true },
     select: { id: true },
     orderBy: { name: 'asc' },
   });

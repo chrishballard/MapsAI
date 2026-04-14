@@ -48,11 +48,11 @@ export function PostFilters({
       </select>
 
       <select
-        value={currentStatus || ""}
+        value={currentStatus || "SCHEDULED"}
         onChange={(e) => updateFilter("status", e.target.value)}
         className="px-3 py-2 border border-border rounded-xl text-sm text-foreground bg-white focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
       >
-        <option value="">All Statuses</option>
+        <option value="all">All Statuses</option>
         <option value="DRAFT">Draft</option>
         <option value="APPROVED">Approved</option>
         <option value="SCHEDULED">Scheduled</option>

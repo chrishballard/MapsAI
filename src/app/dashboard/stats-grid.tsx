@@ -14,7 +14,7 @@ export async function StatsGrid() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [totalProfiles, connectedProfiles, postsThisMonth, pendingReviews, reportsGenerated] = await Promise.all([
-    selectedProfileId ? 1 : prisma.profile.count(),
+    selectedProfileId ? 1 : prisma.profile.count({ where: { isOnboarded: true } }),
     selectedProfileId
       ? prisma.profile.count({ where: { id: selectedProfileId, isConnected: true } })
       : prisma.profile.count({ where: { isConnected: true } }),
@@ -32,7 +32,7 @@ export async function StatsGrid() {
   void connectedProfiles;
 
   const stats = [
-    { label: selectedProfileId ? "Profile" : "Total Profiles", value: selectedProfileId ? "1" : totalProfiles.toString(), icon: Building2 },
+    { label: selectedProfileId ? "Profile" : "Active Profiles", value: selectedProfileId ? "1" : totalProfiles.toString(), icon: Building2 },
     { label: "Posts This Month", value: postsThisMonth.toString(), icon: FileText },
     { label: "Pending Reviews", value: pendingReviews.toString(), icon: MessageSquare },
     { label: "Reports Generated", value: reportsGenerated.toString(), icon: BarChart3 },

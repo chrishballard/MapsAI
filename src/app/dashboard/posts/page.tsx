@@ -62,7 +62,10 @@ interface PostsPageProps {
 export default async function PostsPage({ searchParams }: PostsPageProps) {
   const params = await searchParams;
   const selectedProfileId = await getSelectedProfileId();
-  const { profileId: filterProfileId, status, type } = params;
+  const { profileId: filterProfileId, status: statusParam, type } = params;
+
+  // Default to showing SCHEDULED posts; use "all" to show everything
+  const status = statusParam === "all" ? undefined : (statusParam || "SCHEDULED");
 
   const profileId = filterProfileId || selectedProfileId;
 

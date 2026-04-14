@@ -22,15 +22,9 @@ describe('buildTaskItems', () => {
     response: { content: 'Thank you for your review!' } as { content: string } | null,
   });
 
-  const baseIncompleteProfile = (id: string, name: string, createdAt: Date) => ({
-    id,
-    name,
-    createdAt,
-  });
-
   it('maps draft post to task with type "approve_post" and correct fields', () => {
     const post = baseDraftPost('post1', new Date('2024-01-01'));
-    const tasks = buildTaskItems([post], [], []);
+    const tasks = buildTaskItems([post], []);
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].type).toBe('approve_post');
@@ -42,7 +36,7 @@ describe('buildTaskItems', () => {
 
   it('maps drafted review response to task with type "approve_review_reply"', () => {
     const review = baseDraftedReview('rev1', new Date('2024-01-01'));
-    const tasks = buildTaskItems([], [review], []);
+    const tasks = buildTaskItems([], [review]);
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].type).toBe('approve_review_reply');
@@ -52,25 +46,8 @@ describe('buildTaskItems', () => {
     expect(tasks[0].responseContent).toBe('Thank you for your review!');
   });
 
-  it('maps incomplete onboarding profile to task with type "start_onboarding", dueDate from createdAt, profileName from name', () => {
-    const profile = baseIncompleteProfile('prof1', 'My Business', new Date('2024-01-01'));
-    const tasks = buildTaskItems([], [], [profile]);
-
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0].type).toBe('start_onboarding');
-    expect(tasks[0].profileName).toBe('My Business');
-    expect(typeof tasks[0].dueDate).toBe('string');
-  });
-
-  it('start_onboarding task id is the profile id (for link to /dashboard/onboarding/{id})', () => {
-    const profile = baseIncompleteProfile('profile-xyz-123', 'Test Biz', new Date('2024-01-01'));
-    const tasks = buildTaskItems([], [], [profile]);
-
-    expect(tasks[0].id).toBe('profile-xyz-123');
-  });
-
-  it('returns empty array when no drafts and no incomplete profiles', () => {
-    const tasks = buildTaskItems([], [], []);
+  it('returns empty array when no drafts', () => {
+    const tasks = buildTaskItems([], []);
     expect(tasks).toHaveLength(0);
   });
 });
