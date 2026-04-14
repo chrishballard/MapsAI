@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ReportsShellProps {
@@ -28,6 +29,30 @@ const PRESETS = [
 
 export function ReportsShell({ from, to }: ReportsShellProps) {
   const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/metrics/sync?days=365', { method: 'POST' });
+      if (res.ok) {
+        setSyncMessage('Sync started — data will refresh shortly');
+        // Refresh page after a delay to pick up new data
+        setTimeout(() => {
+          router.refresh();
+          setSyncMessage(null);
+        }, 5000);
+      } else {
+        setSyncMessage('Sync failed — please try again');
+      }
+    } catch {
+      setSyncMessage('Sync failed — please try again');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const pushRange = useCallback(
     (newFrom: string, newTo: string) => {
@@ -88,6 +113,21 @@ export function ReportsShell({ from, to }: ReportsShellProps) {
         >
           Custom
         </button>
+
+        <div className="ml-auto flex items-center gap-2">
+          {syncMessage && (
+            <span className="text-xs text-zinc-500">{syncMessage}</span>
+          )}
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
+            {syncing ? 'Syncing...' : 'Sync Data'}
+          </button>
+        </div>
       </div>
 
       {/* Custom date inputs — visible only when custom is active */}
