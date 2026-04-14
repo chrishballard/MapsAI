@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       topicType,
     };
 
-    if (post.callToAction) {
+    if (post.callToAction && post.callToAction.startsWith("http")) {
       body.callToAction = { actionType: "LEARN_MORE", url: post.callToAction };
     }
 

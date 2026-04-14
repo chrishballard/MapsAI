@@ -52,9 +52,10 @@ const worker = new Worker<PublishJobData>(
       locationName: post.profile.locationName,
       summary: post.content,
       topicType,
-      callToAction: post.callToAction
-        ? { actionType: "LEARN_MORE", url: post.callToAction }
-        : undefined,
+      callToAction:
+        post.callToAction && post.callToAction.startsWith("http")
+          ? { actionType: "LEARN_MORE", url: post.callToAction }
+          : undefined,
     });
 
     // Update post as published
