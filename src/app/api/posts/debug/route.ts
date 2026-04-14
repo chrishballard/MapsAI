@@ -69,7 +69,40 @@ export async function GET(request: Request) {
       });
     }
 
-    // 0b. Quick DB fix — mark a post as PUBLISHED without re-publishing
+    // 0b. Re-queue all SCHEDULED posts — ?requeue=true
+    const shouldRequeue = url.searchParams.get("requeue") === "true";
+    if (shouldRequeue) {
+      const scheduledPosts = await prisma.post.findMany({
+        where: { status: "SCHEDULED", scheduledAt: { not: null } },
+        select: { id: true, scheduledAt: true, content: true, errorMessage: true },
+      });
+
+      const requeued = [];
+      for (const p of scheduledPosts) {
+        // Clear any previous error message
+        if (p.errorMessage) {
+          await prisma.post.update({
+            where: { id: p.id },
+            data: { errorMessage: null },
+          });
+        }
+        await schedulePostPublish(p.id, p.scheduledAt!);
+        requeued.push({
+          postId: p.id,
+          scheduledAt: p.scheduledAt,
+          delayMinutes: Math.round(Math.max(0, p.scheduledAt!.getTime() - Date.now()) / 60000),
+          contentPreview: p.content.slice(0, 60),
+        });
+      }
+
+      return NextResponse.json({
+        status: "requeued",
+        count: requeued.length,
+        posts: requeued,
+      });
+    }
+
+    // 0c. Quick DB fix — mark a post as PUBLISHED without re-publishing
     if (fixPostId) {
       const updated = await prisma.post.update({
         where: { id: fixPostId },
