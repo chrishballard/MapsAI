@@ -118,11 +118,11 @@ describe('computeMonthlyData', () => {
     expect(janBucket!.avgRating).toBe(4.5);
   });
 
-  it('empty months have volume=0 and avgRating=0', () => {
+  it('empty months have volume=0 and avgRating=null (chart skips gap)', () => {
     const result = computeMonthlyData([], now);
     for (const bucket of result) {
       expect(bucket.volume).toBe(0);
-      expect(bucket.avgRating).toBe(0);
+      expect(bucket.avgRating).toBeNull();
     }
   });
 

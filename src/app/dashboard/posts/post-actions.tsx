@@ -107,7 +107,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handleApprove}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
         >
           <Check size={14} />
           {loading ? "Approving..." : "Approve"}
@@ -115,7 +115,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handlePublishNow}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
         >
           <Send size={14} />
           {loading ? "Publishing..." : "Publish Now"}
@@ -123,7 +123,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handleDelete}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
         >
           <Trash2 size={14} />
           Delete
@@ -138,7 +138,7 @@ export function PostActions({ postId, status }: PostActionsProps) {
         <button
           onClick={handlePublishNow}
           disabled={loading}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
         >
           <Send size={14} />
           {loading ? "Publishing..." : "Publish Now"}

@@ -35,7 +35,7 @@ export async function StatsGrid() {
     { label: selectedProfileId ? "Profile" : "Active Profiles", value: selectedProfileId ? "1" : totalProfiles.toString(), icon: Building2 },
     { label: "Posts This Month", value: postsThisMonth.toString(), icon: FileText },
     { label: "Pending Reviews", value: pendingReviews.toString(), icon: MessageSquare },
-    { label: "Reports Generated", value: reportsGenerated.toString(), icon: BarChart3 },
+    { label: "PDF Reports Exported", value: reportsGenerated.toString(), icon: BarChart3 },
   ];
 
   return (

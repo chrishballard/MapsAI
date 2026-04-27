@@ -17,7 +17,7 @@ export interface MonthlyDataPoint {
   month: string;    // "Jan 2026" — formatted for X-axis display
   sortKey: string;  // "2026-01" — for sorting
   volume: number;
-  avgRating: number;
+  avgRating: number | null;  // null when no reviews — chart should skip, not drop to 0
 }
 
 export interface RecencyStatus {
@@ -105,7 +105,7 @@ export function computeMonthlyData(
       timeZone: "UTC",
     }),
     volume: b.count,
-    avgRating: b.count > 0 ? Math.round((b.ratingSum / b.count) * 10) / 10 : 0,
+    avgRating: b.count > 0 ? Math.round((b.ratingSum / b.count) * 10) / 10 : null,
   }));
 }
 

@@ -14,6 +14,7 @@ export type AutomationItem = {
   time: Date;
   type: "post" | "review_reply" | "description";
   detailHref: string;
+  count?: number;  // present when this row coalesces multiple identical events
 };
 
 type PostInput = {
@@ -79,9 +80,33 @@ export function buildAutomationItems(
       detailHref: `/dashboard/profiles/${d.profile.id}`,
     }));
 
-  return [...postItems, ...responseItems, ...descriptionItems]
-    .sort((a, b) => b.time.getTime() - a.time.getTime())
-    .slice(0, 20);
+  const all = [...postItems, ...responseItems, ...descriptionItems].sort(
+    (a, b) => b.time.getTime() - a.time.getTime()
+  );
+
+  // Coalesce runs of identical (label, type, profile) events within the same hour
+  // so the feed doesn't show 10 rows of "Published review reply for X — 1h ago".
+  const grouped: AutomationItem[] = [];
+  for (const item of all) {
+    const hourBucket = Math.floor(item.time.getTime() / (60 * 60 * 1000));
+    const last = grouped[grouped.length - 1];
+    const lastHourBucket = last
+      ? Math.floor(last.time.getTime() / (60 * 60 * 1000))
+      : null;
+    if (
+      last &&
+      last.label === item.label &&
+      last.type === item.type &&
+      last.profileId === item.profileId &&
+      lastHourBucket === hourBucket
+    ) {
+      last.count = (last.count ?? 1) + 1;
+    } else {
+      grouped.push({ ...item });
+    }
+  }
+
+  return grouped.slice(0, 20);
 }
 
 function timeAgo(date: Date): string {
@@ -146,7 +171,10 @@ export async function AutomationsFeed() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-zinc-900">
-                    {item.label} for <span className="text-brand-600">{item.profileName}</span>
+                    {item.count && item.count > 1
+                      ? `${item.label}s (${item.count})`
+                      : item.label}{" "}
+                    for <span className="text-brand-600">{item.profileName}</span>
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant="outline" className="text-[10px] uppercase tracking-wider">

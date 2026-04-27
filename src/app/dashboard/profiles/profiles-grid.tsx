@@ -133,12 +133,12 @@ export function ProfilesGrid({ profiles, availableCount }: ProfilesGridProps) {
                     </Badge>
                   </Link>
 
-                  <div className="flex items-start gap-3 mb-3">
+                  <div className="flex items-start gap-3 mb-3 pr-12">
                     <div className="w-12 h-12 bg-zinc-100 rounded-xl flex items-center justify-center text-zinc-500 group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors shrink-0">
                       <Building2 size={24} />
                     </div>
                     {avgRating && (
-                      <div className="flex items-center gap-1 ml-auto">
+                      <div className="flex items-center gap-1 ml-auto mt-1">
                         <div className="flex">
                           {[1, 2, 3, 4, 5].map(star => (
                             <Star

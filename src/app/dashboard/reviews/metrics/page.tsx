@@ -27,7 +27,7 @@ export default async function ReviewMetricsPage() {
         <div>
           <div className="flex items-center gap-4 mb-1">
             <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
-              Review Metrics
+              Reviews
             </h1>
             <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
               <Link
@@ -37,7 +37,7 @@ export default async function ReviewMetricsPage() {
                   "text-zinc-500 hover:text-zinc-700"
                 )}
               >
-                Reviews
+                All
               </Link>
               <span className="px-3 py-1.5 rounded-md text-sm font-medium bg-white text-zinc-900 shadow-sm">
                 Metrics
