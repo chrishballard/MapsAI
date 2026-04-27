@@ -115,7 +115,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             </h1>
             <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
               <span className="px-3 py-1.5 rounded-md text-sm font-medium bg-white text-zinc-900 shadow-sm">
-                Reviews
+                All
               </span>
               <Link
                 href="/dashboard/reviews/metrics"
