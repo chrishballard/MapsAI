@@ -1,12 +1,12 @@
 # MapsAI
 
-AI-powered Google Business Profile management tool for Vineyard Growth.
+AI-powered Google Business Profile management tool — manages posts, review responses, performance analytics, and PDF reporting across 100-200 profiles.
 
 ## Features
 - AI-generated GBP posts with approval workflow
 - Automated review responses
 - Performance analytics and PDF reporting
-- Multi-profile management (100-200 profiles)
+- Multi-profile management
 
 ## Setup
 
@@ -26,17 +26,18 @@ cp .env.example .env
 # If you need a local PostgreSQL instance:
 docker run -d --name mapsai-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mapsai postgres:16
 
-# Run migrations and seed
+# Run migrations
 npx prisma migrate dev
-npx prisma db seed
+
+# Seed an admin user. Either set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD,
+# or run with no env vars and the script will print a generated password once.
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD='choose-a-strong-one' npx prisma db seed
 ```
 
 ### Run
 ```bash
 npm run dev
 ```
-
-Default login: `admin@vineyardgrowth.com` / `mapsai2026`
 
 ## Environment Variables
 
@@ -48,6 +49,8 @@ Default login: `admin@vineyardgrowth.com` / `mapsai2026`
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID (Phase 2) |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret (Phase 2) |
 | `ANTHROPIC_API_KEY` | Claude API key (Phase 3) |
+| `SEED_ADMIN_EMAIL` | (optional) Email for the seeded admin user |
+| `SEED_ADMIN_PASSWORD` | (optional) Password for the seeded admin user; if unset, a random one is generated and printed |
 
 ## Deploy to Railway
 1. Push to GitHub

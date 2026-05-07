@@ -142,7 +142,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     required
-                    placeholder="admin@vineyardgrowth.com"
+                    placeholder="you@example.com"
                     className="w-full pl-11 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-4 focus:ring-brand-50 focus:border-brand-300 outline-none transition-all"
                   />
                 </div>
