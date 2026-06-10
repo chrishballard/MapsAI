@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateMonthlyPosts } from "@/lib/post-generator";
-import { PostType } from "@/generated/prisma/client";
+import { generateAndSchedulePosts } from "@/lib/post-generation-pipeline";
 import { fetchReviews, STAR_RATING_MAP } from "@/lib/google-reviews";
 import { generateReviewResponse } from "@/lib/review-responder";
 import {
@@ -11,8 +10,6 @@ import {
   parseMetricsResponse,
 } from "@/lib/google-performance";
 import { fetchSearchKeywords } from "@/lib/google-keywords";
-import { calculateScheduleDates } from "@/lib/scheduling";
-import { schedulePostPublish } from "@/lib/queue/publish-queue";
 import { initReviewSyncScheduler } from "@/lib/queue/review-sync-queue";
 import { initMetricsSyncScheduler } from "@/lib/queue/metrics-sync-queue";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
@@ -89,69 +86,9 @@ async function initialSync(profileId: string) {
   try {
     console.log(`[onboarding-complete] Generating posts for ${profile.name}`);
 
-    const [keywordRecords, cityRecords] = await Promise.all([
-      prisma.profileKeyword.findMany({
-        where: { profileId },
-        orderBy: { sortOrder: "asc" },
-      }),
-      prisma.profileCity.findMany({
-        where: { profileId },
-        orderBy: { sortOrder: "asc" },
-      }),
-    ]);
-
-    const generated = await generateMonthlyPosts(
-      {
-        name: profile.name,
-        category: profile.category,
-        address: profile.address,
-        keywords: keywordRecords.map((k) => k.keyword),
-        cities: cityRecords.map((c) => c.city),
-      },
-      profile.promptTemplate?.prompt ?? undefined,
-      profile.postFrequency ?? 4
-    );
-
-    // Create posts and auto-approve them with scheduled dates
-    const now = new Date();
-    let scheduleDates = calculateScheduleDates(
-      generated.posts.length,
-      now.getMonth(),
-      now.getFullYear()
-    );
-    if (scheduleDates.length === 0) {
-      const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
-      const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
-      scheduleDates = calculateScheduleDates(generated.posts.length, nextMonth, nextYear);
-    }
-
-    const createdPosts = await Promise.all(
-      generated.posts.map((post, i) =>
-        prisma.post.create({
-          data: {
-            profileId,
-            type: post.suggestedType as PostType,
-            content: post.content,
-            callToAction: post.callToActionUrl ?? null,
-            status: scheduleDates[i] ? "SCHEDULED" : "DRAFT",
-            scheduledAt: scheduleDates[i] ?? null,
-          },
-        })
-      )
-    );
-
-    // Queue scheduled posts for publishing via BullMQ
-    for (const post of createdPosts) {
-      if (post.status === "SCHEDULED" && post.scheduledAt) {
-        try {
-          await schedulePostPublish(post.id, post.scheduledAt);
-        } catch (err) {
-          console.warn(`[onboarding-complete] Failed to queue post ${post.id}:`, err);
-        }
-      }
-    }
-
-    console.log(`[onboarding-complete] Generated and scheduled ${createdPosts.filter(p => p.status === "SCHEDULED").length}/${generated.posts.length} posts for ${profile.name}`);
+    await generateAndSchedulePosts(profile, {
+      logPrefix: "[onboarding-complete]",
+    });
   } catch (err) {
     console.error(`[onboarding-complete] Post generation failed for ${profile.name}:`, err);
   }
@@ -173,9 +110,13 @@ async function initialSync(profileId: string) {
           where: { googleReviewId: gbpReview.name },
         });
         if (existing) continue;
-        if (gbpReview.reviewReply) continue;
 
         const rating = STAR_RATING_MAP[gbpReview.starRating] ?? 3;
+
+        // Reviews that already have a reply on Google were answered outside
+        // RankMaps — store them so the dashboard shows them, but never
+        // generate or publish a response for them.
+        const repliedExternally = Boolean(gbpReview.reviewReply);
 
         const review = await prisma.review.create({
           data: {
@@ -187,8 +128,14 @@ async function initialSync(profileId: string) {
             rating,
             comment: gbpReview.comment || null,
             reviewDate: new Date(gbpReview.createTime),
+            repliedExternally,
           },
         });
+
+        if (repliedExternally) {
+          // Off-limits: no AI response, no publishing.
+          continue;
+        }
 
         try {
           const aiResponse = await generateReviewResponse({
@@ -199,19 +146,25 @@ async function initialSync(profileId: string) {
             reviewComment: review.comment,
           });
 
+          const responseStatus = profile.autoApproveReviews
+            ? "APPROVED"
+            : "DRAFTED";
+
           const reviewResponse = await prisma.reviewResponse.create({
             data: {
               reviewId: review.id,
               content: aiResponse.response,
-              status: "APPROVED",
+              status: responseStatus,
             },
           });
 
-          // Queue for immediate publishing to Google
-          try {
-            await scheduleReviewPublish(reviewResponse.id);
-          } catch (pubErr) {
-            console.warn(`[onboarding-complete] Failed to queue review response ${reviewResponse.id}:`, pubErr);
+          // Only queue for publishing when auto-approve is enabled
+          if (profile.autoApproveReviews) {
+            try {
+              await scheduleReviewPublish(reviewResponse.id);
+            } catch (pubErr) {
+              console.warn(`[onboarding-complete] Failed to queue review response ${reviewResponse.id}:`, pubErr);
+            }
           }
 
           synced++;

@@ -7,7 +7,7 @@ import {
 import { fetchSearchKeywords } from "../src/lib/google-keywords";
 import { prisma } from "../src/lib/prisma";
 
-const worker = new Worker(
+export const worker = new Worker(
   "metrics-sync",
   async (job: Job) => {
     console.log(`Starting metrics sync job ${job.id}`);

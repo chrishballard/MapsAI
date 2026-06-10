@@ -1,13 +1,13 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
-import { publishReviewReply } from "../src/lib/google-reviews";
+import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
 }
 
-const worker = new Worker<ReviewPublishJobData>(
+export const worker = new Worker<ReviewPublishJobData>(
   "review-publish",
   async (job: Job<ReviewPublishJobData>) => {
     const { reviewResponseId } = job.data;
@@ -29,13 +29,52 @@ const worker = new Worker<ReviewPublishJobData>(
       },
     });
 
-    // Skip if already published
-    if (reviewResponse.status === "PUBLISHED") {
-      console.log(`Review response ${reviewResponseId} already published, skipping`);
+    // Skip if already published or previously skipped
+    if (reviewResponse.status === "PUBLISHED" || reviewResponse.status === "SKIPPED") {
+      console.log(`Review response ${reviewResponseId} already ${reviewResponse.status.toLowerCase()}, skipping`);
       return;
     }
 
     const { review } = reviewResponse;
+
+    // Safety check: fetch the live review from Google before publishing.
+    // If this fetch fails we throw (BullMQ retries) — never publish blind.
+    const liveReview = await fetchSingleReview(
+      review.profile.googleAccountId,
+      review.googleReviewId
+    );
+
+    if (liveReview.reviewReply) {
+      if (liveReview.reviewReply.comment === reviewResponse.content) {
+        // The existing reply is our own content — idempotent retry.
+        // Mark published without re-PUTting.
+        console.log(
+          `Review response ${reviewResponseId} already live on Google with matching content, marking PUBLISHED`
+        );
+        await prisma.reviewResponse.update({
+          where: { id: reviewResponseId },
+          data: {
+            status: "PUBLISHED",
+            publishedAt: new Date(),
+          },
+        });
+        return;
+      }
+
+      // Someone else (e.g. the client) replied — never overwrite.
+      console.warn(
+        `Review ${review.id} already has a different reply on Google, skipping publish for response ${reviewResponseId}`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: {
+          status: "SKIPPED",
+          errorMessage:
+            "Review already has a reply on Google — skipped to avoid overwriting",
+        },
+      });
+      return;
+    }
 
     await publishReviewReply(
       review.profile.googleAccountId,

@@ -1,6 +1,8 @@
 /**
  * Calculate schedule dates for posts, distributing them evenly across future
- * weekdays (Mon–Fri) in the target month at 10:00 AM UTC.
+ * weekdays (Mon–Fri) in the target month at 17:00 UTC (= 9 AM Pacific /
+ * noon Eastern — clients are US local businesses, so posts land during
+ * business hours instead of the middle of the night).
  *
  * Never schedules two posts on the same day. If there are fewer available
  * weekdays than posts requested, only as many dates as available are returned.
@@ -16,8 +18,8 @@ export function calculateScheduleDates(
   const now = new Date();
   const weekdays: Date[] = [];
 
-  // Collect all future weekdays in the target month at 10:00 AM UTC
-  const date = new Date(Date.UTC(targetYear, targetMonth, 1, 10, 0, 0, 0));
+  // Collect all future weekdays in the target month at 17:00 UTC
+  const date = new Date(Date.UTC(targetYear, targetMonth, 1, 17, 0, 0, 0));
   while (date.getUTCMonth() === targetMonth) {
     const day = date.getUTCDay();
     const dateStr = date.toISOString().slice(0, 10);

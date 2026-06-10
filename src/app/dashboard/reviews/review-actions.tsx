@@ -7,11 +7,22 @@ import { Check, RefreshCw, CheckCheck } from "lucide-react";
 interface ReviewActionsProps {
   reviewId: string;
   responseStatus: string | null;
+  repliedExternally?: boolean;
 }
 
-export function ReviewActions({ reviewId, responseStatus }: ReviewActionsProps) {
+export function ReviewActions({
+  reviewId,
+  responseStatus,
+  repliedExternally,
+}: ReviewActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
+
+  // Reviews already replied to outside RankMaps are off-limits —
+  // no generating, approving, or publishing.
+  if (repliedExternally) {
+    return null;
+  }
 
   async function handleApprove() {
     setLoading("approve");

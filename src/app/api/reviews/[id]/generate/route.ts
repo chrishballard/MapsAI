@@ -26,6 +26,13 @@ export async function POST(
     return NextResponse.json({ error: "Review not found" }, { status: 404 });
   }
 
+  if (review.repliedExternally) {
+    return NextResponse.json(
+      { error: "This review already has a reply on Google and cannot be responded to" },
+      { status: 400 }
+    );
+  }
+
   const aiResponse = await generateReviewResponse({
     businessName: review.profile.name,
     businessCategory: review.profile.category,

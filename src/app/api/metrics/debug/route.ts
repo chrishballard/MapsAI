@@ -48,9 +48,14 @@ export async function GET(request: Request) {
     const locationId = profile.locationName.split("/").pop()!;
     results.push({ step: "parse_location_id", locationId, raw: profile.locationName });
 
-    // 2. Optional backfill — ?backfill=N triggers an inline N-day sync
+    // 2. Optional backfill — ?backfill=N triggers an inline N-day sync.
+    // Clamped to [0, 365] (0 = skip); NaN treated as 0 — drives a GBP API
+    // fetch window and a per-day DB upsert loop.
     const url = new URL(request.url);
-    const backfillDays = parseInt(url.searchParams.get("backfill") ?? "0", 10);
+    const rawBackfill = parseInt(url.searchParams.get("backfill") ?? "0", 10);
+    const backfillDays = Number.isNaN(rawBackfill)
+      ? 0
+      : Math.min(Math.max(rawBackfill, 0), 365);
 
     if (backfillDays > 0) {
       try {

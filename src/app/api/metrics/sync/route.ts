@@ -12,9 +12,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Optional: pass ?days=365 to backfill historical data
+  // Optional: pass ?days=365 to backfill historical data.
+  // Parsed as integer, clamped to [1, 365], default 30; NaN is rejected.
   const { searchParams } = new URL(request.url);
-  const days = parseInt(searchParams.get("days") || "90", 10);
+  const rawDays = searchParams.get("days");
+  const parsedDays = rawDays === null ? 30 : parseInt(rawDays, 10);
+  if (Number.isNaN(parsedDays)) {
+    return NextResponse.json(
+      { error: "days must be an integer between 1 and 365" },
+      { status: 400 }
+    );
+  }
+  const days = Math.min(Math.max(parsedDays, 1), 365);
 
   try {
     // Trigger immediate sync with requested window

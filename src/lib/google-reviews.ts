@@ -85,6 +85,38 @@ export async function fetchReviews(
   throw lastError;
 }
 
+export async function fetchSingleReview(
+  googleAccountId: string,
+  reviewResourceName: string
+): Promise<GBPReview> {
+  const oauth2Client = await createGoogleClient(googleAccountId);
+
+  // Try both the exact resource name and the wildcard-account variant,
+  // matching the fallback pattern used by fetchReviews.
+  const endpoints = [
+    `https://mybusiness.googleapis.com/v4/${reviewResourceName}`,
+    `https://mybusiness.googleapis.com/v4/${reviewResourceName.replace(/^accounts\/[^/]+\//, "accounts/-/")}`,
+  ];
+
+  let lastError: unknown;
+
+  for (const url of endpoints) {
+    try {
+      const response = await oauth2Client.request<GBPReview>({
+        url,
+        method: "GET",
+      });
+      return response.data;
+    } catch (err) {
+      lastError = err;
+      const status = (err as { response?: { status?: number } }).response?.status;
+      console.warn(`[google-reviews] fetchSingleReview failed with ${url} (status: ${status}), trying next...`);
+    }
+  }
+
+  throw lastError;
+}
+
 export async function publishReviewReply(
   googleAccountId: string,
   reviewResourceName: string,

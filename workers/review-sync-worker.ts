@@ -5,7 +5,7 @@ import { generateReviewResponse } from "../src/lib/review-responder";
 import { scheduleReviewPublish } from "../src/lib/queue/review-publish-queue";
 import { prisma } from "../src/lib/prisma";
 
-const worker = new Worker(
+export const worker = new Worker(
   "review-sync",
   async (job: Job) => {
     console.log(`Starting review sync job ${job.id}`);
@@ -50,13 +50,13 @@ const worker = new Worker(
               continue;
             }
 
-            // Skip reviews that already have a reply on Google
-            if (gbpReview.reviewReply) {
-              continue;
-            }
-
             // Map star rating string to int
             const rating = STAR_RATING_MAP[gbpReview.starRating] ?? 3;
+
+            // Reviews that already have a reply on Google were answered
+            // outside RankMaps — store them so the dashboard shows them,
+            // but never generate or publish a response for them.
+            const repliedExternally = Boolean(gbpReview.reviewReply);
 
             // Create Review record
             const review = await prisma.review.create({
@@ -69,8 +69,14 @@ const worker = new Worker(
                 rating,
                 comment: gbpReview.comment || null,
                 reviewDate: new Date(gbpReview.createTime),
+                repliedExternally,
               },
             });
+
+            if (repliedExternally) {
+              // Off-limits: no AI response, no publishing.
+              continue;
+            }
 
             // Generate AI response
             try {
@@ -114,6 +120,15 @@ const worker = new Worker(
               );
               // Review is created but without a response -- can be regenerated later
             }
+          }
+
+          // Pagination safety: if Google returns the same token we just
+          // used, bail out instead of looping forever.
+          if (result.nextPageToken && result.nextPageToken === pageToken) {
+            console.warn(
+              `[review-sync] Google returned a repeated page token for profile ${profile.name}, stopping pagination`
+            );
+            break;
           }
 
           pageToken = result.nextPageToken;

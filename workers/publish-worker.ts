@@ -14,7 +14,7 @@ const POST_TYPE_TO_GBP: Record<PostType, "STANDARD" | "EVENT" | "OFFER"> = {
   [PostType.OFFER]: "OFFER",
 };
 
-const worker = new Worker<PublishJobData>(
+export const worker = new Worker<PublishJobData>(
   "post-publish",
   async (job: Job<PublishJobData>) => {
     const { postId } = job.data;

@@ -21,9 +21,11 @@ export async function POST(request: Request) {
   }
 
   // Find all reviews for profile with DRAFTED responses
+  // (excluding reviews that were already replied to outside RankMaps)
   const reviews = await prisma.review.findMany({
     where: {
       profileId,
+      repliedExternally: false,
       response: { status: "DRAFTED" },
     },
     include: { response: true },

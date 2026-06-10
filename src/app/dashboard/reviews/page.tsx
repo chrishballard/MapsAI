@@ -55,6 +55,7 @@ const STATUS_VARIANT: Record<string, "secondary" | "default" | "success" | "warn
   APPROVED: "default",
   PUBLISHED: "success",
   FAILED: "error",
+  SKIPPED: "secondary",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -62,6 +63,7 @@ const STATUS_LABEL: Record<string, string> = {
   APPROVED: "Approved",
   PUBLISHED: "Replied",
   FAILED: "Failed",
+  SKIPPED: "Skipped",
 };
 
 interface ReviewsPageProps {
@@ -208,8 +210,13 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                           <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">
                             {review.profile.name}
                           </span>
-                          {badgeVariant && badgeLabel && (
-                            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                          {review.repliedExternally ? (
+                            <Badge variant="secondary">Replied externally</Badge>
+                          ) : (
+                            badgeVariant &&
+                            badgeLabel && (
+                              <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                            )
                           )}
                         </div>
 
@@ -227,6 +234,12 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                                   Error: {review.response.errorMessage}
                                 </p>
                               )}
+                            {review.response.status === "SKIPPED" &&
+                              review.response.errorMessage && (
+                                <p className="text-xs text-amber-600 mt-2 truncate">
+                                  {review.response.errorMessage}
+                                </p>
+                              )}
                           </div>
                         )}
                       </div>
@@ -236,6 +249,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                       <ReviewActions
                         reviewId={review.id}
                         responseStatus={review.response?.status || null}
+                        repliedExternally={review.repliedExternally}
                       />
                     </div>
                   </div>

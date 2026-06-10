@@ -28,6 +28,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // Each profileId triggers Claude API calls — cap batch size.
+  const MAX_PROFILE_IDS = 100;
+  if (body.profileIds.length > MAX_PROFILE_IDS) {
+    return NextResponse.json(
+      { error: `profileIds cannot exceed ${MAX_PROFILE_IDS} items` },
+      { status: 400 }
+    );
+  }
+
   const results: Array<{
     profileId: string;
     count: number;

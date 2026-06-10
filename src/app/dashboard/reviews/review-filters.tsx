@@ -53,6 +53,7 @@ export function ReviewFilters({
         <option value="APPROVED">Approved</option>
         <option value="PUBLISHED">Published</option>
         <option value="FAILED">Failed</option>
+        <option value="SKIPPED">Skipped</option>
       </select>
     </div>
   );
