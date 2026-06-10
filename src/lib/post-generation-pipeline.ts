@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { generateMonthlyPosts } from "./post-generator";
-import { calculateScheduleDates } from "./scheduling";
+import { calculateRollingScheduleDates } from "./scheduling";
 import { schedulePostPublish } from "./queue/publish-queue";
 import { PostType } from "../generated/prisma/client";
 
@@ -25,9 +25,11 @@ export interface PostGenerationResult {
  * worker so the pipeline can't drift between the two:
  * 1. Load the profile's keywords and cities.
  * 2. Generate posts with Claude (custom prompt template if set, postFrequency posts).
- * 3. Calculate schedule dates in the current month, falling back to next month
- *    if no future weekdays remain. `takenDates` (YYYY-MM-DD) are excluded so
- *    new posts never collide with already-scheduled ones.
+ * 3. Calculate schedule dates at the profile's selected cadence (postFrequency
+ *    posts spread over a rolling ~30-day window, anchored to the profile's
+ *    most recent post so cadence is seamless across batches — never bunched
+ *    into a calendar month's remaining days). `takenDates` (YYYY-MM-DD) are
+ *    excluded so new posts never collide with already-scheduled ones.
  * 4. Create posts as SCHEDULED (or DRAFT if no date was available) and queue
  *    each scheduled post for publishing via BullMQ.
  */
@@ -64,24 +66,23 @@ export async function generateAndSchedulePosts(
     profile.postFrequency ?? 4
   );
 
-  // Create posts and auto-approve them with scheduled dates
-  const now = new Date();
-  let scheduleDates = calculateScheduleDates(
+  // Anchor the new batch to the profile's most recent post so the selected
+  // cadence (e.g. weekly) continues seamlessly instead of restarting.
+  const lastPost = await prisma.post.aggregate({
+    where: { profileId },
+    _max: { scheduledAt: true, publishedAt: true },
+  });
+  const anchorTs = Math.max(
+    lastPost._max.scheduledAt?.getTime() ?? 0,
+    lastPost._max.publishedAt?.getTime() ?? 0
+  );
+  const anchor = anchorTs > 0 ? new Date(anchorTs) : null;
+
+  const scheduleDates = calculateRollingScheduleDates(
     generated.posts.length,
-    now.getMonth(),
-    now.getFullYear(),
+    anchor,
     options.takenDates
   );
-  if (scheduleDates.length === 0) {
-    const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
-    const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
-    scheduleDates = calculateScheduleDates(
-      generated.posts.length,
-      nextMonth,
-      nextYear,
-      options.takenDates
-    );
-  }
 
   const createdPosts = await Promise.all(
     generated.posts.map((post, i) =>
