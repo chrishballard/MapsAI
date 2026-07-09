@@ -22,10 +22,10 @@ export async function fetchSearchKeywords(
     const response =
       await bpp.locations.searchkeywords.impressions.monthly.list({
         parent: `locations/${locationId}`,
-        "monthlyRange.startMonth.year": startMonth.getFullYear(),
-        "monthlyRange.startMonth.month": startMonth.getMonth() + 1,
-        "monthlyRange.endMonth.year": endMonth.getFullYear(),
-        "monthlyRange.endMonth.month": endMonth.getMonth() + 1,
+        "monthlyRange.startMonth.year": startMonth.getUTCFullYear(),
+        "monthlyRange.startMonth.month": startMonth.getUTCMonth() + 1,
+        "monthlyRange.endMonth.year": endMonth.getUTCFullYear(),
+        "monthlyRange.endMonth.month": endMonth.getUTCMonth() + 1,
         pageSize: 100,
         pageToken,
       });
