@@ -73,42 +73,52 @@ export const worker = new Worker(
           `Synced ${parsedMetrics.length} daily metric records for ${profile.name}`
         );
 
-        // Fetch current month's search keywords
+        // Fetch search keywords for recent COMPLETED months. The GBP API
+        // returns no data for the current in-progress month, so requesting it
+        // always yields 0 keywords. Sync the last few completed months each
+        // run — recent months can still receive late updates from Google.
+        const keywordMonths =
+          (job.data as { keywordMonths?: number })?.keywordMonths || 3;
         const now = new Date();
-        const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        const keywords = await fetchSearchKeywords(
-          profile.googleAccountId,
-          locationId,
-          currentMonth,
-          currentMonth
-        );
+        for (let back = 1; back <= keywordMonths; back++) {
+          const month = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1)
+          );
 
-        // Upsert keywords into MonthlyKeyword
-        for (const kw of keywords) {
-          await prisma.monthlyKeyword.upsert({
-            where: {
-              profileId_month_keyword: {
-                profileId: profile.id,
-                month: currentMonth,
-                keyword: kw.keyword,
+          const keywords = await fetchSearchKeywords(
+            profile.googleAccountId,
+            locationId,
+            month,
+            month
+          );
+
+          // Upsert keywords into MonthlyKeyword
+          for (const kw of keywords) {
+            await prisma.monthlyKeyword.upsert({
+              where: {
+                profileId_month_keyword: {
+                  profileId: profile.id,
+                  month,
+                  keyword: kw.keyword,
+                },
               },
-            },
-            create: {
-              profileId: profile.id,
-              month: currentMonth,
-              keyword: kw.keyword,
-              impressions: kw.impressions,
-            },
-            update: {
-              impressions: kw.impressions,
-            },
-          });
-        }
+              create: {
+                profileId: profile.id,
+                month,
+                keyword: kw.keyword,
+                impressions: kw.impressions,
+              },
+              update: {
+                impressions: kw.impressions,
+              },
+            });
+          }
 
-        console.log(
-          `Synced ${keywords.length} keywords for ${profile.name}`
-        );
+          console.log(
+            `Synced ${keywords.length} keywords for ${profile.name} (${month.toISOString().slice(0, 7)})`
+          );
+        }
       } catch (profileErr) {
         console.error(
           `Failed to sync metrics for profile ${profile.name}:`,
