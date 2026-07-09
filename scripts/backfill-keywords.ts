@@ -32,7 +32,7 @@ async function fetchWithRetry(
   googleAccountId: string,
   locationId: string,
   month: Date,
-  attempts = 4
+  attempts = 6
 ) {
   for (let i = 1; ; i++) {
     try {
@@ -41,7 +41,7 @@ async function fetchWithRetry(
       const status = err?.response?.status ?? err?.code;
       const retryable = status === 429 || (typeof status === "number" && status >= 500);
       if (!retryable || i >= attempts) throw err;
-      const delay = 2000 * 2 ** (i - 1);
+      const delay = 3000 * 2 ** (i - 1);
       console.log(`  retry ${i} after ${status}, waiting ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
     }
