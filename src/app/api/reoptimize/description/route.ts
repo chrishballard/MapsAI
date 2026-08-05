@@ -34,33 +34,44 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [currentGBPDescription, savedDescription, keywordRecords] =
-      await Promise.all([
-        fetchCurrentDescription({
-          googleAccountId: profile.googleAccountId,
-          locationName: profile.locationName,
-        }),
-        prisma.profileDescription.findFirst({
-          where: { profileId },
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            content: true,
-            isApproved: true,
-            isPushed: true,
-            pushedAt: true,
-          },
-        }),
-        prisma.profileKeyword.findMany({
-          where: { profileId },
-          orderBy: { sortOrder: "asc" },
-        }),
-      ]);
+    // GBP read failure shouldn't hide the saved description — degrade to null
+    // but tell the client the live value is unknown rather than empty.
+    const [savedDescription, keywordRecords, gbpResult] = await Promise.all([
+      prisma.profileDescription.findFirst({
+        where: { profileId },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          content: true,
+          isApproved: true,
+          isPushed: true,
+          pushedAt: true,
+        },
+      }),
+      prisma.profileKeyword.findMany({
+        where: { profileId },
+        orderBy: { sortOrder: "asc" },
+      }),
+      fetchCurrentDescription({
+        googleAccountId: profile.googleAccountId,
+        locationName: profile.locationName,
+      }).then(
+        (value) => ({ value, error: null as string | null }),
+        (error: unknown) => {
+          console.error("Failed to fetch current GBP description:", error);
+          return {
+            value: null,
+            error: "Failed to fetch current GBP description",
+          };
+        }
+      ),
+    ]);
 
     return NextResponse.json({
-      currentGBPDescription,
+      currentGBPDescription: gbpResult.value,
       savedDescription,
       keywords: keywordRecords.map((k) => k.keyword),
+      gbpError: gbpResult.error,
     });
   } catch (error: unknown) {
     console.error("Failed to fetch description data:", error);
