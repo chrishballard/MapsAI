@@ -31,6 +31,9 @@ export function DescriptionStep({
   const [currentGBPDescription, setCurrentGBPDescription] = useState<
     string | null
   >(null);
+  // Set when the GET degraded because GBP was unreachable — the saved copy
+  // below is intact, but the live "Current Description" is unknown.
+  const [gbpError, setGbpError] = useState<string | null>(null);
   const [aiDescription, setAiDescription] = useState("");
   const [savedDescription, setSavedDescription] =
     useState<SavedDescription | null>(null);
@@ -53,6 +56,7 @@ export function DescriptionStep({
           fetchJson<{
             currentGBPDescription?: string | null;
             description?: SavedDescription | null;
+            gbpError?: string | null;
           }>(`/api/onboarding/description?profileId=${profileId}`),
           fetchJson<{ keywords?: { keyword: string }[] }>(
             `/api/onboarding/keywords?profileId=${profileId}`
@@ -60,6 +64,7 @@ export function DescriptionStep({
         ]);
 
         setCurrentGBPDescription(descData.currentGBPDescription ?? null);
+        setGbpError(descData.gbpError ?? null);
         if (descData.description) {
           setSavedDescription(descData.description);
           setAiDescription(descData.description.content);
@@ -223,6 +228,11 @@ export function DescriptionStep({
           <div className="bg-muted/50 rounded-lg p-4 text-muted-foreground italic text-sm">
             {currentGBPDescription}
           </div>
+        ) : gbpError ? (
+          <p className="flex items-center gap-1.5 text-sm text-amber-600">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            Couldn&apos;t reach Google — showing your saved copy
+          </p>
         ) : (
           <p className="text-sm text-zinc-400 italic">
             No description currently set on your Google Business Profile

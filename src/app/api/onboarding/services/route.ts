@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [savedServices, gbpServices] = await Promise.all([
+    // GBP read failure shouldn't hide the saved services — degrade to null
+    // but tell the client the live values are unknown rather than empty.
+    const [savedServices, gbpResult] = await Promise.all([
       prisma.profileService.findMany({
         where: { profileId },
         orderBy: { createdAt: "asc" },
@@ -43,13 +45,23 @@ export async function GET(request: NextRequest) {
       fetchStructuredServices({
         googleAccountId: profile.googleAccountId,
         locationName: profile.locationName,
-      }),
+      }).then(
+        (value) => ({ value, error: null as string | null }),
+        (error: unknown) => {
+          console.error("Failed to fetch current GBP services:", error);
+          return {
+            value: null,
+            error: "Failed to fetch current GBP services",
+          };
+        }
+      ),
     ]);
 
     // Only use actual GBP structured services — no fake serviceTypeIds
     return NextResponse.json({
       services: savedServices,
-      availableServices: gbpServices,
+      availableServices: gbpResult.value,
+      gbpError: gbpResult.error,
     });
   } catch (error: unknown) {
     console.error("Failed to fetch services data:", error);

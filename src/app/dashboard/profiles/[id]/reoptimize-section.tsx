@@ -69,6 +69,9 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   );
   const [descExpanded, setDescExpanded] = useState(true);
   const [descShowComparison, setDescShowComparison] = useState(false);
+  // Set when the GET degraded because GBP was unreachable — saved data is
+  // still shown, but the "Current (Live on Google)" value is unknown.
+  const [descGbpError, setDescGbpError] = useState<string | null>(null);
 
   // Services state
   const [currentGBPServices, setCurrentGBPServices] = useState<GBPService[]>(
@@ -91,6 +94,8 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const [svcExpanded, setSvcExpanded] = useState(true);
   const [svcShowSelection, setSvcShowSelection] = useState(false);
   const [svcShowCards, setSvcShowCards] = useState(false);
+  // Same as descGbpError, for the services GET.
+  const [svcGbpError, setSvcGbpError] = useState<string | null>(null);
 
   // Service selection state
   const [checkedServices, setCheckedServices] = useState<Set<string>>(
@@ -117,6 +122,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         if (descRes.ok) {
           const data = await descRes.json();
           setCurrentGBPDescription(data.currentGBPDescription ?? null);
+          setDescGbpError(data.gbpError ?? null);
           setKeywords(data.keywords ?? []);
           if (data.savedDescription) {
             setSavedDescription(data.savedDescription);
@@ -127,6 +133,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         if (svcRes.ok) {
           const data = await svcRes.json();
           setCurrentGBPServices(data.currentGBPServices ?? []);
+          setSvcGbpError(data.gbpError ?? null);
           setAvailableServices(data.availableServices ?? []);
           const saved: ServiceItem[] = (data.savedServices ?? []).map(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -547,11 +554,17 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                       Current (Live on Google)
                     </p>
                     <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground italic min-h-[120px]">
-                      {currentGBPDescription || (
-                        <span className="text-zinc-400">
-                          No description currently set
-                        </span>
-                      )}
+                      {currentGBPDescription ||
+                        (descGbpError ? (
+                          <span className="flex items-center gap-1.5 text-amber-600 not-italic">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            Couldn&apos;t reach Google — showing your saved copy
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400">
+                            No description currently set
+                          </span>
+                        ))}
                     </div>
                   </div>
 
@@ -660,11 +673,17 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     Current (Live on Google)
                   </p>
                   <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground italic min-h-[80px]">
-                    {currentGBPDescription || (
-                      <span className="text-zinc-400">
-                        No description currently set
-                      </span>
-                    )}
+                    {currentGBPDescription ||
+                      (descGbpError ? (
+                        <span className="flex items-center gap-1.5 text-amber-600 not-italic">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          Couldn&apos;t reach Google — showing your saved copy
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400">
+                          No description currently set
+                        </span>
+                      ))}
                   </div>
                 </div>
                 <div>
@@ -767,6 +786,14 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                   Retry
                 </button>
               </div>
+            )}
+
+            {/* GBP outage notice — live services unknown, saved data below is intact */}
+            {svcGbpError && (
+              <p className="flex items-center gap-1.5 text-sm text-amber-600">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Couldn&apos;t reach Google — showing your saved copy
+              </p>
             )}
 
             {/* Generation Loading */}
@@ -1034,6 +1061,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
             {!svcGenerating &&
               !svcShowSelection &&
               !svcShowCards &&
+              !svcGbpError &&
               currentGBPServices.length === 0 &&
               savedServices.length === 0 && (
                 <p className="text-sm text-zinc-400 italic">
