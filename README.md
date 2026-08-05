@@ -44,8 +44,10 @@ npm run dev
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
+| `REDIS_URL` | Redis connection URL for BullMQ queues. **Required in production** — startup refuses to fall back to localhost. Defaults to `localhost:6379` in dev |
 | `NEXTAUTH_SECRET` | Random secret for session encryption |
 | `NEXTAUTH_URL` | App URL (http://localhost:3000 for dev) |
+| `ALLOWED_EMAILS` | Comma-separated list of emails allowed to sign in. **Required in production** — if unset, ALL sign-ins are rejected. Not enforced in dev |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID (Phase 2) |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret (Phase 2) |
 | `ANTHROPIC_API_KEY` | Claude API key (Phase 3) |
