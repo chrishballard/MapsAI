@@ -35,6 +35,7 @@ export function AddBusinessButton({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- loading must flip on in the same effect that starts the fetch; moving it to the open-click handler would change when the spinner first paints
       setLoading(true);
       fetch("/api/profiles/available")
         .then((r) => r.json())
@@ -62,6 +63,7 @@ export function AddBusinessButton({
 
   if (availableCount === 0 && variant === "default") {
     return (
+      // eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/auth/google is a route handler (OAuth entry point), not a page; it needs a full-page navigation, so <Link> must not be used here
       <a
         href="/api/auth/google"
         className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
@@ -218,6 +220,7 @@ export function AddBusinessButton({
 
             {/* Footer */}
             <div className="px-6 py-3 border-t border-zinc-200 bg-zinc-50">
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/auth/google is a route handler (OAuth entry point), not a page; it needs a full-page navigation, so <Link> must not be used here */}
               <a
                 href="/api/auth/google"
                 className="text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"

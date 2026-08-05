@@ -29,30 +29,29 @@ function formatPct(pct: number | null): string {
   return `${pct > 0 ? "+" : ""}${pct}%`;
 }
 
-export async function ExecutiveSummary({
-  metrics,
-  profileName,
-  from,
-  to,
-  profileId,
-}: ExecutiveSummaryProps) {
-  const cacheKey = `${profileId ?? "all"}-${from}-${to}`;
-
-  let text: string;
-
+// Kept outside the component so the react-hooks purity rule doesn't apply:
+// time-based caching is intentionally impure and safe in this server-only module.
+async function getNarrative(
+  cacheKey: string,
+  metrics: ExecutiveSummaryProps["metrics"],
+  profileName: string | null,
+  from: string,
+  to: string
+): Promise<string> {
   // Check cache
   const cached = narrativeCache.get(cacheKey);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-    text = cached.text;
-  } else {
-    try {
-      const message = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: 256,
-        messages: [
-          {
-            role: "user",
-            content: `Write a 3-sentence executive summary for a Google Business Profile performance report.
+    return cached.text;
+  }
+
+  try {
+    const message = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 256,
+      messages: [
+        {
+          role: "user",
+          content: `Write a 3-sentence executive summary for a Google Business Profile performance report.
 Profile: ${profileName ?? "All Profiles"}
 Period: ${from} to ${to}
 Search impressions: ${metrics.searchImpressions} (${formatPct(metrics.searchPct)} vs prior period)
@@ -62,18 +61,29 @@ Website clicks: ${metrics.websiteClicks} (${formatPct(metrics.clicksPct)} vs pri
 Direction requests: ${metrics.directionRequests} (${formatPct(metrics.directionsPct)} vs prior period)
 
 Write 3 professional sentences summarizing performance and key trends. Be specific with numbers.`,
-          },
-        ],
-      });
+        },
+      ],
+    });
 
-      text = (message.content[0] as { type: string; text: string }).text;
+    const text = (message.content[0] as { type: string; text: string }).text;
 
-      // Cache the result
-      narrativeCache.set(cacheKey, { text, cachedAt: Date.now() });
-    } catch {
-      text = "Unable to generate summary. Metrics are shown below.";
-    }
+    // Cache the result
+    narrativeCache.set(cacheKey, { text, cachedAt: Date.now() });
+    return text;
+  } catch {
+    return "Unable to generate summary. Metrics are shown below.";
   }
+}
+
+export async function ExecutiveSummary({
+  metrics,
+  profileName,
+  from,
+  to,
+  profileId,
+}: ExecutiveSummaryProps) {
+  const cacheKey = `${profileId ?? "all"}-${from}-${to}`;
+  const text = await getNarrative(cacheKey, metrics, profileName, from, to);
 
   return (
     <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-6">

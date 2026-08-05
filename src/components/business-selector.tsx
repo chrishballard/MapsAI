@@ -31,6 +31,7 @@ export function BusinessSelector() {
 
     // Read initial selection from cookie
     const match = document.cookie.match(/(?:^|; )selectedProfileId=([^;]*)/);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- document.cookie does not exist during SSR, so the initial selection must hydrate in an effect rather than a useState initializer
     if (match) setSelectedId(match[1] || null);
   }, []);
 

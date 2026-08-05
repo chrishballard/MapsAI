@@ -37,8 +37,9 @@ async function fetchWithRetry(
   for (let i = 1; ; i++) {
     try {
       return await fetchSearchKeywords(googleAccountId, locationId, month, month);
-    } catch (err: any) {
-      const status = err?.response?.status ?? err?.code;
+    } catch (err) {
+      const e = err as { response?: { status?: number }; code?: number | string } | null;
+      const status = e?.response?.status ?? e?.code;
       const retryable = status === 429 || (typeof status === "number" && status >= 500);
       if (!retryable || i >= attempts) throw err;
       const delay = 3000 * 2 ** (i - 1);
@@ -90,10 +91,10 @@ async function main() {
             skipDuplicates: true,
           });
           profileRows += res.count;
-        } catch (err: any) {
+        } catch (err) {
           failedCalls++;
           console.error(
-            `FAILED ${profile.name} ${month.toISOString().slice(0, 7)}: ${err?.message}`
+            `FAILED ${profile.name} ${month.toISOString().slice(0, 7)}: ${(err as Error | null)?.message}`
           );
         }
       }

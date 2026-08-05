@@ -1,4 +1,4 @@
-import { renderToBuffer } from "@react-pdf/renderer";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 import { prisma } from "../prisma";
 import { renderImpressionsChart, renderSparklineChart } from "./chart-renderer";
@@ -172,9 +172,12 @@ export async function generateReport(
   };
 
   // 10. Render PDF
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // ReportDocument renders a react-pdf <Document> at its root, but its own props
+  // ({ data }) share nothing with DocumentProps, so the element type needs forcing.
   const pdfBuffer = await renderToBuffer(
-    React.createElement(ReportDocument, { data: reportData }) as any
+    React.createElement(ReportDocument, {
+      data: reportData,
+    }) as unknown as React.ReactElement<DocumentProps>
   );
 
   return new Uint8Array(pdfBuffer);
@@ -324,9 +327,11 @@ export async function generateDashboardReport(
   };
 
   // 10. Render PDF
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Same forced element type as generateReport above.
   const pdfBuffer = await renderToBuffer(
-    React.createElement(DashboardReportDocument, { data: reportData }) as any
+    React.createElement(DashboardReportDocument, {
+      data: reportData,
+    }) as unknown as React.ReactElement<DocumentProps>
   );
 
   return new Uint8Array(pdfBuffer);

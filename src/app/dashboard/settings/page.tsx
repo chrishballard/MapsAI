@@ -35,6 +35,7 @@ export default async function SettingsPage() {
             Manage your Google Business Profile connections.
           </p>
         </div>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /api/auth/google is a route handler (OAuth entry point), not a page; it needs a full-page navigation, so <Link> must not be used here */}
         <a
           href="/api/auth/google"
           className={buttonVariants({ size: "sm", className: "gap-2" })}
