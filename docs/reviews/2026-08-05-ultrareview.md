@@ -34,8 +34,7 @@ committing untracked files, two deferred with known trigger conditions.
 - **Deliberately not changed:** `reoptimize/services` POST (generation needs
   live GBP truth to mark `isStructured` — degrading would silently save wrong
   data) and the push routes (pushing requires GBP; loud failure is correct).
-  `onboarding/services` GET shares the old catch-→-500 shape but was not
-  flagged by the review and is untouched.
+  `onboarding/services` GET shares the same defect — tracked as finding 6.
 
 ### 3. README missing production-required env vars — FIXED (this branch)
 - **Where:** `README.md` env table; guards live in `src/lib/queue/connection.ts:23-31`
@@ -69,3 +68,16 @@ committing untracked files, two deferred with known trigger conditions.
 - **Recovery:** Retry button (FAILED→DRAFT) then re-approve.
 - **Suggested fix when touched:** release the inherited claim on the throw
   path, or add a stale-PUBLISHING sweeper to `post-sweep-worker.ts`.
+
+### 6. Onboarding services GET shares the catch-→-500 shape — DEFERRED
+(Found during fix verification, not by the original review.)
+- **Where:** `src/app/api/onboarding/services/route.ts:37-60`
+- **Defect:** same shape as finding 2 — `fetchStructuredServices` inside
+  `Promise.all` under a blanket catch-→-500, hiding saved services in
+  Postgres whenever GBP hiccups during onboarding.
+- **Trigger condition:** any GBP failure (revoked token, Google 5xx, network
+  blip) while a profile's onboarding wizard is on the services step.
+- **Fix when touched:** port the same `.then/.catch` envelope used in the
+  reoptimize routes. Related polish: `gbpError` is returned by four routes
+  now but no component renders it — during an outage the UI shows "no
+  description/services set" instead of "couldn't reach Google".
