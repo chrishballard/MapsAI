@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { anthropic } from "./claude";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { generate } from "./claude";
 
 const KeywordSuggestionsSchema = z.object({
   keywords: z
@@ -44,20 +43,13 @@ Rules:
     .filter(Boolean)
     .join("\n");
 
-  const message = await anthropic.messages.parse({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 1024,
+  const parsed = await generate({
     system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-    output_config: {
-      format: zodOutputFormat(KeywordSuggestionsSchema),
-    },
+    prompt: userMessage,
+    schema: KeywordSuggestionsSchema,
+    maxTokens: 1024,
+    errorMessage: "Failed to parse keyword suggestions from Claude",
   });
-
-  const parsed = message.parsed_output;
-  if (!parsed) {
-    throw new Error("Failed to parse keyword suggestions from Claude");
-  }
 
   return parsed.keywords;
 }

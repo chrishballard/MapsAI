@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { anthropic } from "./claude";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { generate } from "./claude";
 
 const ServiceDescriptionSchema = z.object({
   services: z.array(
@@ -54,20 +53,13 @@ Rules:
     .filter(Boolean)
     .join("\n");
 
-  const message = await anthropic.messages.parse({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 4096,
+  const parsed = await generate({
     system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-    output_config: {
-      format: zodOutputFormat(ServiceDescriptionSchema),
-    },
+    prompt: userMessage,
+    schema: ServiceDescriptionSchema,
+    maxTokens: 4096,
+    errorMessage: "Failed to parse service descriptions from Claude",
   });
-
-  const parsed = message.parsed_output;
-  if (!parsed) {
-    throw new Error("Failed to parse service descriptions from Claude");
-  }
 
   // Validate that every input serviceName has a corresponding output
   const outputNames = new Set(parsed.services.map((s) => s.serviceName));

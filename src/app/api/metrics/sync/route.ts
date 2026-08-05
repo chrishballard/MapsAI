@@ -1,16 +1,13 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import {
   metricsSyncQueue,
   initMetricsSyncScheduler,
 } from "@/lib/queue/metrics-sync-queue";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   // Optional: pass ?days=365 to backfill historical data.
   // Parsed as integer, clamped to [1, 365], default 30; NaN is rejected.

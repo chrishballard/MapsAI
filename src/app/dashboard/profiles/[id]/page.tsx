@@ -14,6 +14,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { ReoptimizeSection } from "./reoptimize-section";
 import { OffboardButton } from "./offboard-button";
+import { getMonthStart } from "@/lib/dates";
+import { formatMediumDate } from "@/lib/dates";
 
 export default async function ProfileDetailPage({
   params,
@@ -29,8 +31,7 @@ export default async function ProfileDetailPage({
 
   if (!profile) notFound();
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfMonth = getMonthStart();
 
   const [totalPosts, draftPosts, reviewCount, reviews, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
     await Promise.all([
@@ -208,11 +209,7 @@ export default async function ProfileDetailPage({
                 </div>
                 <p className="text-sm text-foreground line-clamp-3">{post.content}</p>
                 <p className="text-xs text-zinc-400 mt-2">
-                  {post.createdAt.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                  {formatMediumDate(post.createdAt)}
                 </p>
               </div>
             ))}

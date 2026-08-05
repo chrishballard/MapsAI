@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { anthropic } from "./claude";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { generate } from "./claude";
 
 const DescriptionSchema = z.object({
   description: z.string(),
@@ -45,19 +44,13 @@ export async function generateDescription(profile: {
     .join("\n");
 
   const callClaude = async (messages: { role: "user" | "assistant"; content: string }[]) => {
-    const message = await anthropic.messages.parse({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1024,
+    const parsed = await generate({
       system: systemPrompt,
-      messages,
-      output_config: {
-        format: zodOutputFormat(DescriptionSchema),
-      },
+      prompt: messages,
+      schema: DescriptionSchema,
+      maxTokens: 1024,
+      errorMessage: "Failed to parse description from Claude",
     });
-    const parsed = message.parsed_output;
-    if (!parsed) {
-      throw new Error("Failed to parse description from Claude");
-    }
     return parsed.description;
   };
 

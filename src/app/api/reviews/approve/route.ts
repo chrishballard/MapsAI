@@ -1,24 +1,16 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
+import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId } = body as { profileId: string };
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, profileIdBodySchema);
+  if (parsed.error) return parsed.error;
+  const { profileId } = parsed.data;
 
   // Find all reviews for profile with DRAFTED responses
   // (excluding reviews that were already replied to outside RankMaps)
@@ -40,6 +32,10 @@ export async function POST(request: Request) {
 
   let approvedCount = 0;
 
+  // Stagger publishes so a bulk approval stays under GBP's 10 edits/min
+  // per-profile limit (all these reviews belong to one profile).
+  const STAGGER_MS = 7_500; // 8 per minute
+
   for (const review of reviews) {
     if (!review.response) continue;
 
@@ -49,7 +45,9 @@ export async function POST(request: Request) {
     });
 
     try {
-      await scheduleReviewPublish(review.response.id);
+      await scheduleReviewPublish(review.response.id, {
+        delayMs: approvedCount * STAGGER_MS,
+      });
     } catch (err) {
       console.warn(
         `Failed to queue review response ${review.response.id} for publishing:`,

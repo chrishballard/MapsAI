@@ -62,6 +62,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const [descPushing, setDescPushing] = useState(false);
   const [descPushSuccess, setDescPushSuccess] = useState(false);
   const [descError, setDescError] = useState<string | null>(null);
+  // Which operation the error came from, so Retry re-runs that operation —
+  // retrying a failed push must never re-generate (it would discard edits).
+  const [descFailedOp, setDescFailedOp] = useState<"generate" | "push" | null>(
+    null
+  );
   const [descExpanded, setDescExpanded] = useState(true);
   const [descShowComparison, setDescShowComparison] = useState(false);
 
@@ -77,6 +82,12 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const [svcPushing, setSvcPushing] = useState(false);
   const [svcPushSuccess, setSvcPushSuccess] = useState(false);
   const [svcError, setSvcError] = useState<string | null>(null);
+  // Which operation the error came from, so Retry re-runs that operation —
+  // retrying a failed push must never re-generate (it would replace all
+  // services and destroy hand-tuned descriptions).
+  const [svcFailedOp, setSvcFailedOp] = useState<"generate" | "push" | null>(
+    null
+  );
   const [svcExpanded, setSvcExpanded] = useState(true);
   const [svcShowSelection, setSvcShowSelection] = useState(false);
   const [svcShowCards, setSvcShowCards] = useState(false);
@@ -148,6 +159,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const generateDescription = async () => {
     setDescGenerating(true);
     setDescError(null);
+    setDescFailedOp(null);
     setDescPushSuccess(false);
     try {
       const res = await fetch("/api/reoptimize/description", {
@@ -162,9 +174,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
       } else {
         const data = await res.json().catch(() => ({}));
         setDescError(data.error || "Failed to generate description");
+        setDescFailedOp("generate");
       }
     } catch {
       setDescError("Network error during generation. Please try again.");
+      setDescFailedOp("generate");
     } finally {
       setDescGenerating(false);
     }
@@ -173,6 +187,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const pushDescription = async () => {
     setDescPushing(true);
     setDescError(null);
+    setDescFailedOp(null);
     try {
       const res = await fetch("/api/reoptimize/description/push", {
         method: "POST",
@@ -191,9 +206,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         });
       } else {
         setDescError(data.error ?? "Failed to push description to Google");
+        setDescFailedOp("push");
       }
     } catch {
       setDescError("Network error. Please try again.");
+      setDescFailedOp("push");
     } finally {
       setDescPushing(false);
     }
@@ -248,6 +265,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
 
     setSvcGenerating(true);
     setSvcError(null);
+    setSvcFailedOp(null);
     setSvcPushSuccess(false);
     try {
       const res = await fetch("/api/reoptimize/services", {
@@ -259,24 +277,25 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         setSvcError(errData.error || "Failed to generate service descriptions");
+        setSvcFailedOp("generate");
         setSvcGenerating(false);
         return;
       }
 
       const data = await res.json();
-      const selectedSet = new Set([
-        ...Array.from(checkedServices),
-        ...customServices,
-      ]);
+      // The route saves the generated services and returns the DB records,
+      // including the server-determined isStructured flag
       const newServices: ServiceItem[] = (
-        data.services as { serviceName: string; description: string }[]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (data.services as any[]) ?? []
       ).map((s) => ({
+        id: s.id,
         serviceName: s.serviceName,
-        description: s.description,
-        isStructured: selectedSet.has(s.serviceName),
-        isApproved: false,
-        isPushed: false,
-        pushedAt: null,
+        description: s.description ?? "",
+        isStructured: s.isStructured,
+        isApproved: s.isApproved,
+        isPushed: s.isPushed,
+        pushedAt: s.pushedAt,
       }));
 
       setSavedServices(newServices);
@@ -284,6 +303,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
       setSvcShowCards(true);
     } catch {
       setSvcError("Network error during generation. Please try again.");
+      setSvcFailedOp("generate");
     } finally {
       setSvcGenerating(false);
     }
@@ -316,14 +336,36 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const pushServices = async () => {
     setSvcPushing(true);
     setSvcError(null);
+    setSvcFailedOp(null);
     try {
+      // Persist edits + approval state first — the push route reads from the DB
+      const saveRes = await fetch("/api/reoptimize/services", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId,
+          services: savedServices.map((s) => ({
+            serviceName: s.serviceName,
+            description: s.description,
+            isStructured: s.isStructured,
+            isApproved: s.isApproved,
+          })),
+        }),
+      });
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({}));
+        setSvcError(errData.error || "Failed to save services");
+        setSvcFailedOp("push");
+        return;
+      }
+
       const res = await fetch("/api/reoptimize/services/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profileId }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setSvcPushSuccess(true);
         setSavedServices((prev) =>
           prev.map((s) =>
@@ -334,9 +376,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
         );
       } else {
         setSvcError(data.error || "Failed to push services to Google");
+        setSvcFailedOp("push");
       }
     } catch {
       setSvcError("Network error. Please try again.");
+      setSvcFailedOp("push");
     } finally {
       setSvcPushing(false);
     }
@@ -367,6 +411,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
     setSvcShowSelection(true);
     setSvcShowCards(false);
     setSvcError(null);
+    setSvcFailedOp(null);
     setSvcPushSuccess(false);
   };
 
@@ -468,8 +513,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 </div>
                 <button
                   type="button"
-                  onClick={generateDescription}
-                  className="bg-red-600 text-white hover:bg-red-700 rounded-md px-3 py-1 text-xs font-medium shrink-0"
+                  onClick={
+                    descFailedOp === "generate"
+                      ? generateDescription
+                      : pushDescription
+                  }
+                  disabled={descGenerating || descPushing}
+                  className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 rounded-md px-3 py-1 text-xs font-medium shrink-0"
                 >
                   Retry
                 </button>
@@ -708,8 +758,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                 </div>
                 <button
                   type="button"
-                  onClick={generateServices}
-                  className="bg-red-600 text-white hover:bg-red-700 rounded-md px-3 py-1 text-xs font-medium shrink-0"
+                  onClick={
+                    svcFailedOp === "generate" ? generateServices : pushServices
+                  }
+                  disabled={svcGenerating || svcPushing}
+                  className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 rounded-md px-3 py-1 text-xs font-medium shrink-0"
                 >
                   Retry
                 </button>

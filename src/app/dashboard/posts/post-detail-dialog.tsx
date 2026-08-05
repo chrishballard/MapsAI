@@ -51,6 +51,7 @@ const STATUS_CONFIG: Record<
   DRAFT: { label: "Draft", icon: Clock, color: "text-zinc-500" },
   APPROVED: { label: "Approved", icon: CheckCircle2, color: "text-blue-500" },
   SCHEDULED: { label: "Scheduled", icon: Clock, color: "text-amber-500" },
+  PUBLISHING: { label: "Publishing", icon: Clock, color: "text-violet-500" },
   PUBLISHED: { label: "Published", icon: CheckCircle2, color: "text-emerald-500" },
   FAILED: { label: "Failed", icon: AlertCircle, color: "text-red-500" },
 };

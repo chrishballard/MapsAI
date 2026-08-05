@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface GBPAttribute {
   attributeId: string;
@@ -90,20 +91,19 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
   useEffect(() => {
     async function fetchAttributes() {
       try {
-        const res = await fetch(
+        const data = await fetchJson<{ attributes?: GBPAttribute[] }>(
           `/api/onboarding/attributes?profileId=${profileId}`
         );
-        if (res.ok) {
-          const data = await res.json();
-          if (!data.attributes || data.attributes.length === 0) {
-            setNoAttributes(true);
-            setTimeout(() => onComplete(), 1500);
-            return;
-          }
-          setAttributes(
-            data.attributes.map((a: GBPAttribute) => parseAttribute(a))
-          );
+        if (!data.attributes || data.attributes.length === 0) {
+          setNoAttributes(true);
+          setTimeout(() => onComplete(), 1500);
+          return;
         }
+        setAttributes(
+          data.attributes.map((a: GBPAttribute) => parseAttribute(a))
+        );
+      } catch (err) {
+        console.error("Failed to load attributes:", err);
       } finally {
         setLoading(false);
       }
@@ -175,20 +175,20 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         })
         .filter(Boolean);
 
-      const res = await fetch("/api/onboarding/attributes/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, attributes: payload }),
-      });
-      const data = await res.json();
+      const data = await sendJson<{ success?: boolean; error?: string }>(
+        "/api/onboarding/attributes/push",
+        { profileId, attributes: payload }
+      );
       if (data.success) {
         setPushSuccess(true);
         setTimeout(() => onComplete(), 2500);
       } else {
         setPushError(data.error || "Failed to push attributes to Google");
       }
-    } catch {
-      setPushError("Network error. Please try again.");
+    } catch (err) {
+      setPushError(
+        err instanceof Error ? err.message : "Network error. Please try again."
+      );
     } finally {
       setPushing(false);
     }

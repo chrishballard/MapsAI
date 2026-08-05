@@ -1,33 +1,16 @@
+import { requireProfile } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { generateCitySuggestions } from "@/lib/city-generator";
 import { scrapeWebsiteText } from "@/lib/website-scraper";
+import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const parsed = await parseBody(request, profileIdBodySchema);
+  if (parsed.error) return parsed.error;
+  const { profileId } = parsed.data;
 
-  const body = await request.json();
-  const { profileId } = body;
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-  });
-
-  if (!profile) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-  }
+  const profile = await requireProfile(profileId);
+  if (profile instanceof NextResponse) return profile;
 
   try {
     let websiteText: string | null = null;

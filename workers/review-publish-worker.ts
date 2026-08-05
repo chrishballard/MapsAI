@@ -35,6 +35,16 @@ export const worker = new Worker<ReviewPublishJobData>(
       return;
     }
 
+    // Only ever publish responses that are APPROVED right now. A queued job
+    // can go stale — e.g. the response was regenerated (back to DRAFTED)
+    // after approval — and must never publish unapproved content.
+    if (reviewResponse.status !== "APPROVED") {
+      console.warn(
+        `Review response ${reviewResponseId} is ${reviewResponse.status}, not APPROVED — refusing to publish`
+      );
+      return;
+    }
+
     const { review } = reviewResponse;
 
     // Safety check: fetch the live review from Google before publishing.
@@ -96,6 +106,10 @@ export const worker = new Worker<ReviewPublishJobData>(
   {
     connection: redisConnection,
     concurrency: 5,
+    // GBP allows ~10 edits/min/profile, and bulk approve enqueues a whole
+    // profile's drafted responses at once — cap the queue at 8 publishes/min
+    // so concurrent workers can never trip the limit.
+    limiter: { max: 8, duration: 60_000 },
   }
 );
 
@@ -130,6 +144,10 @@ worker.on("failed", async (job, err) => {
       console.error(`Failed to update review response status: ${updateErr}`);
     }
   }
+});
+
+worker.on("error", (err) => {
+  console.error(`[review-publish-worker] Worker error: ${err.message}`);
 });
 
 console.log("Review publish worker started, waiting for jobs...");

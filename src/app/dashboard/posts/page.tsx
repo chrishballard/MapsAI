@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { Prisma, PostStatus, PostType } from "@/generated/prisma/client";
 import Link from "next/link";
 import { PostFilters } from "./post-filters";
 import { PostActions, BulkApproveButton } from "./post-actions";
@@ -17,6 +18,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { MotionDiv } from "@/components/motion-wrapper";
+import { formatMediumDate } from "@/lib/dates";
 
 const TYPE_BADGES: Record<
   string,
@@ -39,17 +41,14 @@ const STATUS_CONFIG: Record<
   DRAFT: { label: "Draft", variant: "secondary", icon: Clock, color: "text-zinc-500" },
   APPROVED: { label: "Approved", variant: "default", icon: CheckCircle2, color: "text-blue-500" },
   SCHEDULED: { label: "Scheduled", variant: "warning", icon: Clock, color: "text-amber-500" },
+  PUBLISHING: { label: "Publishing", variant: "default", icon: Clock, color: "text-violet-500" },
   PUBLISHED: { label: "Published", variant: "success", icon: CheckCircle2, color: "text-emerald-500" },
   FAILED: { label: "Failed", variant: "error", icon: AlertCircle, color: "text-red-500" },
 };
 
 function formatDate(date: Date | null | undefined): string {
   if (!date) return "";
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatMediumDate(date);
 }
 
 interface PostsPageProps {
@@ -65,15 +64,26 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
   const selectedProfileId = await getSelectedProfileId();
   const { profileId: filterProfileId, status: statusParam, type } = params;
 
-  // Default to showing SCHEDULED posts; use "all" to show everything
-  const status = statusParam === "all" ? undefined : (statusParam || "SCHEDULED");
+  // searchParams are user-controlled — fall back to defaults on anything
+  // that isn't a valid enum value instead of passing junk into the query.
+  // Default to showing SCHEDULED posts; use "all" to show everything.
+  const validStatusParam =
+    statusParam && (Object.values(PostStatus) as string[]).includes(statusParam)
+      ? (statusParam as PostStatus)
+      : undefined;
+  const status =
+    statusParam === "all" ? undefined : (validStatusParam ?? "SCHEDULED");
+  const validType =
+    type && (Object.values(PostType) as string[]).includes(type)
+      ? (type as PostType)
+      : undefined;
 
   const profileId = filterProfileId || selectedProfileId;
 
-  const where: Record<string, string> = {};
+  const where: Prisma.PostWhereInput = {};
   if (profileId) where.profileId = profileId;
   if (status) where.status = status;
-  if (type) where.type = type;
+  if (validType) where.type = validType;
 
   const [posts, profiles] = await Promise.all([
     prisma.post.findMany({

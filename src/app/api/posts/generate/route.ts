@@ -1,41 +1,23 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateMonthlyPosts } from "@/lib/post-generator";
 import { PostType } from "@/generated/prisma/client";
+import { z } from "zod";
+import { idSchema, parseBody } from "@/lib/api-validation";
+
+// Each profileId triggers Claude API calls — cap batch size.
+const generatePostsSchema = z.object({
+  profileIds: z.array(idSchema).min(1).max(100),
+});
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  let body: { profileIds: string[] };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-
-  if (!body.profileIds || !Array.isArray(body.profileIds) || body.profileIds.length === 0) {
-    return NextResponse.json(
-      { error: "profileIds must be a non-empty array" },
-      { status: 400 }
-    );
-  }
-
-  // Each profileId triggers Claude API calls — cap batch size.
-  const MAX_PROFILE_IDS = 100;
-  if (body.profileIds.length > MAX_PROFILE_IDS) {
-    return NextResponse.json(
-      { error: `profileIds cannot exceed ${MAX_PROFILE_IDS} items` },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, generatePostsSchema);
+  if (parsed.error) return parsed.error;
+  const body = parsed.data;
 
   const results: Array<{
     profileId: string;
@@ -86,8 +68,10 @@ export async function POST(request: Request) {
         profile.postFrequency ?? 4
       );
 
-      // Save generated posts as DRAFT
-      const createdPosts = await Promise.all(
+      // Save generated posts as DRAFT — atomically, so a mid-batch failure
+      // can't leave a partial batch behind (which the future-scheduled-count
+      // guard in the daily generation worker would never top up).
+      const createdPosts = await prisma.$transaction(
         generated.posts.map((post) =>
           prisma.post.create({
             data: {
@@ -112,7 +96,7 @@ export async function POST(request: Request) {
         profileId,
         count: 0,
         status: "error",
-        error: error instanceof Error ? error.message : "Generation failed",
+        error: "Generation failed",
       });
     }
   }

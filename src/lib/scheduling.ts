@@ -1,3 +1,4 @@
+import { formatDateISO } from "./dates";
 /**
  * Calculate schedule dates for posts, distributing them evenly across future
  * weekdays (Mon–Fri) in the target month at 17:00 UTC (= 9 AM Pacific /
@@ -22,7 +23,7 @@ export function calculateScheduleDates(
   const date = new Date(Date.UTC(targetYear, targetMonth, 1, 17, 0, 0, 0));
   while (date.getUTCMonth() === targetMonth) {
     const day = date.getUTCDay();
-    const dateStr = date.toISOString().slice(0, 10);
+    const dateStr = formatDateISO(date);
     if (day >= 1 && day <= 5 && date > now && (!takenDates || !takenDates.has(dateStr))) {
       weekdays.push(new Date(date));
     }
@@ -103,12 +104,12 @@ export function calculateRollingScheduleDates(
     for (let guard = 0; guard < 60; guard++) {
       const day = d.getUTCDay();
       const isWeekend = day === 0 || day === 6;
-      const key = d.toISOString().slice(0, 10);
+      const key = formatDateISO(d);
       if ((allowWeekends || !isWeekend) && !taken.has(key) && d > now) break;
       d = new Date(d.getTime() + DAY_MS);
     }
 
-    taken.add(d.toISOString().slice(0, 10));
+    taken.add(formatDateISO(d));
     dates.push(d);
   }
 

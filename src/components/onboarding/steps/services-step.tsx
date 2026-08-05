@@ -11,6 +11,7 @@ import {
   X,
   Wrench,
 } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface ServiceItem {
   id?: string;
@@ -62,44 +63,45 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
 
     async function fetchData() {
       try {
-        const res = await fetch(
-          `/api/onboarding/services?profileId=${profileId}`
+        const data = await fetchJson<{
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          services?: any[];
+          availableServices?: AvailableService[];
+        }>(`/api/onboarding/services?profileId=${profileId}`);
+        const saved: ServiceItem[] = (data.services ?? []).map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (s: any) => ({
+            id: s.id,
+            serviceName: s.serviceName,
+            description: s.description ?? "",
+            isStructured: s.isStructured,
+            isApproved: s.isApproved,
+            isPushed: s.isPushed,
+            pushedAt: s.pushedAt,
+          })
         );
-        if (res.ok) {
-          const data = await res.json();
-          const saved: ServiceItem[] = (data.services ?? []).map(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (s: any) => ({
-              id: s.id,
-              serviceName: s.serviceName,
-              description: s.description ?? "",
-              isStructured: s.isStructured,
-              isApproved: s.isApproved,
-              isPushed: s.isPushed,
-              pushedAt: s.pushedAt,
-            })
-          );
-          const available: AvailableService[] = data.availableServices ?? [];
+        const available: AvailableService[] = data.availableServices ?? [];
 
-          setAvailableServices(available);
+        setAvailableServices(available);
 
-          // Build serviceTypeId lookup
-          for (const a of available) {
-            serviceTypeIdMap.current.set(a.displayName, a.serviceTypeId);
-          }
-
-          if (saved.length > 0) {
-            // Return visit: show service cards
-            setServices(saved);
-            setShowSelection(false);
-          } else {
-            // First visit: show selection checklist, pre-check all
-            setShowSelection(true);
-            setCheckedServices(
-              new Set(available.map((a) => a.displayName))
-            );
-          }
+        // Build serviceTypeId lookup
+        for (const a of available) {
+          serviceTypeIdMap.current.set(a.displayName, a.serviceTypeId);
         }
+
+        if (saved.length > 0) {
+          // Return visit: show service cards
+          setServices(saved);
+          setShowSelection(false);
+        } else {
+          // First visit: show selection checklist, pre-check all
+          setShowSelection(true);
+          setCheckedServices(
+            new Set(available.map((a) => a.displayName))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load services:", err);
       } finally {
         setLoading(false);
       }
@@ -159,20 +161,9 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
     setPushError(null);
     try {
       // Step 1: Generate descriptions via AI
-      const genRes = await fetch("/api/onboarding/services/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, serviceNames }),
-      });
-
-      if (!genRes.ok) {
-        const errData = await genRes.json().catch(() => ({}));
-        setPushError(errData.error || "Failed to generate descriptions");
-        setGenerating(false);
-        return;
-      }
-
-      const genData = await genRes.json();
+      const genData = await sendJson<{
+        services: { serviceName: string; description: string }[];
+      }>("/api/onboarding/services/generate", { profileId, serviceNames });
 
       // Map generated descriptions to ServiceItem objects
       // Services from the available/checked list are "structured"; AI-suggested extras are "custom"
@@ -180,9 +171,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
         ...Array.from(checkedServices),
         ...customServices,
       ]);
-      const newServices: ServiceItem[] = (
-        genData.services as { serviceName: string; description: string }[]
-      ).map((s) => ({
+      const newServices: ServiceItem[] = genData.services.map((s) => ({
         serviceName: s.serviceName,
         description: s.description,
         isStructured: selectedSet.has(s.serviceName),
@@ -192,24 +181,24 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
       }));
 
       // Step 2: Save to DB
-      await fetch("/api/onboarding/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId,
-          services: newServices.map((s) => ({
-            serviceName: s.serviceName,
-            description: s.description,
-            isStructured: s.isStructured,
-            isApproved: false,
-          })),
-        }),
+      await sendJson("/api/onboarding/services", {
+        profileId,
+        services: newServices.map((s) => ({
+          serviceName: s.serviceName,
+          description: s.description,
+          isStructured: s.isStructured,
+          isApproved: false,
+        })),
       });
 
       setServices(newServices);
       setShowSelection(false);
-    } catch {
-      setPushError("Network error during generation. Please try again.");
+    } catch (err) {
+      setPushError(
+        err instanceof Error
+          ? err.message
+          : "Network error during generation. Please try again."
+      );
     } finally {
       setGenerating(false);
     }
@@ -253,27 +242,21 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
     setPushError(null);
     try {
       // Step 1: Save all services to DB (persist edits + approval states)
-      await fetch("/api/onboarding/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId,
-          services: services.map((s) => ({
-            serviceName: s.serviceName,
-            description: s.description,
-            isStructured: s.isStructured,
-            isApproved: s.isApproved,
-          })),
-        }),
+      await sendJson("/api/onboarding/services", {
+        profileId,
+        services: services.map((s) => ({
+          serviceName: s.serviceName,
+          description: s.description,
+          isStructured: s.isStructured,
+          isApproved: s.isApproved,
+        })),
       });
 
       // Step 2: Push to Google
-      const res = await fetch("/api/onboarding/services/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
-      });
-      const data = await res.json();
+      const data = await sendJson<{ success?: boolean; error?: string }>(
+        "/api/onboarding/services/push",
+        { profileId }
+      );
 
       if (data.success) {
         setPushSuccess(true);
@@ -290,8 +273,10 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           data.error || "Failed to push services to Google"
         );
       }
-    } catch {
-      setPushError("Network error. Please try again.");
+    } catch (err) {
+      setPushError(
+        err instanceof Error ? err.message : "Network error. Please try again."
+      );
     } finally {
       setPushing(false);
     }
@@ -300,10 +285,8 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const handleSkip = async () => {
     // Save current services to DB before skipping
     if (services.length > 0) {
-      await fetch("/api/onboarding/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      try {
+        await sendJson("/api/onboarding/services", {
           profileId,
           services: services.map((s) => ({
             serviceName: s.serviceName,
@@ -311,8 +294,10 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             isStructured: s.isStructured,
             isApproved: s.isApproved,
           })),
-        }),
-      });
+        });
+      } catch (err) {
+        console.error("Failed to save services before skipping:", err);
+      }
     }
     await onComplete();
   };

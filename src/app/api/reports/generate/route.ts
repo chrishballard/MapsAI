@@ -1,26 +1,29 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse, NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateReport } from "@/lib/pdf/report-generator";
+import { getMonthStart } from "@/lib/dates";
+import { z } from "zod";
+import { idSchema, monthStringSchema, parseBody } from "@/lib/api-validation";
+
+const generateReportSchema = z.object({
+  profileId: idSchema.optional(),
+  month: monthStringSchema.optional(),
+});
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
+  const parsed = await parseBody(request, generateReportSchema);
+  if (parsed.error) return parsed.error;
+  const { profileId, month: monthStr } = parsed.data;
 
   try {
-    const body = await request.json();
-    const { profileId, month: monthStr } = body as {
-      profileId?: string;
-      month?: string;
-    };
-
     // Parse month or default to current month
     const month = monthStr
       ? new Date(monthStr + "-01T00:00:00Z")
-      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      : getMonthStart();
 
     let profiles: Array<{ id: string; name: string }>;
 

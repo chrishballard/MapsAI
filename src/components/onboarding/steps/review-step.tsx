@@ -9,6 +9,7 @@ import {
   ChevronRight,
   AlertCircle,
 } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface StepSummary {
   name: string;
@@ -37,14 +38,14 @@ export function ReviewStep({
   useEffect(() => {
     async function fetchSummary() {
       try {
-        const res = await fetch(
-          `/api/onboarding/summary?profileId=${profileId}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setSteps(data.steps ?? []);
-          setIsComplete(data.isComplete ?? false);
-        }
+        const data = await fetchJson<{
+          steps?: StepSummary[];
+          isComplete?: boolean;
+        }>(`/api/onboarding/summary?profileId=${profileId}`);
+        setSteps(data.steps ?? []);
+        setIsComplete(data.isComplete ?? false);
+      } catch (err) {
+        console.error("Failed to load onboarding summary:", err);
       } finally {
         setLoading(false);
       }
@@ -56,12 +57,10 @@ export function ReviewStep({
     setCompleting(true);
     setCompleteError(null);
     try {
-      const res = await fetch("/api/onboarding/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
-      });
-      const data = await res.json();
+      const data = await sendJson<{ success?: boolean; error?: string }>(
+        "/api/onboarding/complete",
+        { profileId }
+      );
       if (data.success) {
         await onComplete();
       } else {
@@ -69,8 +68,10 @@ export function ReviewStep({
           data.error || "Failed to complete onboarding"
         );
       }
-    } catch {
-      setCompleteError("Network error. Please try again.");
+    } catch (err) {
+      setCompleteError(
+        err instanceof Error ? err.message : "Network error. Please try again."
+      );
     } finally {
       setCompleting(false);
     }

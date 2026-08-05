@@ -1,17 +1,14 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { publishQueue } from "@/lib/queue/publish-queue";
+import { publishQueue, schedulePostPublish } from "@/lib/queue/publish-queue";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { id: postId } = await params;
 
@@ -38,14 +35,27 @@ export async function POST(
   }
 
   try {
+    const now = new Date();
+
     // Update status to SCHEDULED so the worker picks it up
     await prisma.post.update({
       where: { id: postId },
-      data: { status: "SCHEDULED", scheduledAt: new Date() },
+      data: { status: "SCHEDULED", scheduledAt: now },
     });
 
-    // Queue for immediate publish (delay: 0)
-    await publishQueue.add(`publish-now-${postId}`, { postId }, { delay: 0 });
+    // A SCHEDULED post may already have a delayed job under the stable
+    // publish-<postId> jobId; remove it so the immediate enqueue below
+    // isn't deduped away and the post publishes now, not at the old time.
+    try {
+      await publishQueue.remove(`publish-${postId}`);
+    } catch {
+      // Job is locked (a worker is publishing it right now) — deduping the
+      // enqueue below is exactly what we want in that case.
+    }
+
+    // Enqueue via the same stable jobId the sweep uses, so the sweep can
+    // never double-enqueue this post while our job is pending.
+    await schedulePostPublish(postId, now);
 
     return NextResponse.json({ message: "Post queued for immediate publish" });
   } catch (err) {

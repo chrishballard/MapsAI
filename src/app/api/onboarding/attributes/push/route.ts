@@ -1,51 +1,38 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { pushAttributesToGBP } from "@/lib/google-business-info";
+import { z } from "zod";
+import { idSchema, parseBody } from "@/lib/api-validation";
+
+const pushAttributesSchema = z.object({
+  profileId: idSchema,
+  attributes: z
+    .array(
+      z.object({
+        attributeId: z.string().min(1).max(200),
+        valueType: z.string().min(1).max(50),
+        values: z.array(z.unknown()).optional(),
+        repeatedEnumValue: z
+          .object({
+            setValues: z.array(z.string()).optional(),
+            unsetValues: z.array(z.string()).optional(),
+          })
+          .optional(),
+        uriValues: z.array(z.object({ uri: z.string().max(2048) })).optional(),
+      })
+    )
+    .min(1)
+    .max(200),
+});
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  let body: {
-    profileId: string;
-    attributes: Array<{
-      attributeId: string;
-      valueType: string;
-      values?: unknown[];
-      repeatedEnumValue?: {
-        setValues?: string[];
-        unsetValues?: string[];
-      };
-      uriValues?: Array<{ uri: string }>;
-    }>;
-  };
-
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-
-  if (!body.profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
-
-  if (!Array.isArray(body.attributes) || body.attributes.length === 0) {
-    return NextResponse.json(
-      { error: "attributes must be a non-empty array" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, pushAttributesSchema);
+  if (parsed.error) return parsed.error;
+  const body = parsed.data;
 
   const profile = await prisma.profile.findUnique({
     where: { id: body.profileId },
@@ -65,8 +52,16 @@ export async function POST(request: Request) {
     attributes: body.attributes,
   });
 
-  return NextResponse.json({
-    success: result.success,
-    error: result.error,
-  });
+  if (!result.success) {
+    console.error("Attribute push to GBP failed:", result.error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to push attributes to Google Business Profile",
+      },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({ success: true });
 }

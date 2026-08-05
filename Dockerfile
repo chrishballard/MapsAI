@@ -4,7 +4,7 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev python3 make g++ pkgconf
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 FROM base AS builder
 WORKDIR /app
@@ -12,6 +12,14 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
 RUN npm run build
+
+# Production-only node_modules for the runtime image (canvas needs the
+# native toolchain to rebuild, hence the same apk packages as deps).
+FROM base AS prod-deps
+RUN apk add --no-cache libc6-compat cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev python3 make g++ pkgconf
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 FROM base AS runner
 WORKDIR /app
@@ -32,7 +40,7 @@ COPY --from=builder /app/workers ./workers
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
 RUN chmod +x scripts/start.sh

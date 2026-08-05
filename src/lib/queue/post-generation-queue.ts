@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./connection";
+import { redisConnection, defaultJobRetention } from "./connection";
 
 export const postGenerationQueue = new Queue("post-generation", {
   connection: redisConnection,
@@ -9,6 +9,7 @@ export const postGenerationQueue = new Queue("post-generation", {
       type: "exponential",
       delay: 60_000, // 60 seconds
     },
+    ...defaultJobRetention,
   },
 });
 

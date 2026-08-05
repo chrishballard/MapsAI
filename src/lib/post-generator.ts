@@ -1,5 +1,4 @@
-import { anthropic } from "./claude";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { generate } from "./claude";
 import { BatchPostsSchema, type BatchPosts } from "./prompts/types";
 import { getDefaultPrompt } from "./prompts/defaults";
 
@@ -37,20 +36,12 @@ export async function generateMonthlyPosts(
     .filter(Boolean)
     .join("\n");
 
-  const message = await anthropic.messages.parse({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 2048,
+  const parsed = await generate({
     system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-    output_config: {
-      format: zodOutputFormat(BatchPostsSchema),
-    },
+    prompt: userMessage,
+    schema: BatchPostsSchema,
+    maxTokens: 2048,
   });
-
-  const parsed = message.parsed_output;
-  if (!parsed) {
-    throw new Error("Failed to parse structured output from Claude");
-  }
 
   // Validate GBP hard limit of 1500 chars per post
   for (const post of parsed.posts) {

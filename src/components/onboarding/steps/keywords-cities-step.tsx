@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Sparkles, Plus, X, Loader2, MapPin } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface KeywordsCitiesStepProps {
   profileId: string;
@@ -29,6 +30,7 @@ export function KeywordsCitiesStep({
   const [generating, setGenerating] = useState(false);
   const [generatingCities, setGeneratingCities] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [newKeyword, setNewKeyword] = useState("");
   const [newCity, setNewCity] = useState("");
   const [loading, setLoading] = useState(true);
@@ -36,22 +38,22 @@ export function KeywordsCitiesStep({
   useEffect(() => {
     async function fetchData() {
       try {
-        const [kwRes, cityRes] = await Promise.all([
-          fetch(`/api/onboarding/keywords?profileId=${profileId}`),
-          fetch(`/api/onboarding/cities?profileId=${profileId}`),
+        const [kwData, cityData] = await Promise.all([
+          fetchJson<{ keywords?: { keyword: string }[] }>(
+            `/api/onboarding/keywords?profileId=${profileId}`
+          ),
+          fetchJson<{ cities?: { city: string }[] }>(
+            `/api/onboarding/cities?profileId=${profileId}`
+          ),
         ]);
-        if (kwRes.ok) {
-          const kwData = await kwRes.json();
-          setKeywords(
-            (kwData.keywords ?? []).map((k: { keyword: string }) => k.keyword)
-          );
-        }
-        if (cityRes.ok) {
-          const cityData = await cityRes.json();
-          setCities(
-            (cityData.cities ?? []).map((c: { city: string }) => c.city)
-          );
-        }
+        setKeywords(
+          (kwData.keywords ?? []).map((k: { keyword: string }) => k.keyword)
+        );
+        setCities(
+          (cityData.cities ?? []).map((c: { city: string }) => c.city)
+        );
+      } catch (err) {
+        console.error("Failed to load keywords/cities:", err);
       } finally {
         setLoading(false);
       }
@@ -62,15 +64,13 @@ export function KeywordsCitiesStep({
   const generateSuggestions = async () => {
     setGenerating(true);
     try {
-      const res = await fetch("/api/onboarding/keywords/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSuggestions(data.keywords ?? []);
-      }
+      const data = await sendJson<{ keywords?: Suggestion[] }>(
+        "/api/onboarding/keywords/generate",
+        { profileId }
+      );
+      setSuggestions(data.keywords ?? []);
+    } catch (err) {
+      console.error("Failed to generate keyword suggestions:", err);
     } finally {
       setGenerating(false);
     }
@@ -79,15 +79,13 @@ export function KeywordsCitiesStep({
   const generateCitySuggestions = async () => {
     setGeneratingCities(true);
     try {
-      const res = await fetch("/api/onboarding/cities/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCitySuggestions(data.cities ?? []);
-      }
+      const data = await sendJson<{ cities?: CitySuggestion[] }>(
+        "/api/onboarding/cities/generate",
+        { profileId }
+      );
+      setCitySuggestions(data.cities ?? []);
+    } catch (err) {
+      console.error("Failed to generate city suggestions:", err);
     } finally {
       setGeneratingCities(false);
     }
@@ -117,20 +115,22 @@ export function KeywordsCitiesStep({
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
+      // Keywords feed descriptions, services, and post generation downstream —
+      // never advance the wizard unless both saves actually succeeded.
       await Promise.all([
-        fetch("/api/onboarding/keywords", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profileId, keywords }),
-        }),
-        fetch("/api/onboarding/cities", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profileId, cities }),
-        }),
+        sendJson("/api/onboarding/keywords", { profileId, keywords }),
+        sendJson("/api/onboarding/cities", { profileId, cities }),
       ]);
+
       await onComplete();
+    } catch (err) {
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : "Network error while saving. Please try again."
+      );
     } finally {
       setSaving(false);
     }
@@ -366,21 +366,28 @@ export function KeywordsCitiesStep({
       </div>
 
       {/* Save & Continue */}
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
-      >
-        {saving ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Saving...
-          </span>
-        ) : (
-          "Save & Continue"
+      <div>
+        {saveError && (
+          <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-3">
+            <p className="text-sm font-medium text-red-800">{saveError}</p>
+          </div>
         )}
-      </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
+        >
+          {saving ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving...
+            </span>
+          ) : (
+            "Save & Continue"
+          )}
+        </button>
+      </div>
     </div>
   );
 }

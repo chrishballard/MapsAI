@@ -1,38 +1,24 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { pushDescriptionToGBP } from "@/lib/google-business-info";
+import { z } from "zod";
+import {
+  descriptionContentSchema,
+  idSchema,
+  parseBody,
+} from "@/lib/api-validation";
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId, content } = body;
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
-
-  if (!content || typeof content !== "string" || content.trim().length === 0) {
-    return NextResponse.json(
-      { error: "content is required and must be non-empty" },
-      { status: 400 }
-    );
-  }
-
-  if (content.length > 750) {
-    return NextResponse.json(
-      { error: "content must be 750 characters or less" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(
+    request,
+    z.object({ profileId: idSchema, content: descriptionContentSchema })
+  );
+  if (parsed.error) return parsed.error;
+  const { profileId, content } = parsed.data;
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -97,9 +83,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Push failed but description is saved locally
-  return NextResponse.json({
-    success: false,
-    error: pushResult.error,
-    description: savedRecord,
-  });
+  console.error("Description push to GBP failed:", pushResult.error);
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Failed to push description to Google Business Profile",
+      description: savedRecord,
+    },
+    { status: 502 }
+  );
 }

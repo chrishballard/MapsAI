@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { generateAndSchedulePosts } from "../src/lib/post-generation-pipeline";
 import { prisma } from "../src/lib/prisma";
+import { formatDateISO } from "../src/lib/dates";
 
 /**
  * Continuous post generation: runs daily and generates a fresh month of
@@ -65,7 +66,7 @@ export const worker = new Worker(
         const takenDates = new Set(
           futurePosts
             .filter((p) => p.scheduledAt)
-            .map((p) => p.scheduledAt!.toISOString().slice(0, 10))
+            .map((p) => formatDateISO(p.scheduledAt!))
         );
 
         await generateAndSchedulePosts(profile, {
@@ -99,6 +100,10 @@ worker.on("completed", (job) => {
 
 worker.on("failed", (job, err) => {
   console.error(`[post-generation] Job ${job?.id} failed: ${err.message}`);
+});
+
+worker.on("error", (err) => {
+  console.error(`[post-generation-worker] Worker error: ${err.message}`);
 });
 
 console.log("Post generation worker started, waiting for jobs...");

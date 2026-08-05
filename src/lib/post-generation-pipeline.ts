@@ -84,7 +84,10 @@ export async function generateAndSchedulePosts(
     options.takenDates
   );
 
-  const createdPosts = await Promise.all(
+  // Create the whole batch atomically: a mid-batch failure must not leave
+  // partial posts behind — the future-scheduled-count guard in the daily
+  // generation worker would see them and never top the batch up.
+  const createdPosts = await prisma.$transaction(
     generated.posts.map((post, i) =>
       prisma.post.create({
         data: {

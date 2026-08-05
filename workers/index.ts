@@ -28,6 +28,9 @@ console.log("[workers] Post sweep worker started");
 import { worker as postGenerationWorker } from "./post-generation-worker";
 console.log("[workers] Post generation worker started");
 
+import { worker as onboardingSyncWorker } from "./onboarding-sync-worker";
+console.log("[workers] Onboarding sync worker started");
+
 const workers: Worker[] = [
   publishWorker,
   reviewSyncWorker,
@@ -35,6 +38,7 @@ const workers: Worker[] = [
   metricsSyncWorker,
   postSweepWorker,
   postGenerationWorker,
+  onboardingSyncWorker,
 ];
 
 // Initialize recurring schedulers on startup (idempotent)

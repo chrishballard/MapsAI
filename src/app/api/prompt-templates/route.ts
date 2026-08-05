@@ -1,13 +1,12 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { idSchema, parseBody } from "@/lib/api-validation";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const templates = await prisma.promptTemplate.findMany({
     include: { profile: { select: { name: true } } },
@@ -18,20 +17,21 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { name, prompt, profileId, category, isDefault } = body;
-
-  if (!name || !prompt) {
-    return NextResponse.json(
-      { error: "Name and prompt are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(
+    request,
+    z.object({
+      name: z.string().min(1).max(200),
+      prompt: z.string().min(1).max(20000),
+      profileId: idSchema.nullish(),
+      category: z.string().max(200).nullish(),
+      isDefault: z.boolean().optional(),
+    })
+  );
+  if (parsed.error) return parsed.error;
+  const { name, prompt, profileId, category, isDefault } = parsed.data;
 
   const template = await prisma.promptTemplate.create({
     data: {

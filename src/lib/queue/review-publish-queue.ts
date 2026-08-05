@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./connection";
+import { redisConnection, defaultJobRetention } from "./connection";
 
 export interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -15,19 +15,25 @@ export const reviewPublishQueue = new Queue<ReviewPublishJobData>(
         type: "exponential",
         delay: 60_000, // 60 seconds
       },
+      ...defaultJobRetention,
     },
   }
 );
 
 /**
- * Schedule an approved review response for immediate publishing.
+ * Schedule an approved review response for publishing.
+ *
+ * Pass `delayMs` when enqueueing several responses for the same profile
+ * (e.g. bulk approve) so publishes are staggered under GBP's
+ * 10 edits/min/profile limit rather than landing all at once.
  */
 export async function scheduleReviewPublish(
-  reviewResponseId: string
+  reviewResponseId: string,
+  options: { delayMs?: number } = {}
 ): Promise<void> {
   await reviewPublishQueue.add(
     `publish-review-${reviewResponseId}`,
     { reviewResponseId },
-    { delay: 0 }
+    { delay: options.delayMs ?? 0 }
   );
 }

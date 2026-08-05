@@ -6,11 +6,18 @@ import { SettingsTabs } from "./settings-tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { MotionDiv } from "@/components/motion-wrapper";
+import { formatMediumDate } from "@/lib/dates";
 
 export default async function SettingsPage() {
   const [googleAccounts, promptTemplates] = await Promise.all([
+    // Explicit select — never load accessToken/refreshToken into a page render.
     prisma.googleAccount.findMany({
-      include: { _count: { select: { profiles: true } } },
+      select: {
+        id: true,
+        googleEmail: true,
+        createdAt: true,
+        _count: { select: { profiles: true } },
+      },
       orderBy: { createdAt: "desc" },
     }),
     prisma.promptTemplate.findMany({
@@ -56,11 +63,7 @@ export default async function SettingsPage() {
                   {account._count.profiles} profile
                   {account._count.profiles !== 1 ? "s" : ""} &middot;
                   Connected{" "}
-                  {account.createdAt.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                  {formatMediumDate(account.createdAt)}
                 </p>
               </div>
               <DisconnectButton

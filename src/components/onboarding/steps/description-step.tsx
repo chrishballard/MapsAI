@@ -9,6 +9,7 @@ import {
   Info,
   RotateCcw,
 } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface SavedDescription {
   id: string;
@@ -39,31 +40,36 @@ export function DescriptionStep({
   const [pushing, setPushing] = useState(false);
   const [pushSuccess, setPushSuccess] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  // Which operation the error came from, so Retry re-runs that operation —
+  // retrying a failed generate must not push, and retrying a failed push
+  // must not re-generate (it would discard the user's edits).
+  const [failedOp, setFailedOp] = useState<"generate" | "push" | null>(null);
   const hasGenerated = useRef(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [descRes, kwRes] = await Promise.all([
-          fetch(`/api/onboarding/description?profileId=${profileId}`),
-          fetch(`/api/onboarding/keywords?profileId=${profileId}`),
+        const [descData, kwData] = await Promise.all([
+          fetchJson<{
+            currentGBPDescription?: string | null;
+            description?: SavedDescription | null;
+          }>(`/api/onboarding/description?profileId=${profileId}`),
+          fetchJson<{ keywords?: { keyword: string }[] }>(
+            `/api/onboarding/keywords?profileId=${profileId}`
+          ),
         ]);
 
-        if (descRes.ok) {
-          const descData = await descRes.json();
-          setCurrentGBPDescription(descData.currentGBPDescription ?? null);
-          if (descData.description) {
-            setSavedDescription(descData.description);
-            setAiDescription(descData.description.content);
-          }
+        setCurrentGBPDescription(descData.currentGBPDescription ?? null);
+        if (descData.description) {
+          setSavedDescription(descData.description);
+          setAiDescription(descData.description.content);
         }
 
-        if (kwRes.ok) {
-          const kwData = await kwRes.json();
-          setKeywords(
-            (kwData.keywords ?? []).map((k: { keyword: string }) => k.keyword)
-          );
-        }
+        setKeywords(
+          (kwData.keywords ?? []).map((k: { keyword: string }) => k.keyword)
+        );
+      } catch (err) {
+        console.error("Failed to load description data:", err);
       } finally {
         setLoading(false);
       }
@@ -82,21 +88,20 @@ export function DescriptionStep({
   const generateDescription = async () => {
     setGenerating(true);
     setPushError(null);
+    setFailedOp(null);
     try {
-      const res = await fetch("/api/onboarding/description/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAiDescription(data.description ?? "");
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setPushError(data.error || "Failed to generate description");
-      }
-    } catch {
-      setPushError("Network error during generation. Please try again.");
+      const data = await sendJson<{ description?: string }>(
+        "/api/onboarding/description/generate",
+        { profileId }
+      );
+      setAiDescription(data.description ?? "");
+    } catch (err) {
+      setPushError(
+        err instanceof Error
+          ? err.message
+          : "Network error during generation. Please try again."
+      );
+      setFailedOp("generate");
     } finally {
       setGenerating(false);
     }
@@ -105,13 +110,16 @@ export function DescriptionStep({
   const handlePush = async () => {
     setPushing(true);
     setPushError(null);
+    setFailedOp(null);
     try {
-      const res = await fetch("/api/onboarding/description/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, content: aiDescription }),
+      const data = await sendJson<{
+        success?: boolean;
+        error?: string;
+        id?: string;
+      }>("/api/onboarding/description/push", {
+        profileId,
+        content: aiDescription,
       });
-      const data = await res.json();
       if (data.success) {
         setPushSuccess(true);
         setSavedDescription({
@@ -124,9 +132,13 @@ export function DescriptionStep({
         setTimeout(() => onComplete(), 2500);
       } else {
         setPushError(data.error ?? "Failed to push description to Google");
+        setFailedOp("push");
       }
-    } catch {
-      setPushError("Network error. Please try again.");
+    } catch (err) {
+      setPushError(
+        err instanceof Error ? err.message : "Network error. Please try again."
+      );
+      setFailedOp("push");
     } finally {
       setPushing(false);
     }
@@ -134,11 +146,14 @@ export function DescriptionStep({
 
   const handleSkip = async () => {
     if (aiDescription.trim()) {
-      await fetch("/api/onboarding/description", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, content: aiDescription }),
-      });
+      try {
+        await sendJson("/api/onboarding/description", {
+          profileId,
+          content: aiDescription,
+        });
+      } catch (err) {
+        console.error("Failed to save description before skipping:", err);
+      }
     }
     await onComplete();
   };
@@ -185,8 +200,11 @@ export function DescriptionStep({
           </div>
           <button
             type="button"
-            onClick={handlePush}
-            className="bg-red-600 text-white hover:bg-red-700 rounded-md px-3 py-1 text-xs font-medium shrink-0"
+            onClick={
+              failedOp === "generate" ? generateDescription : handlePush
+            }
+            disabled={generating || pushing}
+            className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 rounded-md px-3 py-1 text-xs font-medium shrink-0"
           >
             Retry
           </button>

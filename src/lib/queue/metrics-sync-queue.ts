@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./connection";
+import { redisConnection, defaultJobRetention } from "./connection";
 
 export const metricsSyncQueue = new Queue("metrics-sync", {
   connection: redisConnection,
@@ -9,6 +9,7 @@ export const metricsSyncQueue = new Queue("metrics-sync", {
       type: "exponential",
       delay: 60_000, // 60 seconds
     },
+    ...defaultJobRetention,
   },
 });
 

@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./connection";
+import { redisConnection, defaultJobRetention } from "./connection";
 
 export const reviewSyncQueue = new Queue("review-sync", {
   connection: redisConnection,
@@ -9,6 +9,7 @@ export const reviewSyncQueue = new Queue("review-sync", {
       type: "exponential",
       delay: 30_000, // 30 seconds
     },
+    ...defaultJobRetention,
   },
 });
 

@@ -1,25 +1,18 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calculateScheduleDates } from "@/lib/scheduling";
 import { schedulePostPublish } from "@/lib/queue/publish-queue";
+import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
+import { formatDateISO } from "@/lib/dates";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId } = body as { profileId: string };
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, profileIdBodySchema);
+  if (parsed.error) return parsed.error;
+  const { profileId } = parsed.data;
 
   const drafts = await prisma.post.findMany({
     where: { profileId, status: "DRAFT" },
@@ -42,7 +35,7 @@ export async function POST(request: Request) {
   const takenDates = new Set(
     existingScheduled
       .filter((p) => p.scheduledAt)
-      .map((p) => p.scheduledAt!.toISOString().slice(0, 10))
+      .map((p) => formatDateISO(p.scheduledAt!))
   );
 
   // Calculate schedule dates for all drafts, excluding already-taken dates

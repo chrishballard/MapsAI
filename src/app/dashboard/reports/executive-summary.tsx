@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { anthropic } from "@/lib/claude";
+import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 
 // Module-level in-memory cache — shared across requests within one server process
 const narrativeCache = new Map<string, { text: string; cachedAt: number }>();
@@ -47,7 +47,7 @@ export async function ExecutiveSummary({
   } else {
     try {
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
+        model: CLAUDE_MODEL,
         max_tokens: 256,
         messages: [
           {

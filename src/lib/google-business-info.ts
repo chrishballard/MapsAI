@@ -4,20 +4,16 @@ export async function fetchCurrentDescription(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<string | null> {
-  try {
-    const oauth2Client = await createGoogleClient(params.googleAccountId);
+  const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-    const response = await oauth2Client.request<{
-      profile?: { description?: string };
-    }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=profile`,
-      method: "GET",
-    });
+  const response = await oauth2Client.request<{
+    profile?: { description?: string };
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=profile`,
+    method: "GET",
+  });
 
-    return response.data.profile?.description ?? null;
-  } catch {
-    return null;
-  }
+  return response.data.profile?.description ?? null;
 }
 
 export async function pushDescriptionToGBP(params: {
@@ -64,139 +60,127 @@ export async function fetchCategoryId(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<string | null> {
-  try {
-    const oauth2Client = await createGoogleClient(params.googleAccountId);
+  const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-    const response = await oauth2Client.request<{
-      categories?: {
-        primaryCategory?: {
-          name?: string;
-        };
+  const response = await oauth2Client.request<{
+    categories?: {
+      primaryCategory?: {
+        name?: string;
       };
-    }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
-      method: "GET",
-    });
+    };
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
+    method: "GET",
+  });
 
-    return response.data.categories?.primaryCategory?.name ?? null;
-  } catch {
-    return null;
-  }
+  return response.data.categories?.primaryCategory?.name ?? null;
 }
 
 export async function fetchStructuredServices(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<StructuredServiceInfo[]> {
-  try {
-    const oauth2Client = await createGoogleClient(params.googleAccountId);
+  const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-    // First: get the location's primary category
-    const locationResponse = await oauth2Client.request<{
-      categories?: {
-        primaryCategory?: {
-          name?: string;
-          displayName?: string;
+  // First: get the location's primary category
+  const locationResponse = await oauth2Client.request<{
+    categories?: {
+      primaryCategory?: {
+        name?: string;
+        displayName?: string;
+        serviceTypes?: Array<{
+          serviceTypeId: string;
+          displayName: string;
+        }>;
+      };
+    };
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
+    method: "GET",
+  });
+
+  const primaryCategory = locationResponse.data.categories?.primaryCategory;
+
+  // If category has serviceTypes directly, use those
+  if (primaryCategory?.serviceTypes && primaryCategory.serviceTypes.length > 0) {
+    return primaryCategory.serviceTypes.map((st) => ({
+      serviceTypeId: st.serviceTypeId,
+      displayName: st.displayName,
+    }));
+  }
+
+  // Fallback: try to get service types from categories batchGet
+  if (primaryCategory?.name) {
+    try {
+      const catResponse = await oauth2Client.request<{
+        categories?: Array<{
+          name: string;
+          displayName: string;
           serviceTypes?: Array<{
             serviceTypeId: string;
             displayName: string;
           }>;
-        };
-      };
-    }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=categories`,
-      method: "GET",
-    });
-
-    const primaryCategory = locationResponse.data.categories?.primaryCategory;
-
-    // If category has serviceTypes directly, use those
-    if (primaryCategory?.serviceTypes && primaryCategory.serviceTypes.length > 0) {
-      return primaryCategory.serviceTypes.map((st) => ({
-        serviceTypeId: st.serviceTypeId,
-        displayName: st.displayName,
-      }));
-    }
-
-    // Fallback: try to get service types from categories batchGet
-    if (primaryCategory?.name) {
-      try {
-        const catResponse = await oauth2Client.request<{
-          categories?: Array<{
-            name: string;
-            displayName: string;
-            serviceTypes?: Array<{
-              serviceTypeId: string;
-              displayName: string;
-            }>;
-          }>;
-        }>({
-          url: `https://mybusinessbusinessinformation.googleapis.com/v1/categories:batchGet?names=${encodeURIComponent(primaryCategory.name)}&languageCode=en`,
-          method: "GET",
-        });
-
-        const category = catResponse.data.categories?.[0];
-        if (category?.serviceTypes && category.serviceTypes.length > 0) {
-          return category.serviceTypes.map((st) => ({
-            serviceTypeId: st.serviceTypeId,
-            displayName: st.displayName,
-          }));
-        }
-      } catch {
-        // batchGet failed, continue to fallback
-      }
-    }
-
-    // Final fallback: read currently set services
-    const response = await oauth2Client.request<{
-      serviceItems?: Array<{
-        structuredServiceItem?: {
-          serviceTypeId: string;
-          description?: string;
-        };
-        freeFormServiceItem?: unknown;
-      }>;
-    }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=serviceItems`,
-      method: "GET",
-    });
-
-    const serviceItems = response.data.serviceItems || [];
-
-    return serviceItems
-      .filter((item) => item.structuredServiceItem)
-      .map((item) => {
-        const rawId = item.structuredServiceItem!.serviceTypeId;
-        const lastSegment = rawId.includes("/") ? rawId.split("/").pop()! : rawId;
-        const displayName = lastSegment.replace(/_/g, " ");
-        return {
-          serviceTypeId: rawId,
-          displayName,
-        };
+        }>;
+      }>({
+        url: `https://mybusinessbusinessinformation.googleapis.com/v1/categories:batchGet?names=${encodeURIComponent(primaryCategory.name)}&languageCode=en`,
+        method: "GET",
       });
-  } catch {
-    return [];
+
+      const category = catResponse.data.categories?.[0];
+      if (category?.serviceTypes && category.serviceTypes.length > 0) {
+        return category.serviceTypes.map((st) => ({
+          serviceTypeId: st.serviceTypeId,
+          displayName: st.displayName,
+        }));
+      }
+    } catch {
+      // batchGet failed, continue to fallback
+    }
   }
+
+  // Final fallback: read currently set services
+  const response = await oauth2Client.request<{
+    serviceItems?: Array<{
+      structuredServiceItem?: {
+        serviceTypeId: string;
+        description?: string;
+      };
+      freeFormServiceItem?: unknown;
+    }>;
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=serviceItems`,
+    method: "GET",
+  });
+
+  const serviceItems = response.data.serviceItems || [];
+
+  return serviceItems
+    .filter((item) => item.structuredServiceItem)
+    .map((item) => {
+      const rawId = item.structuredServiceItem!.serviceTypeId;
+      const lastSegment = rawId.includes("/") ? rawId.split("/").pop()! : rawId;
+      const displayName = lastSegment.replace(/_/g, " ");
+      return {
+        serviceTypeId: rawId,
+        displayName,
+      };
+    });
 }
 
 export async function fetchCurrentServices(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<{ serviceItems: unknown[] }> {
-  try {
-    const oauth2Client = await createGoogleClient(params.googleAccountId);
+  const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-    const response = await oauth2Client.request<{
-      serviceItems?: unknown[];
-    }>({
-      url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=serviceItems`,
-      method: "GET",
-    });
+  const response = await oauth2Client.request<{
+    serviceItems?: unknown[];
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=serviceItems`,
+    method: "GET",
+  });
 
-    return { serviceItems: response.data.serviceItems || [] };
-  } catch {
-    return { serviceItems: [] };
-  }
+  return { serviceItems: response.data.serviceItems || [] };
 }
 
 export async function pushServicesToGBP(params: {

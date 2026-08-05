@@ -4,6 +4,8 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { fetchJson } from "@/lib/fetch-json";
+import { formatDateISO } from "@/lib/dates";
 
 interface ReportsShellProps {
   from: string;
@@ -11,7 +13,7 @@ interface ReportsShellProps {
 }
 
 function toYMD(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return formatDateISO(d);
 }
 
 function computePresetDates(days: number): { from: string; to: string } {
@@ -36,17 +38,13 @@ export function ReportsShell({ from, to }: ReportsShellProps) {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetch('/api/metrics/sync?days=365', { method: 'POST' });
-      if (res.ok) {
-        setSyncMessage('Sync started — data will refresh shortly');
-        // Refresh page after a delay to pick up new data
-        setTimeout(() => {
-          router.refresh();
-          setSyncMessage(null);
-        }, 5000);
-      } else {
-        setSyncMessage('Sync failed — please try again');
-      }
+      await fetchJson('/api/metrics/sync?days=365', { method: 'POST' });
+      setSyncMessage('Sync started — data will refresh shortly');
+      // Refresh page after a delay to pick up new data
+      setTimeout(() => {
+        router.refresh();
+        setSyncMessage(null);
+      }, 5000);
     } catch {
       setSyncMessage('Sync failed — please try again');
     } finally {

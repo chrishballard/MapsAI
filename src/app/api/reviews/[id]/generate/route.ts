@@ -1,6 +1,5 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateReviewResponse } from "@/lib/review-responder";
 
@@ -8,10 +7,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { id } = await params;
 
@@ -19,6 +16,7 @@ export async function POST(
     where: { id },
     include: {
       profile: { select: { name: true, category: true } },
+      response: { select: { status: true } },
     },
   });
 
@@ -30,6 +28,21 @@ export async function POST(
     return NextResponse.json(
       { error: "This review already has a reply on Google and cannot be responded to" },
       { status: 400 }
+    );
+  }
+
+  // Never overwrite an APPROVED response — a publish job may already be
+  // queued for it, and it must publish exactly the content that was approved.
+  // PUBLISHED responses are the record of what's live on Google.
+  if (
+    review.response?.status === "APPROVED" ||
+    review.response?.status === "PUBLISHED"
+  ) {
+    return NextResponse.json(
+      {
+        error: `This response is ${review.response.status.toLowerCase()} and cannot be regenerated`,
+      },
+      { status: 409 }
     );
   }
 

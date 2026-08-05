@@ -2,6 +2,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { prisma } from "../prisma";
 import { renderImpressionsChart, renderSparklineChart } from "./chart-renderer";
+import { formatDateISO } from "@/lib/dates";
 import {
   ReportDocument,
   type ReportData,
@@ -14,21 +15,21 @@ import {
   computeSparklineData,
   buildActionsLog,
 } from "@/lib/report-metrics";
+import {
+  getMonthStart,
+  getMonthEnd,
+  formatMonthYear,
+} from "@/lib/dates";
 
 function getMonthRange(month: Date): { start: Date; end: Date } {
-  const start = new Date(month.getFullYear(), month.getMonth(), 1);
-  const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-  return { start, end };
+  return { start: getMonthStart(month), end: getMonthEnd(month) };
 }
 
 function getPreviousMonthRange(month: Date): { start: Date; end: Date } {
-  const prevMonth = new Date(month.getFullYear(), month.getMonth() - 1, 1);
-  return getMonthRange(prevMonth);
+  return getMonthRange(getMonthStart(month, -1));
 }
 
-function formatMonthLabel(date: Date): string {
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
+const formatMonthLabel = formatMonthYear;
 
 interface SummedMetrics {
   totalImpressions: number;
@@ -136,7 +137,7 @@ export async function generateReport(
 
   // 8. Generate chart PNG
   const chartData = currentDailyMetrics.map((m) => ({
-    date: m.date.toISOString().split("T")[0],
+    date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
   }));
@@ -212,7 +213,7 @@ export async function generateDashboardReport(
 
   // 5. Build chart data for impressions chart
   const chartData = currentDailyMetrics.map((m) => ({
-    date: m.date.toISOString().split("T")[0],
+    date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
   }));

@@ -1,7 +1,8 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getAuthUrl } from "@/lib/google";
+import { getAuthUrl, OAUTH_STATE_COOKIE } from "@/lib/google";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -9,6 +10,16 @@ export async function GET() {
     return NextResponse.redirect(new URL("/login", process.env.NEXTAUTH_URL));
   }
 
-  const authUrl = getAuthUrl();
-  return NextResponse.redirect(authUrl);
+  // CSRF protection: bind this authorization request to the browser via a
+  // random state nonce, echoed back by Google and validated in the callback.
+  const state = crypto.randomBytes(32).toString("hex");
+  const response = NextResponse.redirect(getAuthUrl(state));
+  response.cookies.set(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 10,
+  });
+  return response;
 }

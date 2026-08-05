@@ -1,13 +1,16 @@
+import { requireSession, requireProfile } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import {
+  idSchema,
+  parseBody,
+  profileIdBodySchema,
+} from "@/lib/api-validation";
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { searchParams } = new URL(request.url);
   const profileId = searchParams.get("profileId");
@@ -27,31 +30,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const parsed = await parseBody(request, profileIdBodySchema);
+  if (parsed.error) return parsed.error;
+  const { profileId } = parsed.data;
 
-  const body = await request.json();
-  const { profileId } = body;
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: profileId },
-  });
-
-  if (!profile) {
-    return NextResponse.json(
-      { error: "Profile not found" },
-      { status: 404 }
-    );
-  }
+  const profile = await requireProfile(profileId);
+  if (profile instanceof NextResponse) return profile;
 
   const progress = await prisma.onboardingProgress.upsert({
     where: { profileId },
@@ -67,21 +51,20 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ progress }, { status: 201 });
 }
 
+const patchProgressSchema = z.object({
+  profileId: idSchema,
+  currentStep: z.number().int().min(0).max(100).optional(),
+  completedSteps: z.array(z.number().int().min(0).max(100)).max(100).optional(),
+  isComplete: z.boolean().optional(),
+});
+
 export async function PATCH(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId, currentStep, completedSteps, isComplete } = body;
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, patchProgressSchema);
+  if (parsed.error) return parsed.error;
+  const { profileId, currentStep, completedSteps, isComplete } = parsed.data;
 
   const data: Record<string, unknown> = {};
   if (currentStep !== undefined) data.currentStep = currentStep;
@@ -91,10 +74,16 @@ export async function PATCH(request: NextRequest) {
     if (isComplete) data.completedAt = new Date();
   }
 
-  const progress = await prisma.onboardingProgress.update({
-    where: { profileId },
-    data,
-  });
-
-  return NextResponse.json({ progress });
+  try {
+    const progress = await prisma.onboardingProgress.update({
+      where: { profileId },
+      data,
+    });
+    return NextResponse.json({ progress });
+  } catch {
+    return NextResponse.json(
+      { error: "No onboarding progress found for this profile" },
+      { status: 404 }
+    );
+  }
 }

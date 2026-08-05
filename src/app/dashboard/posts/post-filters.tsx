@@ -56,6 +56,7 @@ export function PostFilters({
         <option value="DRAFT">Draft</option>
         <option value="APPROVED">Approved</option>
         <option value="SCHEDULED">Scheduled</option>
+        <option value="PUBLISHING">Publishing</option>
         <option value="PUBLISHED">Published</option>
         <option value="FAILED">Failed</option>
       </select>

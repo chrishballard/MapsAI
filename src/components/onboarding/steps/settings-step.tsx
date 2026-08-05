@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Loader2, Settings } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface SettingsStepProps {
   profileId: string;
@@ -12,6 +13,7 @@ const PRESETS = [4, 8, 12];
 
 export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
   const [postFrequency, setPostFrequency] = useState(4);
+  const [autoApproveReviews, setAutoApproveReviews] = useState(false);
   const [isCustom, setIsCustom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,17 +22,18 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
   useEffect(() => {
     async function fetchSettings() {
       try {
-        const res = await fetch(
-          `/api/onboarding/settings?profileId=${profileId}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const freq = data.postFrequency ?? 4;
-          setPostFrequency(freq);
-          if (!PRESETS.includes(freq)) {
-            setIsCustom(true);
-          }
+        const data = await fetchJson<{
+          postFrequency?: number;
+          autoApproveReviews?: boolean;
+        }>(`/api/onboarding/settings?profileId=${profileId}`);
+        const freq = data.postFrequency ?? 4;
+        setPostFrequency(freq);
+        setAutoApproveReviews(data.autoApproveReviews ?? false);
+        if (!PRESETS.includes(freq)) {
+          setIsCustom(true);
         }
+      } catch (err) {
+        console.error("Failed to load settings:", err);
       } finally {
         setLoading(false);
       }
@@ -58,19 +61,16 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch("/api/onboarding/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, postFrequency }),
-      });
-      if (res.ok) {
-        await onComplete();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setSaveError(data.error || "Failed to save settings");
-      }
-    } catch {
-      setSaveError("Network error. Please try again.");
+      await sendJson(
+        "/api/onboarding/settings",
+        { profileId, postFrequency, autoApproveReviews },
+        "PATCH"
+      );
+      await onComplete();
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err.message : "Network error. Please try again."
+      );
     } finally {
       setSaving(false);
     }
@@ -131,6 +131,28 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
           </p>
         </div>
       )}
+
+      {/* Auto-approve review responses (opt-in) */}
+      <div>
+        <label className="flex items-start gap-3 p-4 rounded-md border border-border hover:bg-muted/50 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoApproveReviews}
+            onChange={(e) => setAutoApproveReviews(e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-brand-50"
+          />
+          <span>
+            <span className="block text-sm font-medium text-foreground">
+              Auto-approve AI review responses
+            </span>
+            <span className="block text-xs text-muted-foreground mt-0.5">
+              Publish AI-generated responses to 3–5 star reviews automatically.
+              When off, every response waits for your approval. 1–2 star
+              reviews always require approval.
+            </span>
+          </span>
+        </label>
+      </div>
 
       {/* Save & Continue */}
       <div>

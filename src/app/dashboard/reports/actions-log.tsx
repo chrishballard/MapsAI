@@ -2,17 +2,14 @@ import { CheckCircle2, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { ActionLogItem } from "@/lib/report-metrics";
+import { formatMediumDate } from "@/lib/dates";
 
 interface ActionsLogProps {
   items: ActionLogItem[];
 }
 
 function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatMediumDate(date);
 }
 
 function getTypeLabel(type: ActionLogItem["type"]): string {

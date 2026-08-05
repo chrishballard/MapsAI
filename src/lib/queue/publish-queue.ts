@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./connection";
+import { redisConnection, defaultJobRetention } from "./connection";
 
 export interface PublishJobData {
   postId: string;
@@ -13,13 +13,7 @@ export const publishQueue = new Queue<PublishJobData>("post-publish", {
       type: "exponential",
       delay: 60_000, // 60 seconds
     },
-    // BullMQ dedupes on jobId, and a completed/failed job's id stays in Redis
-    // until the job record is removed. Age-based cleanup (rather than keeping
-    // jobs forever) means a post that gets re-scheduled weeks later isn't
-    // silently blocked by a stale completed job with the same `publish-<id>`
-    // jobId — while still deduping within the window that matters.
-    removeOnComplete: { age: 86_400 }, // keep completed jobs 1 day
-    removeOnFail: { age: 7 * 86_400 }, // keep failed jobs 7 days for debugging
+    ...defaultJobRetention,
   },
 });
 
@@ -36,10 +30,23 @@ export async function schedulePostPublish(
   publishAt: Date
 ): Promise<void> {
   const delay = Math.max(0, publishAt.getTime() - Date.now());
+  const jobId = `publish-${postId}`;
 
-  await publishQueue.add(
-    `publish-${postId}`,
-    { postId },
-    { delay, jobId: `publish-${postId}` }
-  );
+  // A finished job record with this id (retained for debugging) would dedupe
+  // the add() below and silently block re-publishing — e.g. a FAILED post
+  // that gets reset and re-approved would stay stuck until retention expires.
+  // Clear completed/failed records; pending jobs (delayed/waiting/active,
+  // including retries awaiting backoff) still dedupe as intended.
+  const existing = await publishQueue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === "completed" || state === "failed") {
+      await existing.remove().catch(() => {
+        // Lost a race with retention cleanup or another scheduler — either
+        // way the record is gone or being handled; the add() below decides.
+      });
+    }
+  }
+
+  await publishQueue.add(jobId, { postId }, { delay, jobId });
 }

@@ -1,13 +1,12 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { idSchema, parseBody } from "@/lib/api-validation";
 
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { searchParams } = new URL(request.url);
   const profileId = searchParams.get("profileId");
@@ -28,24 +27,20 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId, cities } = body;
+  const parsed = await parseBody(
+    request,
+    z.object({
+      profileId: idSchema,
+      cities: z.array(z.string().max(120)).max(50),
+    })
+  );
+  if (parsed.error) return parsed.error;
+  const { profileId, cities } = parsed.data;
 
-  if (!profileId || !Array.isArray(cities)) {
-    return NextResponse.json(
-      { error: "profileId and cities array required" },
-      { status: 400 }
-    );
-  }
-
-  const trimmed = cities
-    .map((c: string) => c.trim())
-    .filter(Boolean);
+  const trimmed = cities.map((c) => c.trim()).filter(Boolean);
   if (trimmed.length > 3) {
     return NextResponse.json(
       { error: "Maximum 3 cities allowed" },
@@ -56,7 +51,7 @@ export async function POST(request: Request) {
   const result = await prisma.$transaction(async (tx) => {
     await tx.profileCity.deleteMany({ where: { profileId } });
     await tx.profileCity.createMany({
-      data: trimmed.map((city: string, i: number) => ({
+      data: trimmed.map((city, i) => ({
         profileId,
         city,
         sortOrder: i,

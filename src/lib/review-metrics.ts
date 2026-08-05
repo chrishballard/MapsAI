@@ -2,6 +2,8 @@
 // D-08: Rolling 30-day window for trend calculation
 // D-09/D-10: Recency thresholds: good 0-14 days, warning 15-30 days, critical 31+
 
+import { getMonthStart, formatMonthISO, formatShortMonthYear } from "./dates";
+
 export interface TrendResult {
   current: number;
   prior: number;
@@ -80,8 +82,8 @@ export function computeMonthlyData(
   // Build 12-month bucket map (UTC) — oldest first
   const buckets = new Map<string, { count: number; ratingSum: number }>();
   for (let i = 11; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const d = getMonthStart(now, -i);
+    const key = formatMonthISO(d);
     buckets.set(key, { count: 0, ratingSum: 0 });
   }
 
@@ -99,11 +101,7 @@ export function computeMonthlyData(
 
   return Array.from(buckets.entries()).map(([key, b]) => ({
     sortKey: key,
-    month: new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-US", {
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    }),
+    month: formatShortMonthYear(new Date(`${key}-01T00:00:00Z`)),
     volume: b.count,
     avgRating: b.count > 0 ? Math.round((b.ratingSum / b.count) * 10) / 10 : null,
   }));

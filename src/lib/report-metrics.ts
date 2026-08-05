@@ -1,3 +1,4 @@
+import { formatDateISO } from "./dates";
 // All date math uses UTC to match PostgreSQL datetime storage
 // D-03: Defaults to last 30 days when no params
 // D-04: Prior period = preceding equal-length period
@@ -23,21 +24,31 @@ export interface ActionLogItem {
   type: "post" | "review_reply" | "description";
 }
 
+/** True when s is a YYYY-MM-DD string that parses to a real UTC date. */
+function isValidDateString(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  // Round-trip: V8 rolls over out-of-range days (2026-02-31 → Mar 3)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
 /**
  * Returns resolved { from, to } date strings in YYYY-MM-DD format.
  * Per D-03: defaults to last 30 days when params are undefined.
+ * Params come straight from user-controlled searchParams, so anything
+ * malformed falls back to the default range instead of crashing downstream.
  */
 export function computeDateRange(
   from?: string,
   to?: string
 ): { from: string; to: string } {
-  if (from && to) {
+  if (from && to && isValidDateString(from) && isValidDateString(to)) {
     return { from, to };
   }
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = formatDateISO(now);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const fromStr = thirtyDaysAgo.toISOString().slice(0, 10);
+  const fromStr = formatDateISO(thirtyDaysAgo);
   return { from: fromStr, to: todayStr };
 }
 
@@ -111,7 +122,7 @@ export function computeSparklineData(
 ): SparklinePoint[] {
   return metrics
     .map((m) => ({
-      date: (m.date as Date).toISOString().slice(0, 10),
+      date: formatDateISO(m.date as Date),
       value: m[field] as number,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));

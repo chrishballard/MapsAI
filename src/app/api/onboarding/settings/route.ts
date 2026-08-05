@@ -1,13 +1,12 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { idSchema, parseBody } from "@/lib/api-validation";
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { searchParams } = new URL(request.url);
   const profileId = searchParams.get("profileId");
@@ -21,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: { id: true, postFrequency: true },
+    select: { id: true, postFrequency: true, autoApproveReviews: true },
   });
 
   if (!profile) {
@@ -31,51 +30,46 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ postFrequency: profile.postFrequency });
+  return NextResponse.json({
+    postFrequency: profile.postFrequency,
+    autoApproveReviews: profile.autoApproveReviews,
+  });
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  let body: { profileId: string; postFrequency: number };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-
-  if (!body.profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
-
-  if (
-    typeof body.postFrequency !== "number" ||
-    !Number.isInteger(body.postFrequency) ||
-    body.postFrequency < 1 ||
-    body.postFrequency > 30
-  ) {
-    return NextResponse.json(
-      { error: "postFrequency must be an integer between 1 and 30" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(
+    request,
+    z.object({
+      profileId: idSchema,
+      postFrequency: z
+        .number()
+        .int()
+        .min(1, "postFrequency must be an integer between 1 and 30")
+        .max(30, "postFrequency must be an integer between 1 and 30"),
+      autoApproveReviews: z.boolean().optional(),
+    })
+  );
+  if (parsed.error) return parsed.error;
+  const body = parsed.data;
 
   try {
     const updated = await prisma.profile.update({
       where: { id: body.profileId },
-      data: { postFrequency: body.postFrequency },
+      data: {
+        postFrequency: body.postFrequency,
+        ...(body.autoApproveReviews !== undefined
+          ? { autoApproveReviews: body.autoApproveReviews }
+          : {}),
+      },
     });
 
-    return NextResponse.json({ postFrequency: updated.postFrequency });
+    return NextResponse.json({
+      postFrequency: updated.postFrequency,
+      autoApproveReviews: updated.autoApproveReviews,
+    });
   } catch {
     return NextResponse.json(
       { error: "Profile not found" },

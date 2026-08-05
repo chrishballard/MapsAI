@@ -1,9 +1,25 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { createOAuth2Client } from "@/lib/google";
+import { createOAuth2Client, OAUTH_STATE_COOKIE } from "@/lib/google";
 import { prisma } from "@/lib/prisma";
 import { syncLocationsForAccount } from "@/lib/google-locations";
+
+function statesMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Every exit path clears the one-time state cookie so a nonce can't be replayed.
+function redirectClearingState(path: string) {
+  const response = NextResponse.redirect(
+    new URL(path, process.env.NEXTAUTH_URL)
+  );
+  response.cookies.delete(OAUTH_STATE_COOKIE);
+  return response;
+}
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -11,11 +27,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", process.env.NEXTAUTH_URL));
   }
 
+  // CSRF check: the state echoed by Google must match the nonce we set in
+  // /api/auth/google. Rejecting here stops an attacker from binding their own
+  // Google account (via a forged callback URL) to the victim's session.
+  const state = request.nextUrl.searchParams.get("state");
+  const storedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
+  if (!state || !storedState || !statesMatch(state, storedState)) {
+    console.warn("[oauth] Rejected Google callback: state mismatch or missing");
+    return redirectClearingState("/dashboard/profiles?error=invalid_state");
+  }
+
   const code = request.nextUrl.searchParams.get("code");
   if (!code) {
-    return NextResponse.redirect(
-      new URL("/dashboard/profiles?error=no_code", process.env.NEXTAUTH_URL)
-    );
+    return redirectClearingState("/dashboard/profiles?error=no_code");
   }
 
   try {
@@ -43,19 +67,20 @@ export async function GET(request: NextRequest) {
         accessToken: tokens.access_token!,
         refreshToken: tokens.refresh_token || undefined,
         tokenExpiry: new Date(tokens.expiry_date!),
+        needsReauth: false,
       },
     });
 
     // Sync locations
     await syncLocationsForAccount(googleAccount.id);
 
-    return NextResponse.redirect(
-      new URL("/dashboard/profiles?connected=true", process.env.NEXTAUTH_URL)
-    );
+    return redirectClearingState("/dashboard/profiles?connected=true");
   } catch (error) {
-    console.error("Google OAuth callback error:", error);
-    return NextResponse.redirect(
-      new URL("/dashboard/profiles?error=oauth_failed", process.env.NEXTAUTH_URL)
+    // Log the message only — the full error object can include OAuth client credentials
+    console.error(
+      "Google OAuth callback error:",
+      error instanceof Error ? error.message : "Unknown error"
     );
+    return redirectClearingState("/dashboard/profiles?error=oauth_failed");
   }
 }

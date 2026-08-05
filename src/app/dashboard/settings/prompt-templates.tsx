@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface PromptTemplateData {
   id: string;
@@ -34,16 +35,18 @@ export function PromptTemplates({
     if (!name || !prompt) return;
     setLoading(true);
     try {
-      await fetch("/api/prompt-templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, prompt, category: category || null }),
+      await sendJson("/api/prompt-templates", {
+        name,
+        prompt,
+        category: category || null,
       });
       setName("");
       setPrompt("");
       setCategory("");
       setShowForm(false);
       router.refresh();
+    } catch (err) {
+      console.error("Failed to create prompt template:", err);
     } finally {
       setLoading(false);
     }
@@ -52,13 +55,15 @@ export function PromptTemplates({
   async function handleUpdate(id: string) {
     setLoading(true);
     try {
-      await fetch(`/api/prompt-templates/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName, prompt: editPrompt }),
-      });
+      await sendJson(
+        `/api/prompt-templates/${id}`,
+        { name: editName, prompt: editPrompt },
+        "PATCH"
+      );
       setEditingId(null);
       router.refresh();
+    } catch (err) {
+      console.error("Failed to update prompt template:", err);
     } finally {
       setLoading(false);
     }
@@ -68,8 +73,10 @@ export function PromptTemplates({
     if (!confirm("Delete this template?")) return;
     setLoading(true);
     try {
-      await fetch(`/api/prompt-templates/${id}`, { method: "DELETE" });
+      await fetchJson(`/api/prompt-templates/${id}`, { method: "DELETE" });
       router.refresh();
+    } catch (err) {
+      console.error("Failed to delete prompt template:", err);
     } finally {
       setLoading(false);
     }

@@ -58,4 +58,8 @@ worker.on("failed", (job, err) => {
   console.error(`[post-sweep] Job ${job?.id} failed: ${err.message}`);
 });
 
+worker.on("error", (err) => {
+  console.error(`[post-sweep-worker] Worker error: ${err.message}`);
+});
+
 console.log("Post sweep worker started, waiting for jobs...");

@@ -1,7 +1,7 @@
 import { MessageSquare, Star, ThumbsUp, Reply, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, ReviewResponseStatus } from "@/generated/prisma/client";
 import { ReviewFilters } from "./review-filters";
 import {
   ReviewActions,
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { MotionDiv } from "@/components/motion-wrapper";
 import { cn } from "@/lib/utils";
+import { formatMediumDate } from "@/lib/dates";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -43,11 +44,7 @@ function formatDate(date: Date | null | undefined): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatMediumDate(d);
 }
 
 const STATUS_VARIANT: Record<string, "secondary" | "default" | "success" | "warning" | "error"> = {
@@ -78,14 +75,24 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   const profileId = await getSelectedProfileId();
   const { rating, responseStatus } = params;
 
+  // searchParams are user-controlled — ignore anything that isn't a valid
+  // rating or response status instead of passing junk into the query
+  const parsedRating = rating ? parseInt(rating, 10) : NaN;
+  const validRating =
+    Number.isInteger(parsedRating) && parsedRating >= 1 && parsedRating <= 5
+      ? parsedRating
+      : undefined;
+  const validResponseStatus =
+    responseStatus &&
+    (Object.values(ReviewResponseStatus) as string[]).includes(responseStatus)
+      ? (responseStatus as ReviewResponseStatus)
+      : undefined;
+
   const where: Prisma.ReviewWhereInput = {};
   if (profileId) where.profileId = profileId;
-  if (rating) where.rating = parseInt(rating, 10);
-  if (responseStatus) {
-    where.response = {
-      status:
-        responseStatus as Prisma.EnumReviewResponseStatusFilter["equals"],
-    };
+  if (validRating !== undefined) where.rating = validRating;
+  if (validResponseStatus) {
+    where.response = { status: validResponseStatus };
   }
 
   const reviews = await prisma.review.findMany({

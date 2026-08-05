@@ -6,18 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { MotionDiv } from "@/components/motion-wrapper";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getMonthStart } from "@/lib/dates";
 
 export async function StatsGrid() {
   const selectedProfileId = await getSelectedProfileId();
   const profileFilter = selectedProfileId ? { profileId: selectedProfileId } : {};
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfMonth = getMonthStart();
 
-  const [totalProfiles, connectedProfiles, postsThisMonth, pendingReviews, reportsGenerated] = await Promise.all([
+  const [totalProfiles, postsThisMonth, pendingReviews, reportsGenerated] = await Promise.all([
     selectedProfileId ? 1 : prisma.profile.count({ where: { isOnboarded: true } }),
-    selectedProfileId
-      ? prisma.profile.count({ where: { id: selectedProfileId, isConnected: true } })
-      : prisma.profile.count({ where: { isConnected: true } }),
     prisma.post.count({ where: { ...profileFilter, createdAt: { gte: startOfMonth } } }),
     prisma.reviewResponse.count({
       where: {
@@ -27,9 +24,6 @@ export async function StatsGrid() {
     }),
     prisma.report.count({ where: profileFilter }),
   ]);
-
-  // Suppress unused variable warning
-  void connectedProfiles;
 
   const stats = [
     { label: selectedProfileId ? "Profile" : "Active Profiles", value: selectedProfileId ? "1" : totalProfiles.toString(), icon: Building2 },
@@ -72,8 +66,7 @@ export async function StatsGrid() {
 export async function AIInsightsPanel() {
   const selectedProfileId = await getSelectedProfileId();
   const profileFilter = selectedProfileId ? { profileId: selectedProfileId } : {};
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfMonth = getMonthStart();
 
   const [pendingReviews, postsThisMonth] = await Promise.all([
     prisma.reviewResponse.count({

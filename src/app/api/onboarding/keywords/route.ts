@@ -1,13 +1,12 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { idSchema, parseBody } from "@/lib/api-validation";
 
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { searchParams } = new URL(request.url);
   const profileId = searchParams.get("profileId");
@@ -28,24 +27,20 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId, keywords } = body;
+  const parsed = await parseBody(
+    request,
+    z.object({
+      profileId: idSchema,
+      keywords: z.array(z.string().max(120)).max(50),
+    })
+  );
+  if (parsed.error) return parsed.error;
+  const { profileId, keywords } = parsed.data;
 
-  if (!profileId || !Array.isArray(keywords)) {
-    return NextResponse.json(
-      { error: "profileId and keywords array required" },
-      { status: 400 }
-    );
-  }
-
-  const trimmed = keywords
-    .map((kw: string) => kw.trim())
-    .filter(Boolean);
+  const trimmed = keywords.map((kw) => kw.trim()).filter(Boolean);
   if (trimmed.length > 10) {
     return NextResponse.json(
       { error: "Maximum 10 keywords allowed" },
@@ -56,7 +51,7 @@ export async function POST(request: Request) {
   const result = await prisma.$transaction(async (tx) => {
     await tx.profileKeyword.deleteMany({ where: { profileId } });
     await tx.profileKeyword.createMany({
-      data: trimmed.map((keyword: string, i: number) => ({
+      data: trimmed.map((keyword, i) => ({
         profileId,
         keyword,
         sortOrder: i,

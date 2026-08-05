@@ -1,44 +1,79 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { parseBody } from "@/lib/api-validation";
+import { PostStatus } from "@/generated/prisma/client";
+
+// Status changes allowed through this endpoint. Scheduling happens via
+// /api/posts/approve and publishing via /api/posts/[id]/publish and the
+// publish queue — PATCH may only revert a post back to DRAFT (retry flow).
+const ALLOWED_TRANSITIONS: Record<PostStatus, PostStatus[]> = {
+  DRAFT: [],
+  APPROVED: ["DRAFT"],
+  SCHEDULED: ["DRAFT"],
+  PUBLISHING: [],
+  PUBLISHED: [],
+  FAILED: ["DRAFT"],
+};
+
+const patchPostSchema = z
+  .object({
+    content: z.string().min(1).max(1500).optional(),
+    callToAction: z.string().max(2048).nullable().optional(),
+    mediaUrl: z.string().max(2048).nullable().optional(),
+    type: z.enum(["WHATS_NEW", "EVENT", "OFFER"]).optional(),
+    status: z.enum(PostStatus).optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, "no fields to update");
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { id } = await params;
-  const body = await request.json();
+  const parsed = await parseBody(request, patchPostSchema);
+  if (parsed.error) return parsed.error;
+  const body = parsed.data;
 
   const post = await prisma.post.findUnique({ where: { id } });
   if (!post) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  // Only allow updating certain fields
-  const allowedFields = [
-    "content",
-    "callToAction",
-    "mediaUrl",
-    "type",
-    "status",
-  ] as const;
-  const updateData: Record<string, unknown> = {};
+  if (
+    body.status !== undefined &&
+    body.status !== post.status &&
+    !ALLOWED_TRANSITIONS[post.status].includes(body.status)
+  ) {
+    return NextResponse.json(
+      { error: `Cannot change status from ${post.status} to ${body.status}` },
+      { status: 400 }
+    );
+  }
 
-  for (const field of allowedFields) {
-    if (body[field] !== undefined) {
-      updateData[field] = body[field];
-    }
+  // Content edits are only allowed while the post is still in our hands
+  const editsContent =
+    body.content !== undefined ||
+    body.callToAction !== undefined ||
+    body.mediaUrl !== undefined ||
+    body.type !== undefined;
+  if (
+    editsContent &&
+    (post.status === "PUBLISHING" || post.status === "PUBLISHED")
+  ) {
+    return NextResponse.json(
+      { error: `Cannot edit a ${post.status.toLowerCase()} post` },
+      { status: 400 }
+    );
   }
 
   const updatedPost = await prisma.post.update({
     where: { id },
-    data: updateData,
+    data: body,
   });
 
   return NextResponse.json(updatedPost);
@@ -48,10 +83,8 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
   const { id } = await params;
 

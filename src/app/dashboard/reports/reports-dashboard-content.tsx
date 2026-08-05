@@ -15,6 +15,7 @@ import { ActionsLog } from "./actions-log";
 import { ExecutiveSummary } from "./executive-summary";
 import { cn } from "@/lib/utils";
 import { DashboardDownloadBtn } from "./dashboard-download-btn";
+import { formatDateISO } from "@/lib/dates";
 
 interface ReportsDashboardContentProps {
   profileId: string | null;
@@ -103,7 +104,7 @@ export async function ReportsDashboardContent({
 
   // Chart data — daily search + maps impressions
   const chartData = currentMetrics.map((m) => ({
-    date: m.date.toISOString().split("T")[0],
+    date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
   }));

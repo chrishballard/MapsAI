@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MotionDiv } from "@/components/motion-wrapper";
 import { ReportsShell } from "./reports-shell";
 import { ReportsDashboardContent } from "./reports-dashboard-content";
+import { formatMediumDate, formatMonthYear } from "@/lib/dates";
 
 function ReportsDashboardSkeleton() {
   return (
@@ -142,18 +143,11 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-zinc-500">
-                              {report.month.toLocaleDateString("en-US", {
-                                month: "long",
-                                year: "numeric",
-                              })}
+                              {formatMonthYear(report.month)}
                             </span>
                             <span className="text-xs text-zinc-400">
                               &middot; Generated{" "}
-                              {report.createdAt.toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
+                              {formatMediumDate(report.createdAt)}
                             </span>
                           </div>
                         </div>

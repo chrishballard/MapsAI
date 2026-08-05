@@ -125,21 +125,42 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
           : s
       )
     );
-    // Push all approved services
     setPushing(true);
     try {
-      await fetch('/api/reoptimize/services/push', {
+      // Persist the approval — the push route only sends services approved in the DB
+      const saveRes = await fetch('/api/reoptimize/services', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId,
+          services: [
+            {
+              serviceName: svc.serviceName,
+              description: svc.description,
+              isStructured: svc.isStructured,
+              isApproved: true,
+            },
+          ],
+        }),
+      });
+      if (!saveRes.ok) return;
+
+      // Push all approved services
+      const res = await fetch('/api/reoptimize/services/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profileId }),
       });
-      setSavedServices((prev) =>
-        prev.map((s) =>
-          (s.id ?? s.serviceName) === (svc.id ?? svc.serviceName)
-            ? { ...s, isApproved: true, isPushed: true }
-            : s
-        )
-      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSavedServices((prev) =>
+          prev.map((s) =>
+            (s.id ?? s.serviceName) === (svc.id ?? svc.serviceName)
+              ? { ...s, isApproved: true, isPushed: true }
+              : s
+          )
+        );
+      }
     } finally {
       setPushing(false);
     }
@@ -160,10 +181,12 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ profileId, content: savedDescription.content }),
-          }).then(() => {
-            setSavedDescription((prev) =>
-              prev ? { ...prev, isApproved: true, isPushed: true } : prev
-            );
+          }).then((res) => {
+            if (res.ok) {
+              setSavedDescription((prev) =>
+                prev ? { ...prev, isApproved: true, isPushed: true } : prev
+              );
+            }
           })
         );
       }
@@ -178,17 +201,37 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
           )
         );
         promises.push(
-          fetch('/api/reoptimize/services/push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileId }),
-          }).then(() => {
-            setSavedServices((prev) =>
-              prev.map((s) =>
-                s.isApproved && !s.isPushed ? { ...s, isPushed: true } : s
-              )
-            );
-          })
+          (async () => {
+            // Persist approvals — the push route only sends services approved in the DB
+            const saveRes = await fetch('/api/reoptimize/services', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                profileId,
+                services: pendingServices.map((s) => ({
+                  serviceName: s.serviceName,
+                  description: s.description,
+                  isStructured: s.isStructured,
+                  isApproved: true,
+                })),
+              }),
+            });
+            if (!saveRes.ok) return;
+
+            const res = await fetch('/api/reoptimize/services/push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profileId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success) {
+              setSavedServices((prev) =>
+                prev.map((s) =>
+                  s.isApproved && !s.isPushed ? { ...s, isPushed: true } : s
+                )
+              );
+            }
+          })()
         );
       }
 

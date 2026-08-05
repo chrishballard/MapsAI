@@ -1,28 +1,23 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { generateDashboardReport } from "@/lib/pdf/report-generator";
+import { z } from "zod";
+import { dateStringSchema, idSchema, parseBody } from "@/lib/api-validation";
+
+const dashboardPdfSchema = z.object({
+  profileId: idSchema.nullish(),
+  from: dateStringSchema,
+  to: dateStringSchema,
+  narrativeText: z.string().max(20000).nullish(),
+});
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId, from, to, narrativeText } = body as {
-    profileId: string | null;
-    from: string;
-    to: string;
-    narrativeText: string | null;
-  };
-
-  if (!from || !to) {
-    return NextResponse.json(
-      { error: "from and to are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, dashboardPdfSchema);
+  if (parsed.error) return parsed.error;
+  const { profileId, from, to, narrativeText } = parsed.data;
 
   try {
     const fromDate = new Date(from + "T00:00:00Z");
@@ -34,10 +29,15 @@ export async function POST(request: NextRequest) {
       narrativeText ?? null
     );
 
+    // from/to are schema-validated to YYYY-MM-DD, but sanitize anyway so the
+    // header can never carry attacker-controlled bytes
+    const safeFrom = from.replace(/[^a-zA-Z0-9-_ ]/g, "");
+    const safeTo = to.replace(/[^a-zA-Z0-9-_ ]/g, "");
+
     return new NextResponse(Buffer.from(pdfBytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="dashboard-report-${from}-to-${to}.pdf"`,
+        "Content-Disposition": `attachment; filename="dashboard-report-${safeFrom}-to-${safeTo}.pdf"`,
       },
     });
   } catch (error) {

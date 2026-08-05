@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
+import { sendJson } from "@/lib/fetch-json";
 import { StepIndicator, WIZARD_STEPS } from "./step-indicator";
 import { KeywordsCitiesStep } from "./steps/keywords-cities-step";
 import { DescriptionStep } from "./steps/description-step";
@@ -60,16 +61,18 @@ export function WizardShell({
     async (step: number, completed: number[], isComplete: boolean) => {
       setSaving(true);
       try {
-        await fetch("/api/onboarding/progress", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        await sendJson(
+          "/api/onboarding/progress",
+          {
             profileId,
             currentStep: step,
             completedSteps: completed,
             isComplete,
-          }),
-        });
+          },
+          "PATCH"
+        );
+      } catch (err) {
+        console.error("Failed to save onboarding progress:", err);
       } finally {
         setSaving(false);
       }
@@ -81,11 +84,11 @@ export function WizardShell({
   useEffect(() => {
     async function initProgress() {
       if (initialProgress === null) {
-        await fetch("/api/onboarding/progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profileId }),
-        });
+        try {
+          await sendJson("/api/onboarding/progress", { profileId });
+        } catch (err) {
+          console.error("Failed to initialize onboarding progress:", err);
+        }
       }
       // Auto-complete step 0 (profile selection) if not already done
       if (!completedSteps.includes(0)) {

@@ -1,25 +1,17 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateDescription } from "@/lib/description-generator";
 import { scrapeWebsiteText } from "@/lib/website-scraper";
+import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
 
-  const body = await request.json();
-  const { profileId } = body;
-
-  if (!profileId) {
-    return NextResponse.json(
-      { error: "profileId is required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseBody(request, profileIdBodySchema);
+  if (parsed.error) return parsed.error;
+  const { profileId } = parsed.data;
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -68,8 +60,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ description });
   } catch (error: unknown) {
     console.error("Description generation failed:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to generate description";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to generate description" },
+      { status: 500 }
+    );
   }
 }

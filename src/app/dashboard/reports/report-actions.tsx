@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
+import { sendJson } from "@/lib/fetch-json";
 
 interface Profile {
   id: string;
@@ -28,17 +29,10 @@ export function GenerateForm({ profiles }: GenerateFormProps) {
       const body: Record<string, string> = { month };
       if (profileId) body.profileId = profileId;
 
-      const res = await fetch("/api/reports/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to generate report");
-      }
-
-      const data = await res.json();
+      const data = await sendJson<{ reports: { status: string }[] }>(
+        "/api/reports/generate",
+        body
+      );
       const successCount = data.reports.filter(
         (r: { status: string }) => r.status === "success"
       ).length;
