@@ -69,7 +69,7 @@ committing untracked files, two deferred with known trigger conditions.
 - **Suggested fix when touched:** release the inherited claim on the throw
   path, or add a stale-PUBLISHING sweeper to `post-sweep-worker.ts`.
 
-### 6. Onboarding services GET shares the catch-→-500 shape — DEFERRED
+### 6. Onboarding services GET shares the catch-→-500 shape — FIXED (2026-08-05)
 (Found during fix verification, not by the original review.)
 - **Where:** `src/app/api/onboarding/services/route.ts:37-60`
 - **Defect:** same shape as finding 2 — `fetchStructuredServices` inside
@@ -77,7 +77,16 @@ committing untracked files, two deferred with known trigger conditions.
   Postgres whenever GBP hiccups during onboarding.
 - **Trigger condition:** any GBP failure (revoked token, Google 5xx, network
   blip) while a profile's onboarding wizard is on the services step.
-- **Fix when touched:** port the same `.then/.catch` envelope used in the
-  reoptimize routes. Related polish: `gbpError` is returned by four routes
-  now but no component renders it — during an outage the UI shows "no
-  description/services set" instead of "couldn't reach Google".
+- **Fix (0f9975e, branch fix/gbp-outage-ux):** ported the reoptimize
+  routes' `.then/.catch` envelope — degraded response is 200 with saved
+  services, `availableServices: null`, `gbpError` set; healthy path pins an
+  explicit `gbpError: null`. Regression test:
+  `tests/api/onboarding-services-gbp-degradation.test.ts` (verified failing
+  pre-fix: 500 vs 200 + missing gbpError; passing post-fix). The related
+  polish also landed: `reoptimize-section.tsx` and `description-step.tsx`
+  now render `gbpError` as an inline "Couldn't reach Google — showing your
+  saved copy" notice instead of the misleading "no description/services
+  set" empty states. Remaining gap (non-blocking, from the branch's
+  adversarial review): `services-step.tsx` still ignores `gbpError` during
+  onboarding — no notice there, though saved services now load instead of
+  the step dying on a 500.
