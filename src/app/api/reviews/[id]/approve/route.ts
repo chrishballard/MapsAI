@@ -2,6 +2,10 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
+import {
+  REVIEWS_DISABLED_ERROR,
+  REVIEWS_DISABLED_STATUS,
+} from "@/lib/reviews-enabled";
 
 export async function POST(
   request: Request,
@@ -14,11 +18,21 @@ export async function POST(
 
   const review = await prisma.review.findUnique({
     where: { id },
-    include: { response: true },
+    include: {
+      response: true,
+      profile: { select: { reviewsEnabled: true } },
+    },
   });
 
   if (!review) {
     return NextResponse.json({ error: "Review not found" }, { status: 404 });
+  }
+
+  if (!review.profile.reviewsEnabled) {
+    return NextResponse.json(
+      { error: REVIEWS_DISABLED_ERROR },
+      { status: REVIEWS_DISABLED_STATUS }
+    );
   }
 
   if (review.repliedExternally) {

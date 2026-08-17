@@ -19,7 +19,12 @@ export async function StatsGrid() {
     prisma.reviewResponse.count({
       where: {
         status: "DRAFTED",
-        ...(selectedProfileId ? { review: { profileId: selectedProfileId } } : {}),
+        // Match the task list: profiles with review management off contribute
+        // no pending work, so they must not inflate this count either.
+        review: {
+          ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
+          profile: { reviewsEnabled: true },
+        },
       },
     }),
     prisma.report.count({ where: profileFilter }),
@@ -72,7 +77,12 @@ export async function AIInsightsPanel() {
     prisma.reviewResponse.count({
       where: {
         status: "DRAFTED",
-        ...(selectedProfileId ? { review: { profileId: selectedProfileId } } : {}),
+        // Match the task list: profiles with review management off contribute
+        // no pending work, so they must not inflate this count either.
+        review: {
+          ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
+          profile: { reviewsEnabled: true },
+        },
       },
     }),
     prisma.post.count({ where: { ...profileFilter, createdAt: { gte: startOfMonth } } }),

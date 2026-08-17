@@ -63,6 +63,9 @@ export async function TasksSection() {
     prisma.review.findMany({
       where: {
         ...profileFilter,
+        // Profiles with review management off produce no review tasks —
+        // approving one would be refused by the API anyway.
+        profile: { reviewsEnabled: true },
         response: { status: "DRAFTED" },
       },
       orderBy: { createdAt: "desc" },

@@ -11,6 +11,8 @@ interface ReviewSyncProfile {
   accountResourceName: string | null;
   locationName: string;
   autoApproveReviews: boolean;
+  reviewsEnabled: boolean;
+  reviewInstructions: string | null;
 }
 
 export interface SyncProfileReviewsOptions {
@@ -23,6 +25,9 @@ export interface SyncProfileReviewsOptions {
  * answered outside RankMaps — they're stored so the dashboard shows them,
  * but never get a generated or published response.
  *
+ * Profiles with review management turned off are skipped entirely: no
+ * fetching, no storing, no drafting.
+ *
  * Returns the number of new reviews that received an AI response.
  */
 export async function syncProfileReviews(
@@ -30,6 +35,13 @@ export async function syncProfileReviews(
   options: SyncProfileReviewsOptions = {}
 ): Promise<number> {
   const { logPrefix = "[review-sync]" } = options;
+
+  if (!profile.reviewsEnabled) {
+    console.log(
+      `${logPrefix} Review management is off for ${profile.name}, skipping`
+    );
+    return 0;
+  }
 
   if (!profile.accountResourceName) return 0;
 
@@ -79,6 +91,7 @@ export async function syncProfileReviews(
           reviewerName: review.reviewerName,
           starRating: rating,
           reviewComment: review.comment,
+          customInstructions: profile.reviewInstructions,
         });
 
         // 1-2 star reviews always require human approval — an AI reply to an

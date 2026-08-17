@@ -57,6 +57,12 @@ model Profile {
   isConnected     Boolean        @default(true)
   isOnboarded     Boolean        @default(false)
   autoApproveReviews Boolean     @default(false)
+  // Master switch for review management. When off: no review syncing,
+  // no AI drafting, no approving, and no publishing for this profile.
+  reviewsEnabled     Boolean     @default(true)
+  // Operator-authored instructions ("Train RankMaps") appended to the review
+  // response prompt — e.g. persona, phrasing to use, things never to say.
+  reviewInstructions String?     @db.Text
   postFrequency      Int         @default(4)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
