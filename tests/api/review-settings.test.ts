@@ -17,7 +17,7 @@ vi.mock('@/lib/auth/require-session', () => ({
 }));
 
 const { GET, PATCH } = await import('@/app/api/reviews/settings/route');
-const { MAX_REVIEW_INSTRUCTIONS_CHARS } = await import('@/lib/review-responder');
+const { MAX_REVIEW_INSTRUCTIONS_CHARS } = await import('@/lib/reviews-enabled');
 
 function patchRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost:3000/api/reviews/settings', {

@@ -100,7 +100,14 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
     prisma.review.findMany({
       where,
       include: {
-        profile: { select: { id: true, name: true, category: true } },
+        profile: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            reviewsEnabled: true,
+          },
+        },
         response: true,
       },
       orderBy: { reviewDate: "desc" },
@@ -118,8 +125,10 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
       : null,
   ]);
 
-  // Sync and bulk-approve are hidden while review management is off, matching
-  // the API, which refuses both for a disabled profile.
+  // Bulk approve targets the selected profile only, so it follows that
+  // profile's switch. Per-review actions follow their own profile's switch
+  // (below), which matters in the "All Businesses" view where reviews from
+  // enabled and disabled profiles are listed together.
   const reviewsDisabled = selectedProfile ? !selectedProfile.reviewsEnabled : false;
 
   const draftCount = reviews.filter(
@@ -166,7 +175,10 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
               draftCount={draftCount}
             />
           )}
-          {!reviewsDisabled && <SyncButton />}
+          {/* Sync is global — it sweeps every profile that still has review
+              management on — so it stays available even when the selected
+              profile is paused. */}
+          <SyncButton />
         </div>
       </div>
 
@@ -301,7 +313,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                         reviewId={review.id}
                         responseStatus={review.response?.status || null}
                         repliedExternally={review.repliedExternally}
-                        reviewsDisabled={reviewsDisabled}
+                        reviewsDisabled={!review.profile.reviewsEnabled}
                       />
                     </div>
                   </div>

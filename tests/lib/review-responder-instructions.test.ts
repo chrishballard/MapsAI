@@ -7,9 +7,8 @@ const mocks = vi.hoisted(() => ({ generate: vi.fn() }));
 
 vi.mock('@/lib/claude', () => ({ generate: mocks.generate }));
 
-const { generateReviewResponse, MAX_REVIEW_INSTRUCTIONS_CHARS } = await import(
-  '@/lib/review-responder'
-);
+const { generateReviewResponse } = await import('@/lib/review-responder');
+const { MAX_REVIEW_INSTRUCTIONS_CHARS } = await import('@/lib/reviews-enabled');
 
 const input = {
   businessName: 'Ben Plumbing',

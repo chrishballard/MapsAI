@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { idSchema, parseBody } from "@/lib/api-validation";
-import { MAX_REVIEW_INSTRUCTIONS_CHARS } from "@/lib/review-responder";
+import { MAX_REVIEW_INSTRUCTIONS_CHARS } from "@/lib/reviews-enabled";
 
 /** Per-profile review settings: the on/off switch and the AI training notes. */
 export async function GET(request: NextRequest) {

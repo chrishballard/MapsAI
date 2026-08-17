@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { Check, Loader2, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { sendJson } from "@/lib/fetch-json";
+import { MAX_REVIEW_INSTRUCTIONS_CHARS as MAX_INSTRUCTIONS } from "@/lib/reviews-enabled";
 import { cn } from "@/lib/utils";
-
-/** Keep in sync with MAX_REVIEW_INSTRUCTIONS_CHARS in @/lib/review-responder. */
-const MAX_INSTRUCTIONS = 2000;
 
 const PLACEHOLDER =
   'e.g. "Respond to all reviews in the first person, as if you were Ben, the owner. Never mention pricing or promotions."';
@@ -144,6 +142,11 @@ export function ReviewSettingsPanel({
           Tell the AI how to write replies for this business — voice, who to
           sign as, what to mention, what to avoid. Applies to every reply
           drafted from now on.
+        </p>
+        <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
+          A few rules always win, whatever you put here: replies never promise
+          refunds, discounts, or compensation, and never include phone numbers,
+          email addresses, links, or promo codes.
         </p>
         <textarea
           value={instructions}
