@@ -47,6 +47,20 @@ export const worker = new Worker<ReviewPublishJobData>(
 
     const { review } = reviewResponse;
 
+    // Review management may have been turned off after this job was queued.
+    // Drop it back to DRAFTED so nothing publishes while reviews are off, and
+    // so it's simply waiting for approval again when they're turned back on.
+    if (!review.profile.reviewsEnabled) {
+      console.log(
+        `Review management is off for ${review.profile.name}, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: { status: "DRAFTED", errorMessage: null },
+      });
+      return;
+    }
+
     // Safety check: fetch the live review from Google before publishing.
     // If this fetch fails we throw (BullMQ retries) — never publish blind.
     const liveReview = await fetchSingleReview(

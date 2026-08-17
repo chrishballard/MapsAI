@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
 import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
+import {
+  REVIEWS_DISABLED_ERROR,
+  REVIEWS_DISABLED_STATUS,
+} from "@/lib/reviews-enabled";
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
@@ -11,6 +15,22 @@ export async function POST(request: Request) {
   const parsed = await parseBody(request, profileIdBodySchema);
   if (parsed.error) return parsed.error;
   const { profileId } = parsed.data;
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { reviewsEnabled: true },
+  });
+
+  if (!profile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  if (!profile.reviewsEnabled) {
+    return NextResponse.json(
+      { error: REVIEWS_DISABLED_ERROR },
+      { status: REVIEWS_DISABLED_STATUS }
+    );
+  }
 
   // Find all reviews for profile with DRAFTED responses
   // (excluding reviews that were already replied to outside RankMaps)

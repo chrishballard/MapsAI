@@ -8,19 +8,22 @@ interface ReviewActionsProps {
   reviewId: string;
   responseStatus: string | null;
   repliedExternally?: boolean;
+  /** Review management is off for this profile — the API refuses both actions. */
+  reviewsDisabled?: boolean;
 }
 
 export function ReviewActions({
   reviewId,
   responseStatus,
   repliedExternally,
+  reviewsDisabled,
 }: ReviewActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
 
   // Reviews already replied to outside RankMaps are off-limits —
   // no generating, approving, or publishing.
-  if (repliedExternally) {
+  if (repliedExternally || reviewsDisabled) {
     return null;
   }
 

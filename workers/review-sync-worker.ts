@@ -8,11 +8,14 @@ export const worker = new Worker(
   async (job: Job) => {
     console.log(`Starting review sync job ${job.id}`);
 
-    // Fetch all connected profiles with accountResourceName
+    // Fetch all connected profiles with accountResourceName.
+    // Profiles with review management turned off are excluded here (and
+    // guarded again inside syncProfileReviews).
     const profiles = await prisma.profile.findMany({
       where: {
         isConnected: true,
         isOnboarded: true,
+        reviewsEnabled: true,
         accountResourceName: { not: null },
       },
       include: {

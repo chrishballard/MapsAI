@@ -1,4 +1,4 @@
-import { MessageSquare, Star, ThumbsUp, Reply, Sparkles } from "lucide-react";
+import { MessageSquare, Star, ThumbsUp, Reply, Sparkles, PauseCircle } from "lucide-react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Prisma, ReviewResponseStatus } from "@/generated/prisma/client";
@@ -8,6 +8,7 @@ import {
   SyncButton,
   BulkApproveButton,
 } from "./review-actions";
+import { ReviewSettingsPanel } from "./review-settings-panel";
 import { getSelectedProfileId } from "@/lib/selected-profile";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -95,14 +96,31 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
     where.response = { status: validResponseStatus };
   }
 
-  const reviews = await prisma.review.findMany({
-    where,
-    include: {
-      profile: { select: { id: true, name: true, category: true } },
-      response: true,
-    },
-    orderBy: { reviewDate: "desc" },
-  });
+  const [reviews, selectedProfile] = await Promise.all([
+    prisma.review.findMany({
+      where,
+      include: {
+        profile: { select: { id: true, name: true, category: true } },
+        response: true,
+      },
+      orderBy: { reviewDate: "desc" },
+    }),
+    profileId
+      ? prisma.profile.findUnique({
+          where: { id: profileId },
+          select: {
+            id: true,
+            name: true,
+            reviewsEnabled: true,
+            reviewInstructions: true,
+          },
+        })
+      : null,
+  ]);
+
+  // Sync and bulk-approve are hidden while review management is off, matching
+  // the API, which refuses both for a disabled profile.
+  const reviewsDisabled = selectedProfile ? !selectedProfile.reviewsEnabled : false;
 
   const draftCount = reviews.filter(
     (r) => r.response?.status === "DRAFTED"
@@ -142,15 +160,39 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {draftCount > 0 && profileId && (
+          {!reviewsDisabled && draftCount > 0 && profileId && (
             <BulkApproveButton
               profileId={profileId}
               draftCount={draftCount}
             />
           )}
-          <SyncButton />
+          {!reviewsDisabled && <SyncButton />}
         </div>
       </div>
+
+      {selectedProfile && (
+        <ReviewSettingsPanel
+          profileId={selectedProfile.id}
+          profileName={selectedProfile.name}
+          reviewsEnabled={selectedProfile.reviewsEnabled}
+          reviewInstructions={selectedProfile.reviewInstructions}
+        />
+      )}
+
+      {reviewsDisabled && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <PauseCircle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-900">
+              Review management is off for {selectedProfile?.name}
+            </p>
+            <p className="text-sm text-amber-800 mt-0.5">
+              Existing reviews stay visible, but nothing new is synced, drafted,
+              or published while this is off.
+            </p>
+          </div>
+        </div>
+      )}
 
       <ReviewFilters
         currentRating={rating}
@@ -166,9 +208,11 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             No reviews synced
           </h2>
           <p className="text-zinc-500 mb-6 max-w-md">
-            Sync reviews from your connected Google Business Profiles.
+            {reviewsDisabled
+              ? "Review management is off for this business. Turn it back on to start syncing reviews."
+              : "Sync reviews from your connected Google Business Profiles."}
           </p>
-          <SyncButton />
+          {!reviewsDisabled && <SyncButton />}
         </Card>
       ) : (
         <div className="space-y-4">
@@ -257,6 +301,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                         reviewId={review.id}
                         responseStatus={review.response?.status || null}
                         repliedExternally={review.repliedExternally}
+                        reviewsDisabled={reviewsDisabled}
                       />
                     </div>
                   </div>
