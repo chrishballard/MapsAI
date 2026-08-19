@@ -5,6 +5,7 @@ import {
   fetchCategoryId,
   pushServicesToGBP,
 } from "@/lib/google-business-info";
+import { MAX_SERVICE_DESCRIPTION_LENGTH } from "@/lib/service-generator";
 
 export interface ProfileServiceInput {
   serviceName: string;
@@ -111,6 +112,22 @@ export async function pushApprovedServices(
     return {
       success: false,
       error: "No approved services to push",
+      status: 400,
+    };
+  }
+
+  // Google rejects the entire serviceItems patch if any one description
+  // exceeds 300 characters — fail early with the offending names instead of
+  // surfacing a cryptic GBP error.
+  const overlong = approvedServices.filter(
+    (s) => (s.description?.length ?? 0) > MAX_SERVICE_DESCRIPTION_LENGTH
+  );
+  if (overlong.length > 0) {
+    return {
+      success: false,
+      error: `These descriptions are over Google's 300 character limit: ${overlong
+        .map((s) => s.serviceName)
+        .join(", ")}. Shorten them and try again.`,
       status: 400,
     };
   }

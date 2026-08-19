@@ -86,7 +86,9 @@ export async function POST(request: NextRequest) {
     request,
     z.object({
       profileId: idSchema,
-      serviceNames: z.array(z.string().min(1).max(200)).min(1).max(20),
+      // Matches the save endpoint's cap — service-rich GBP categories expose
+      // 30-70 service types and the UI pre-checks all of them.
+      serviceNames: z.array(z.string().min(1).max(200)).min(1).max(100),
     })
   );
   if (parsed.error) return parsed.error;

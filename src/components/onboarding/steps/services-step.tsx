@@ -34,6 +34,13 @@ interface ServicesStepProps {
   onComplete: () => Promise<void>;
 }
 
+// Google's hard limit for a GBP service description (kept in sync with
+// MAX_SERVICE_DESCRIPTION_LENGTH in @/lib/service-generator, which can't be
+// imported here without pulling the Anthropic SDK into the client bundle).
+const MAX_DESCRIPTION_LENGTH = 300;
+// Google's limit for custom (free-form) service names.
+const MAX_SERVICE_NAME_LENGTH = 120;
+
 export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [availableServices, setAvailableServices] = useState<
@@ -165,34 +172,41 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
         services: { serviceName: string; description: string }[];
       }>("/api/onboarding/services/generate", { profileId, serviceNames });
 
-      // Map generated descriptions to ServiceItem objects
-      // Services from the available/checked list are "structured"; AI-suggested extras are "custom"
-      const selectedSet = new Set([
-        ...Array.from(checkedServices),
-        ...customServices,
-      ]);
+      // A service is "structured" only if GBP offers a matching service type;
+      // custom additions are free-form
+      const structuredNames = new Set(
+        availableServices.map((a) => a.displayName.toLowerCase())
+      );
       const newServices: ServiceItem[] = genData.services.map((s) => ({
         serviceName: s.serviceName,
         description: s.description,
-        isStructured: selectedSet.has(s.serviceName),
+        isStructured: structuredNames.has(s.serviceName.toLowerCase()),
         isApproved: false,
         isPushed: false,
         pushedAt: null,
       }));
 
-      // Step 2: Save to DB
-      await sendJson("/api/onboarding/services", {
-        profileId,
-        services: newServices.map((s) => ({
-          serviceName: s.serviceName,
-          description: s.description,
-          isStructured: s.isStructured,
-          isApproved: false,
-        })),
-      });
-
       setServices(newServices);
       setShowSelection(false);
+
+      // Step 2: Save to DB. A save failure must not throw away the generated
+      // descriptions — the push flow re-saves everything first anyway.
+      try {
+        await sendJson("/api/onboarding/services", {
+          profileId,
+          services: newServices.map((s) => ({
+            serviceName: s.serviceName,
+            description: s.description,
+            isStructured: s.isStructured,
+            isApproved: false,
+          })),
+        });
+      } catch (saveErr) {
+        console.error("Failed to save generated services:", saveErr);
+        setPushError(
+          "Descriptions were generated but couldn't be saved yet — they'll be saved when you push to Google."
+        );
+      }
     } catch (err) {
       setPushError(
         err instanceof Error
@@ -212,6 +226,12 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   ).length;
   const allPushed =
     services.length > 0 && services.every((s) => s.isPushed);
+  const overlongApproved = services.filter(
+    (s) =>
+      s.isApproved &&
+      !s.isPushed &&
+      s.description.length > MAX_DESCRIPTION_LENGTH
+  );
 
   const approveService = (index: number) => {
     setServices((prev) =>
@@ -232,8 +252,13 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   };
 
   const approveAll = () => {
+    // Overlong descriptions can't be approved — Google rejects the whole push
     setServices((prev) =>
-      prev.map((s) => (s.isPushed ? s : { ...s, isApproved: true }))
+      prev.map((s) =>
+        s.isPushed || s.description.length > MAX_DESCRIPTION_LENGTH
+          ? s
+          : { ...s, isApproved: true }
+      )
     );
   };
 
@@ -421,6 +446,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             <input
               type="text"
               value={customServiceInput}
+              maxLength={MAX_SERVICE_NAME_LENGTH}
               onChange={(e) => setCustomServiceInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -571,9 +597,16 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           />
 
           {/* Character Count */}
-          <p className="text-xs text-zinc-400 mt-1">
-            {service.description.length} characters
-          </p>
+          {service.description.length > MAX_DESCRIPTION_LENGTH ? (
+            <p className="text-xs text-red-600 mt-1">
+              {service.description.length} characters — over Google&apos;s{" "}
+              {MAX_DESCRIPTION_LENGTH} character limit. Shorten to push.
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-400 mt-1">
+              {service.description.length} / {MAX_DESCRIPTION_LENGTH} characters
+            </p>
+          )}
 
           {/* Action Buttons */}
           <div className="mt-2">
@@ -605,7 +638,10 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               <button
                 type="button"
                 onClick={() => approveService(index)}
-                className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100"
+                disabled={
+                  service.description.length > MAX_DESCRIPTION_LENGTH
+                }
+                className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Approve
@@ -630,21 +666,32 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
 
         {/* Push All to Google */}
         {!allPushed && (
-          <button
-            type="button"
-            onClick={handlePush}
-            disabled={approvedCount === 0 || pushing}
-            className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
-          >
-            {pushing ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Pushing to Google...
-              </span>
-            ) : (
-              "Push All to Google"
+          <>
+            {overlongApproved.length > 0 && (
+              <p className="text-xs text-red-600 text-center">
+                Shorten these to {MAX_DESCRIPTION_LENGTH} characters before
+                pushing:{" "}
+                {overlongApproved.map((s) => s.serviceName).join(", ")}
+              </p>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={handlePush}
+              disabled={
+                approvedCount === 0 || pushing || overlongApproved.length > 0
+              }
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
+            >
+              {pushing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Pushing to Google...
+                </span>
+              ) : (
+                "Push All to Google"
+              )}
+            </button>
+          </>
         )}
 
         {/* Continue (return visit, all pushed) */}
