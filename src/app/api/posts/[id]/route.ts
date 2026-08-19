@@ -2,7 +2,8 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { parseBody } from "@/lib/api-validation";
+import { parseBody, idSchema } from "@/lib/api-validation";
+import { markImagesUsed } from "@/lib/post-images";
 import { PostStatus } from "@/generated/prisma/client";
 
 // Status changes allowed through this endpoint. Scheduling happens via
@@ -22,6 +23,7 @@ const patchPostSchema = z
     content: z.string().min(1).max(1500).optional(),
     callToAction: z.string().max(2048).nullable().optional(),
     mediaUrl: z.string().max(2048).nullable().optional(),
+    imageId: idSchema.nullable().optional(),
     type: z.enum(["WHATS_NEW", "EVENT", "OFFER"]).optional(),
     status: z.enum(PostStatus).optional(),
   })
@@ -60,6 +62,7 @@ export async function PATCH(
     body.content !== undefined ||
     body.callToAction !== undefined ||
     body.mediaUrl !== undefined ||
+    body.imageId !== undefined ||
     body.type !== undefined;
   if (
     editsContent &&
@@ -71,10 +74,37 @@ export async function PATCH(
     );
   }
 
+  // An attached image must belong to the post's profile and be in rotation.
+  if (body.imageId) {
+    const image = await prisma.profileImage.findUnique({
+      where: { id: body.imageId },
+      select: { profileId: true, status: true },
+    });
+    if (!image || image.profileId !== post.profileId) {
+      return NextResponse.json(
+        { error: "Image not found for this profile" },
+        { status: 400 }
+      );
+    }
+    if (image.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Image must be approved before it can be used on a post" },
+        { status: 400 }
+      );
+    }
+  }
+
   const updatedPost = await prisma.post.update({
     where: { id },
     data: body,
   });
+
+  // A manual pick counts as a use so the rotation moves past this image.
+  if (body.imageId && body.imageId !== post.imageId) {
+    await markImagesUsed([body.imageId]).catch((err) =>
+      console.warn(`Failed to record image usage for post ${id}:`, err)
+    );
+  }
 
   return NextResponse.json(updatedPost);
 }

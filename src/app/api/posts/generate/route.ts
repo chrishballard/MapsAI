@@ -2,6 +2,11 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateMonthlyPosts } from "@/lib/post-generator";
+import {
+  pickImagesForPosts,
+  markImagesUsed,
+  isImageFkViolation,
+} from "@/lib/post-images";
 import { PostType } from "@/generated/prisma/client";
 import { z } from "zod";
 import { idSchema, parseBody } from "@/lib/api-validation";
@@ -68,21 +73,47 @@ export async function POST(request: Request) {
         profile.postFrequency ?? 4
       );
 
+      // Rotate a library image onto each draft; an empty library just
+      // means text-only posts (pickImagesForPosts never throws).
+      const images = await pickImagesForPosts(
+        profile.id,
+        generated.posts.length
+      );
+
       // Save generated posts as DRAFT — atomically, so a mid-batch failure
       // can't leave a partial batch behind (which the future-scheduled-count
       // guard in the daily generation worker would never top up).
-      const createdPosts = await prisma.$transaction(
-        generated.posts.map((post) =>
+      const buildCreates = (withImages: boolean) =>
+        generated.posts.map((post, i) =>
           prisma.post.create({
             data: {
               profileId: profile.id,
               type: post.suggestedType as PostType,
               content: post.content,
               callToAction: post.callToActionUrl ?? null,
+              imageId: withImages ? (images[i] ?? null) : null,
               status: "DRAFT",
             },
           })
-        )
+        );
+
+      let createdPosts;
+      try {
+        createdPosts = await prisma.$transaction(buildCreates(true));
+      } catch (err) {
+        // A picked image can be deleted between selection and insert —
+        // retry the batch text-only rather than discard the generation.
+        if (!isImageFkViolation(err)) throw err;
+        console.warn(
+          `Picked image vanished mid-batch for ${profileId}, creating posts without images`
+        );
+        createdPosts = await prisma.$transaction(buildCreates(false));
+      }
+
+      await markImagesUsed(
+        createdPosts.flatMap((p) => (p.imageId ? [p.imageId] : []))
+      ).catch((err) =>
+        console.warn(`Failed to record image usage for ${profileId}:`, err)
       );
 
       results.push({

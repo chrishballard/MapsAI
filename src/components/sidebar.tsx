@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Building2,
   FileText,
+  Image as ImageIcon,
   MessageSquare,
   BarChart3,
   Settings,
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/dashboard/profiles", label: "Businesses", icon: Building2 },
   { href: "/dashboard/optimization", label: "Optimization", icon: Gauge },
   { href: "/dashboard/posts", label: "Posts", icon: FileText },
+  { href: "/dashboard/images", label: "Images", icon: ImageIcon },
   { href: "/dashboard/reviews", label: "Reviews", icon: MessageSquare },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

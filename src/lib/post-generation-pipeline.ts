@@ -2,6 +2,11 @@ import { prisma } from "./prisma";
 import { generateMonthlyPosts } from "./post-generator";
 import { calculateRollingScheduleDates } from "./scheduling";
 import { schedulePostPublish } from "./queue/publish-queue";
+import {
+  pickImagesForPosts,
+  markImagesUsed,
+  isImageFkViolation,
+} from "./post-images";
 import { PostType } from "../generated/prisma/client";
 
 export interface PostGenerationProfile {
@@ -84,10 +89,14 @@ export async function generateAndSchedulePosts(
     options.takenDates
   );
 
+  // Rotate a library image onto each post, least-recently-used first. An
+  // empty library just means text-only posts; pickImagesForPosts never throws.
+  const images = await pickImagesForPosts(profileId, generated.posts.length);
+
   // Create the whole batch atomically: a mid-batch failure must not leave
   // partial posts behind — the future-scheduled-count guard in the daily
   // generation worker would see them and never top the batch up.
-  const createdPosts = await prisma.$transaction(
+  const buildCreates = (withImages: boolean) =>
     generated.posts.map((post, i) =>
       prisma.post.create({
         data: {
@@ -95,11 +104,32 @@ export async function generateAndSchedulePosts(
           type: post.suggestedType as PostType,
           content: post.content,
           callToAction: post.callToActionUrl ?? null,
+          imageId: withImages ? (images[i] ?? null) : null,
           status: scheduleDates[i] ? "SCHEDULED" : "DRAFT",
           scheduledAt: scheduleDates[i] ?? null,
         },
       })
-    )
+    );
+
+  let createdPosts;
+  try {
+    createdPosts = await prisma.$transaction(buildCreates(true));
+  } catch (err) {
+    // A picked image can be deleted between selection and insert (Images
+    // page delete, concurrent GBP sync cleanup) — retry the batch text-only
+    // rather than discard the generated posts.
+    if (!isImageFkViolation(err)) throw err;
+    console.warn(
+      `${logPrefix} Picked image vanished mid-batch for ${profileId}, creating posts without images`
+    );
+    createdPosts = await prisma.$transaction(buildCreates(false));
+  }
+
+  // Advance the rotation only for images that actually landed on posts.
+  await markImagesUsed(
+    createdPosts.flatMap((p) => (p.imageId ? [p.imageId] : []))
+  ).catch((err) =>
+    console.warn(`${logPrefix} Failed to record image usage:`, err)
   );
 
   // Queue scheduled posts for publishing via BullMQ
