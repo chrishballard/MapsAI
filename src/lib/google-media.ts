@@ -2,6 +2,7 @@ import { createGoogleClient } from "./google";
 import { prisma } from "./prisma";
 import { newImageToken } from "./image-tokens";
 import { IMAGE_MIN_WIDTH, IMAGE_MIN_HEIGHT } from "./image-validation";
+import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
 
 export interface GBPMediaItem {
   name: string; // "accounts/{a}/locations/{l}/media/{id}"
@@ -185,6 +186,17 @@ export async function syncProfileMediaToLibrary(
       select: { id: true },
     }),
   ]);
+
+  // Queue vision captions for anything approved and uncaptioned — new rows
+  // from this sync included (createMany returns no ids, so the queue helper
+  // re-queries). Also re-captions photos that were deleted from GBP and came
+  // back as brand-new rows. Never lets a queue problem fail the sync.
+  await enqueueCaptionsForProfile(profileId).catch((err) =>
+    console.warn(
+      `[google-media] Failed to enqueue captions for profile ${profileId}:`,
+      err
+    )
+  );
 
   return {
     added: creates.length,

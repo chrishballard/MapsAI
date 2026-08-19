@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/api-validation";
+import { enqueueImageCaption } from "@/lib/queue/image-caption-queue";
 
 const patchImageSchema = z.object({
   status: z.enum(["PENDING", "APPROVED", "HIDDEN"]),
@@ -29,9 +30,22 @@ export async function PATCH(
     const updated = await prisma.profileImage.update({
       where: { id },
       data: { status: parsed.data.status },
-      select: { id: true, status: true },
+      select: { id: true, status: true, captionedAt: true },
     });
-    return NextResponse.json(updated);
+
+    // A newly approved image (client-upload approval) needs a vision caption
+    // before it can be matched to posts. Queue failures never fail the
+    // approval itself.
+    if (updated.status === "APPROVED" && !updated.captionedAt) {
+      await enqueueImageCaption(id).catch((err) =>
+        console.warn(
+          `[images] Failed to enqueue caption for image ${id}:`,
+          err
+        )
+      );
+    }
+
+    return NextResponse.json({ id: updated.id, status: updated.status });
   } catch (err) {
     if (isMissingRow(err)) {
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
