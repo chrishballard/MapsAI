@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sparkles, Plus, X, Loader2, MapPin } from "lucide-react";
+import { Sparkles, Plus, X, Loader2, MapPin, CheckCircle2 } from "lucide-react";
 import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface KeywordsCitiesStepProps {
   profileId: string;
-  onComplete: () => Promise<void>;
+  onComplete?: () => Promise<void>;
+  // Rendered outside the onboarding wizard (Profile Settings page):
+  // saves stay on the page with a confirmation instead of advancing.
+  standalone?: boolean;
 }
 
 interface Suggestion {
@@ -22,6 +25,7 @@ interface CitySuggestion {
 export function KeywordsCitiesStep({
   profileId,
   onComplete,
+  standalone = false,
 }: KeywordsCitiesStepProps) {
   const [keywords, setKeywords] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
@@ -31,6 +35,7 @@ export function KeywordsCitiesStep({
   const [generatingCities, setGeneratingCities] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
   const [newCity, setNewCity] = useState("");
   const [loading, setLoading] = useState(true);
@@ -96,10 +101,12 @@ export function KeywordsCitiesStep({
     if (!trimmed || keywords.length >= 10 || keywords.includes(trimmed)) return;
     setKeywords((prev) => [...prev, trimmed]);
     setNewKeyword("");
+    setSaveSuccess(false);
   };
 
   const removeKeyword = (kw: string) => {
     setKeywords((prev) => prev.filter((k) => k !== kw));
+    setSaveSuccess(false);
   };
 
   const addCity = (city: string) => {
@@ -107,10 +114,12 @@ export function KeywordsCitiesStep({
     if (!trimmed || cities.length >= 3 || cities.includes(trimmed)) return;
     setCities((prev) => [...prev, trimmed]);
     setNewCity("");
+    setSaveSuccess(false);
   };
 
   const removeCity = (city: string) => {
     setCities((prev) => prev.filter((c) => c !== city));
+    setSaveSuccess(false);
   };
 
   const handleSave = async () => {
@@ -124,7 +133,8 @@ export function KeywordsCitiesStep({
         sendJson("/api/onboarding/cities", { profileId, cities }),
       ]);
 
-      await onComplete();
+      setSaveSuccess(true);
+      await onComplete?.();
     } catch (err) {
       setSaveError(
         err instanceof Error
@@ -372,6 +382,13 @@ export function KeywordsCitiesStep({
             <p className="text-sm font-medium text-red-800">{saveError}</p>
           </div>
         )}
+        {standalone && saveSuccess && (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 mb-3">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            Changes saved. New keywords and cities apply to all AI content
+            generated from now on.
+          </p>
+        )}
         <button
           type="button"
           onClick={handleSave}
@@ -383,6 +400,8 @@ export function KeywordsCitiesStep({
               <Loader2 className="w-4 h-4 animate-spin" />
               Saving...
             </span>
+          ) : standalone ? (
+            "Save Changes"
           ) : (
             "Save & Continue"
           )}

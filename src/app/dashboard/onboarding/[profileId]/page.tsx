@@ -36,7 +36,9 @@ export default async function OnboardingWizardPage({
   }
 
   if (profile.onboardingProgress?.isComplete) {
-    redirect("/dashboard/onboarding?completed=true");
+    // Onboarding fields stay editable forever — a completed profile's wizard
+    // URL lands on its Profile Settings page instead of a dead end.
+    redirect(`/dashboard/profiles/${profile.id}/settings`);
   }
 
   const initialProgress = profile.onboardingProgress

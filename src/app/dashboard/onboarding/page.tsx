@@ -5,17 +5,11 @@ import { Building2, CheckCircle2, ArrowRight } from "lucide-react";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export default async function OnboardingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ completed?: string }>;
-}) {
+export default async function OnboardingPage() {
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect("/login");
   }
-
-  const params = await searchParams;
 
   const profiles = await prisma.profile.findMany({
     where: {
@@ -37,19 +31,8 @@ export default async function OnboardingPage({
     orderBy: { name: "asc" },
   });
 
-  const showCompletedBanner = params.completed === "true";
-
   return (
     <div>
-      {showCompletedBanner && (
-        <div className="mb-6 flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-          <p className="text-sm font-medium">
-            Onboarding completed successfully!
-          </p>
-        </div>
-      )}
-
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
           Onboard a Business

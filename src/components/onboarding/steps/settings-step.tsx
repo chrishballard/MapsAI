@@ -1,23 +1,31 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Settings } from "lucide-react";
+import { Loader2, Settings, CheckCircle2 } from "lucide-react";
 import { fetchJson, sendJson } from "@/lib/fetch-json";
 
 interface SettingsStepProps {
   profileId: string;
-  onComplete: () => Promise<void>;
+  onComplete?: () => Promise<void>;
+  // Rendered outside the onboarding wizard (Profile Settings page):
+  // saves stay on the page with a confirmation, and there is no skip.
+  standalone?: boolean;
 }
 
 const PRESETS = [4, 8, 12];
 
-export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
+export function SettingsStep({
+  profileId,
+  onComplete,
+  standalone = false,
+}: SettingsStepProps) {
   const [postFrequency, setPostFrequency] = useState(4);
   const [autoApproveReviews, setAutoApproveReviews] = useState(false);
   const [isCustom, setIsCustom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     async function fetchSettings() {
@@ -42,6 +50,7 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
   }, [profileId]);
 
   const handleSelectChange = (value: string) => {
+    setSaveSuccess(false);
     if (value === "custom") {
       setIsCustom(true);
     } else {
@@ -54,6 +63,7 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
     const num = parseInt(value, 10);
     if (!isNaN(num)) {
       setPostFrequency(Math.min(30, Math.max(1, num)));
+      setSaveSuccess(false);
     }
   };
 
@@ -66,7 +76,8 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
         { profileId, postFrequency, autoApproveReviews },
         "PATCH"
       );
-      await onComplete();
+      setSaveSuccess(true);
+      await onComplete?.();
     } catch (err) {
       setSaveError(
         err instanceof Error ? err.message : "Network error. Please try again."
@@ -138,7 +149,10 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
           <input
             type="checkbox"
             checked={autoApproveReviews}
-            onChange={(e) => setAutoApproveReviews(e.target.checked)}
+            onChange={(e) => {
+              setAutoApproveReviews(e.target.checked);
+              setSaveSuccess(false);
+            }}
             className="h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-brand-50"
           />
           <span>
@@ -167,22 +181,34 @@ export function SettingsStep({ profileId, onComplete }: SettingsStepProps) {
               <Loader2 className="w-4 h-4 animate-spin" />
               Saving...
             </span>
+          ) : standalone ? (
+            "Save Changes"
           ) : (
             "Save & Continue"
           )}
         </button>
 
+        {standalone && saveSuccess && (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 mt-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            Changes saved. Future posts and review responses follow the new
+            settings.
+          </p>
+        )}
+
         {saveError && (
           <p className="text-sm text-red-600 mt-2">{saveError}</p>
         )}
 
-        <button
-          type="button"
-          onClick={() => onComplete()}
-          className="w-full text-muted-foreground underline text-sm py-2 mt-2"
-        >
-          Skip for Now
-        </button>
+        {!standalone && (
+          <button
+            type="button"
+            onClick={() => onComplete?.()}
+            className="w-full text-muted-foreground underline text-sm py-2 mt-2"
+          >
+            Skip for Now
+          </button>
+        )}
       </div>
     </div>
   );

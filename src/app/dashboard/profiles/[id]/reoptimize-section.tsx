@@ -127,6 +127,10 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
           if (data.savedDescription) {
             setSavedDescription(data.savedDescription);
             setAiDescription(data.savedDescription.content);
+            // A saved description must stay directly editable — open the
+            // editor pre-filled instead of gating edits behind an AI
+            // regeneration that would discard the current text.
+            setDescShowComparison(true);
           }
         }
 
@@ -332,6 +336,20 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
     setSavedServices((prev) =>
       prev.map((s, i) => (i === index ? { ...s, description } : s))
     );
+  };
+
+  // Re-open a pushed service for editing. The save route resets the pushed
+  // status server-side on any update, so this only mirrors that contract:
+  // the edited copy must be approved and pushed again to go live.
+  const editPushedService = (index: number) => {
+    setSavedServices((prev) =>
+      prev.map((s, i) =>
+        i === index
+          ? { ...s, isPushed: false, pushedAt: null, isApproved: false }
+          : s
+      )
+    );
+    setSvcPushSuccess(false);
   };
 
   const approveAll = () => {
@@ -568,14 +586,19 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     </div>
                   </div>
 
-                  {/* RIGHT: AI Suggestion */}
+                  {/* RIGHT: editable copy (saved text, or the AI suggestion) */}
                   <div>
                     <p className="text-sm font-medium text-foreground mb-2">
-                      AI Suggestion
+                      Your Description
                     </p>
                     <textarea
                       value={aiDescription}
-                      onChange={(e) => setAiDescription(e.target.value)}
+                      onChange={(e) => {
+                        setAiDescription(e.target.value);
+                        // The "successfully pushed" banner must not outlive
+                        // the text it refers to.
+                        setDescPushSuccess(false);
+                      }}
                       rows={5}
                       disabled={descPushing}
                       className={`w-full border rounded-md p-3 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 min-h-[120px] ${
@@ -592,10 +615,20 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                   <span className={`text-xs font-medium ${descCharColor}`}>
                     {descCharCount} / 750 characters
                   </span>
-                  {descCharCount > 750 && (
+                  {descCharCount > 750 ? (
                     <span className="text-xs text-red-600">
                       Exceeds 750 character limit
                     </span>
+                  ) : (
+                    savedDescription?.isPushed &&
+                    savedDescription.pushedAt && (
+                      <span className="text-xs text-zinc-400">
+                        Last pushed{" "}
+                        {new Date(
+                          savedDescription.pushedAt
+                        ).toLocaleDateString()}
+                      </span>
+                    )
                   )}
                 </div>
 
@@ -987,9 +1020,9 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
 
                     <div className="mt-2">
                       {service.isPushed ? (
-                        <div className="flex items-center gap-1.5 text-primary text-sm">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1.5 text-primary text-sm">
+                            <CheckCircle2 className="w-4 h-4" />
                             Pushed on{" "}
                             {service.pushedAt
                               ? new Date(
@@ -997,6 +1030,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                                 ).toLocaleDateString()
                               : "unknown"}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => editPushedService(index)}
+                            className="text-zinc-400 text-xs underline hover:text-muted-foreground"
+                          >
+                            Edit
+                          </button>
                         </div>
                       ) : service.isApproved ? (
                         <div className="flex items-center gap-3">
