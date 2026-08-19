@@ -78,7 +78,10 @@ export async function saveProfileServices(
         },
       });
     }
-  });
+    // Up to 100 sequential upserts — Prisma's default 5s interactive
+    // transaction timeout is too tight for the service-rich profiles this
+    // flow exists for
+  }, { timeout: 30_000, maxWait: 5_000 });
 
   return prisma.profileService.findMany({
     where: { profileId },

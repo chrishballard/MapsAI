@@ -145,6 +145,60 @@ describe('generateServiceDescriptions name fidelity', () => {
     }
   });
 
+  it('sends two unrecognizable names to retry instead of trusting order', async () => {
+    // With two rewritten names, positional pairing could swap descriptions —
+    // the batch must hand them to the retry pass instead
+    let firstCall = true;
+    mocks.generate.mockImplementation(async (opts: { prompt: string }) => {
+      if (firstCall) {
+        firstCall = false;
+        return echoDescriptions({
+          mutateName: (n) =>
+            n === 'Trip & Fall'
+              ? 'Slip and Fall Accidents'
+              : n === 'Dog Bites'
+                ? 'Animal Attack Claims'
+                : n,
+        })(opts);
+      }
+      return echoDescriptions()(opts);
+    });
+
+    const result = await generateServiceDescriptions({
+      ...baseParams,
+      serviceNames: ['Divorce Mediation', 'Trip & Fall', 'Dog Bites'],
+    });
+
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    // Retry asked for exactly the two unmatched names
+    expect(namesFromPrompt(mocks.generate.mock.calls[1][0].prompt)).toEqual([
+      'Trip & Fall',
+      'Dog Bites',
+    ]);
+    expect(result.map((r) => r.serviceName)).toEqual([
+      'Divorce Mediation',
+      'Trip & Fall',
+      'Dog Bites',
+    ]);
+  });
+
+  it('keeps non-Latin service names distinct (no dedupe collapse)', async () => {
+    // Names in Cyrillic/CJK must not normalize to the same key — a collapse
+    // here would dedupe real services away and the replace-mode save would
+    // then delete their rows
+    const serviceNames = ['Ремонт крана', 'Установка бойлера', '排水管清掃'];
+
+    const result = await generateServiceDescriptions({
+      ...baseParams,
+      serviceNames,
+    });
+
+    expect(result.map((r) => r.serviceName)).toEqual(serviceNames);
+    for (const r of result) {
+      expect(r.description.length).toBeGreaterThan(0);
+    }
+  });
+
   it('drops services Claude invented that were never requested', async () => {
     mocks.generate.mockImplementation(
       echoDescriptions({

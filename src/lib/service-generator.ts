@@ -32,15 +32,21 @@ export class ServiceGenerationIncompleteError extends Error {
 }
 
 /**
- * Matching key tolerant of Claude's name drift: casing, whitespace, and
- * punctuation ("Kitchen & Bath" vs "kitchen and bath", curly apostrophes).
+ * Matching key tolerant of Claude's name drift: casing, whitespace,
+ * punctuation ("Kitchen & Bath" vs "kitchen and bath", curly apostrophes),
+ * and diacritics. Letters in any script are preserved — stripping to ASCII
+ * would collapse non-Latin names to "" and dedupe would destroy the list.
  */
 function nameKey(name: string): string {
-  return name
+  const normalized = name
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
+  // A name made purely of symbols still needs a non-empty, distinct key
+  return normalized || name.toLowerCase().trim();
 }
 
 /** Cut an overlong description at the last word boundary within the limit. */
@@ -144,15 +150,16 @@ Rules:
     }
   }
 
-  // Positional fallback: a complete, in-order answer with rewritten names
-  if (unmatchedInputs.length > 0 && outputs.length === serviceNames.length) {
+  // Positional fallback, only when unambiguous: a complete answer with
+  // exactly ONE unrecognizable name must be that name rewritten. With two or
+  // more, order-trust could swap descriptions (or adopt an invented service's
+  // text), so those go to the retry pass instead.
+  if (unmatchedInputs.length === 1 && outputs.length === serviceNames.length) {
     const unconsumedOutputs = outputs.filter(
       (s) => !consumedKeys.has(nameKey(s.serviceName))
     );
-    if (unconsumedOutputs.length === unmatchedInputs.length) {
-      unmatchedInputs.forEach((name, i) => {
-        matched.set(nameKey(name), unconsumedOutputs[i].description);
-      });
+    if (unconsumedOutputs.length === 1) {
+      matched.set(nameKey(unmatchedInputs[0]), unconsumedOutputs[0].description);
     }
   }
 
