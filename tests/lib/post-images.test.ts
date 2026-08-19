@@ -141,13 +141,65 @@ describe('markImagesUsed', () => {
 });
 
 describe('isImageFkViolation', () => {
-  it('matches only imageId foreign-key violations', () => {
+  it('matches the Prisma driver-adapter error shape (constraint index)', () => {
+    // What @prisma/adapter-pg actually produces for a Postgres 23503: the
+    // constraint name sits nested under meta.driverAdapterError, not at
+    // meta.constraint.
+    expect(
+      isImageFkViolation({
+        code: 'P2003',
+        meta: {
+          modelName: 'Post',
+          driverAdapterError: {
+            cause: {
+              kind: 'ForeignKeyConstraintViolation',
+              constraint: { index: 'Post_imageId_fkey' },
+            },
+          },
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('matches the driver-adapter column-fields variant', () => {
+    expect(
+      isImageFkViolation({
+        code: 'P2003',
+        meta: {
+          driverAdapterError: {
+            cause: {
+              kind: 'ForeignKeyConstraintViolation',
+              constraint: { fields: ['imageId'] },
+            },
+          },
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('still matches the legacy flat meta.constraint shape', () => {
     expect(
       isImageFkViolation({
         code: 'P2003',
         meta: { constraint: 'Post_imageId_fkey' },
       })
     ).toBe(true);
+  });
+
+  it('rejects other constraints and non-P2003 errors', () => {
+    expect(
+      isImageFkViolation({
+        code: 'P2003',
+        meta: {
+          driverAdapterError: {
+            cause: {
+              kind: 'ForeignKeyConstraintViolation',
+              constraint: { index: 'Post_profileId_fkey' },
+            },
+          },
+        },
+      })
+    ).toBe(false);
     expect(
       isImageFkViolation({
         code: 'P2003',
@@ -155,5 +207,6 @@ describe('isImageFkViolation', () => {
       })
     ).toBe(false);
     expect(isImageFkViolation(new Error('nope'))).toBe(false);
+    expect(isImageFkViolation({ code: 'P2003' })).toBe(false);
   });
 });

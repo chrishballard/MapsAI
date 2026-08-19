@@ -78,11 +78,26 @@ export async function markImagesUsed(imageIds: string[]): Promise<void> {
  * sync). Callers retry the batch without images instead of losing it.
  */
 export function isImageFkViolation(err: unknown): boolean {
-  const e = err as { code?: string; meta?: { constraint?: unknown } };
-  return (
-    e?.code === "P2003" &&
-    String(e?.meta?.constraint ?? "").includes("imageId")
-  );
+  const e = err as {
+    code?: string;
+    meta?: {
+      constraint?: unknown;
+      driverAdapterError?: {
+        cause?: { constraint?: { index?: unknown; fields?: unknown[] } };
+      };
+    };
+  };
+  if (e?.code !== "P2003") return false;
+  // With the pg driver adapter the constraint lands nested under
+  // meta.driverAdapterError (as a constraint name or column list); Prisma's
+  // classic engines put it flat at meta.constraint.
+  const adapterConstraint = e.meta?.driverAdapterError?.cause?.constraint;
+  const candidates = [
+    e.meta?.constraint,
+    adapterConstraint?.index,
+    ...(adapterConstraint?.fields ?? []),
+  ];
+  return candidates.some((c) => String(c ?? "").includes("imageId"));
 }
 
 async function approvedImageIds(profileId: string): Promise<string[]> {
