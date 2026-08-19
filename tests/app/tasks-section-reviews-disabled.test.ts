@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 
 describe('TasksSection', () => {
-  it('only queries drafted replies for profiles with reviews enabled', async () => {
+  it('only queries drafted replies for profiles with reviews enabled, skipping ignored star ratings', async () => {
     await TasksSection();
 
     expect(mocks.prisma.review.findMany).toHaveBeenCalledWith(
@@ -35,6 +35,17 @@ describe('TasksSection', () => {
           profileId: 'p1',
           profile: { reviewsEnabled: true },
           response: { status: 'DRAFTED' },
+          // A rating set to Ignore is not pending work — its drafts (if any
+          // exist from before the switch) stay off the task list.
+          NOT: {
+            OR: [
+              { rating: 1, profile: { reviewReplyMode1: 'IGNORE' } },
+              { rating: 2, profile: { reviewReplyMode2: 'IGNORE' } },
+              { rating: 3, profile: { reviewReplyMode3: 'IGNORE' } },
+              { rating: 4, profile: { reviewReplyMode4: 'IGNORE' } },
+              { rating: 5, profile: { reviewReplyMode5: 'IGNORE' } },
+            ],
+          },
         }),
       })
     );

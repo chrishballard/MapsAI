@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
+import { replyModeForRating } from "../src/lib/review-reply-mode";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -53,6 +54,25 @@ export const worker = new Worker<ReviewPublishJobData>(
     if (!review.profile.reviewsEnabled) {
       console.log(
         `Review management is off for ${review.profile.name}, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: { status: "DRAFTED", errorMessage: null },
+      });
+      return;
+    }
+
+    // A response the AUTO mode approved only publishes while its star
+    // rating is still set to AUTO. If the operator switched that rating to
+    // Draft or Ignore after this job was queued, drop it back to DRAFTED —
+    // a person can still approve it from the dashboard. Responses a person
+    // approved publish regardless of the mode.
+    if (
+      reviewResponse.autoApproved &&
+      replyModeForRating(review.profile, review.rating) !== "AUTO"
+    ) {
+      console.log(
+        `Star mode for ${review.rating}-star reviews on ${review.profile.name} is no longer AUTO, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
       );
       await prisma.reviewResponse.update({
         where: { id: reviewResponseId },

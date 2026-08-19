@@ -10,6 +10,7 @@ import {
 } from "./review-actions";
 import { ReviewSettingsPanel } from "./review-settings-panel";
 import { getSelectedProfileId } from "@/lib/selected-profile";
+import { replyModeForRating } from "@/lib/review-reply-mode";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -106,6 +107,11 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             name: true,
             category: true,
             reviewsEnabled: true,
+            reviewReplyMode1: true,
+            reviewReplyMode2: true,
+            reviewReplyMode3: true,
+            reviewReplyMode4: true,
+            reviewReplyMode5: true,
           },
         },
         response: true,
@@ -120,6 +126,11 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             name: true,
             reviewsEnabled: true,
             reviewInstructions: true,
+            reviewReplyMode1: true,
+            reviewReplyMode2: true,
+            reviewReplyMode3: true,
+            reviewReplyMode4: true,
+            reviewReplyMode5: true,
           },
         })
       : null,
@@ -131,8 +142,12 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   // enabled and disabled profiles are listed together.
   const reviewsDisabled = selectedProfile ? !selectedProfile.reviewsEnabled : false;
 
+  // Drafts for ratings set to Ignore are hidden from the pending queue and
+  // skipped by bulk approve, so they don't count toward the button either.
   const draftCount = reviews.filter(
-    (r) => r.response?.status === "DRAFTED"
+    (r) =>
+      r.response?.status === "DRAFTED" &&
+      replyModeForRating(r.profile, r.rating) !== "IGNORE"
   ).length;
 
   const hasFilters = rating || responseStatus;
@@ -188,6 +203,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
           profileName={selectedProfile.name}
           reviewsEnabled={selectedProfile.reviewsEnabled}
           reviewInstructions={selectedProfile.reviewInstructions}
+          replyModes={selectedProfile}
         />
       )}
 

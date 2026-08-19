@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getSelectedProfileId } from "@/lib/selected-profile";
+import { ratingNotIgnoredFilter } from "@/lib/review-reply-mode";
 import { Building2, FileText, MessageSquare, BarChart3, ArrowUpRight, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,11 +20,13 @@ export async function StatsGrid() {
     prisma.reviewResponse.count({
       where: {
         status: "DRAFTED",
-        // Match the task list: profiles with review management off contribute
-        // no pending work, so they must not inflate this count either.
+        // Match the task list: profiles with review management off — and
+        // star ratings set to Ignore — contribute no pending work, so they
+        // must not inflate this count either.
         review: {
           ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
           profile: { reviewsEnabled: true },
+          ...ratingNotIgnoredFilter(),
         },
       },
     }),
@@ -77,11 +80,13 @@ export async function AIInsightsPanel() {
     prisma.reviewResponse.count({
       where: {
         status: "DRAFTED",
-        // Match the task list: profiles with review management off contribute
-        // no pending work, so they must not inflate this count either.
+        // Match the task list: profiles with review management off — and
+        // star ratings set to Ignore — contribute no pending work, so they
+        // must not inflate this count either.
         review: {
           ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
           profile: { reviewsEnabled: true },
+          ...ratingNotIgnoredFilter(),
         },
       },
     }),

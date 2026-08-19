@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Settings, CheckCircle2 } from "lucide-react";
+import { Loader2, Settings, MessageSquare, CheckCircle2 } from "lucide-react";
 import { fetchJson, sendJson } from "@/lib/fetch-json";
+import { StarReplyModeRows } from "@/components/reviews/star-reply-mode-rows";
+import type { ReviewReplyMode, StarRating } from "@/lib/review-reply-mode";
 
 interface SettingsStepProps {
   profileId: string;
@@ -14,13 +16,22 @@ interface SettingsStepProps {
 
 const PRESETS = [4, 8, 12];
 
+const DEFAULT_REPLY_MODES: Record<StarRating, ReviewReplyMode> = {
+  1: "DRAFT",
+  2: "DRAFT",
+  3: "DRAFT",
+  4: "DRAFT",
+  5: "DRAFT",
+};
+
 export function SettingsStep({
   profileId,
   onComplete,
   standalone = false,
 }: SettingsStepProps) {
   const [postFrequency, setPostFrequency] = useState(4);
-  const [autoApproveReviews, setAutoApproveReviews] = useState(false);
+  const [replyModes, setReplyModes] =
+    useState<Record<StarRating, ReviewReplyMode>>(DEFAULT_REPLY_MODES);
   const [isCustom, setIsCustom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,11 +43,21 @@ export function SettingsStep({
       try {
         const data = await fetchJson<{
           postFrequency?: number;
-          autoApproveReviews?: boolean;
+          reviewReplyMode1?: ReviewReplyMode;
+          reviewReplyMode2?: ReviewReplyMode;
+          reviewReplyMode3?: ReviewReplyMode;
+          reviewReplyMode4?: ReviewReplyMode;
+          reviewReplyMode5?: ReviewReplyMode;
         }>(`/api/onboarding/settings?profileId=${profileId}`);
         const freq = data.postFrequency ?? 4;
         setPostFrequency(freq);
-        setAutoApproveReviews(data.autoApproveReviews ?? false);
+        setReplyModes({
+          1: data.reviewReplyMode1 ?? "DRAFT",
+          2: data.reviewReplyMode2 ?? "DRAFT",
+          3: data.reviewReplyMode3 ?? "DRAFT",
+          4: data.reviewReplyMode4 ?? "DRAFT",
+          5: data.reviewReplyMode5 ?? "DRAFT",
+        });
         if (!PRESETS.includes(freq)) {
           setIsCustom(true);
         }
@@ -48,6 +69,11 @@ export function SettingsStep({
     }
     fetchSettings();
   }, [profileId]);
+
+  const handleModeChange = (rating: StarRating, mode: ReviewReplyMode) => {
+    setReplyModes((current) => ({ ...current, [rating]: mode }));
+    setSaveSuccess(false);
+  };
 
   const handleSelectChange = (value: string) => {
     setSaveSuccess(false);
@@ -73,7 +99,15 @@ export function SettingsStep({
     try {
       await sendJson(
         "/api/onboarding/settings",
-        { profileId, postFrequency, autoApproveReviews },
+        {
+          profileId,
+          postFrequency,
+          reviewReplyMode1: replyModes[1],
+          reviewReplyMode2: replyModes[2],
+          reviewReplyMode3: replyModes[3],
+          reviewReplyMode4: replyModes[4],
+          reviewReplyMode5: replyModes[5],
+        },
         "PATCH"
       );
       setSaveSuccess(true);
@@ -143,29 +177,21 @@ export function SettingsStep({
         </div>
       )}
 
-      {/* Auto-approve review responses (opt-in) */}
-      <div>
-        <label className="flex items-start gap-3 p-4 rounded-md border border-border hover:bg-muted/50 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={autoApproveReviews}
-            onChange={(e) => {
-              setAutoApproveReviews(e.target.checked);
-              setSaveSuccess(false);
-            }}
-            className="h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-brand-50"
-          />
-          <span>
-            <span className="block text-sm font-medium text-foreground">
-              Auto-approve AI review responses
-            </span>
-            <span className="block text-xs text-muted-foreground mt-0.5">
-              Publish AI-generated responses to 3–5 star reviews automatically.
-              When off, every response waits for your approval. 1–2 star
-              reviews always require approval.
-            </span>
-          </span>
-        </label>
+      {/* Per-star review reply handling */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-zinc-400" />
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              Review Replies
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              What should RankMaps do when a new review comes in at each star
+              rating?
+            </p>
+          </div>
+        </div>
+        <StarReplyModeRows values={replyModes} onChange={handleModeChange} />
       </div>
 
       {/* Save & Continue */}

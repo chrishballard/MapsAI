@@ -2,15 +2,18 @@ import { prisma } from "../prisma";
 import { fetchReviews, STAR_RATING_MAP } from "../google-reviews";
 import { generateReviewResponse } from "../review-responder";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
+import {
+  replyModeForRating,
+  type StarReplyModes,
+} from "../review-reply-mode";
 
-interface ReviewSyncProfile {
+interface ReviewSyncProfile extends StarReplyModes {
   id: string;
   name: string;
   category: string | null;
   googleAccountId: string;
   accountResourceName: string | null;
   locationName: string;
-  autoApproveReviews: boolean;
   reviewsEnabled: boolean;
   reviewInstructions: string | null;
 }
@@ -21,9 +24,11 @@ export interface SyncProfileReviewsOptions {
 
 /**
  * Fetch all reviews from the GBP API for one profile, store new ones, and
- * draft AI responses. Reviews that already have a reply on Google were
- * answered outside RankMaps — they're stored so the dashboard shows them,
- * but never get a generated or published response.
+ * handle each per the profile's star reply mode: IGNORE stores the review
+ * only, DRAFT adds an AI reply awaiting approval, AUTO approves and queues
+ * publishing. Reviews that already have a reply on Google were answered
+ * outside RankMaps — they're stored so the dashboard shows them, but never
+ * get a generated or published response.
  *
  * Profiles with review management turned off are skipped entirely: no
  * fetching, no storing, no drafting.
@@ -84,6 +89,14 @@ export async function syncProfileReviews(
         continue;
       }
 
+      const mode = replyModeForRating(profile, rating);
+      if (mode === "IGNORE") {
+        // This star rating is set to Ignore: the review is stored so the
+        // dashboard shows it, but RankMaps never drafts or publishes a
+        // reply. (The operator can still generate one manually.)
+        continue;
+      }
+
       try {
         const aiResponse = await generateReviewResponse({
           businessName: profile.name,
@@ -94,16 +107,14 @@ export async function syncProfileReviews(
           customInstructions: profile.reviewInstructions,
         });
 
-        // 1-2 star reviews always require human approval — an AI reply to an
-        // angry (or adversarial) reviewer is too risky to publish unreviewed,
-        // even with auto-approve on.
-        const autoApprove = profile.autoApproveReviews && rating >= 3;
+        const autoApprove = mode === "AUTO";
 
         const reviewResponse = await prisma.reviewResponse.create({
           data: {
             reviewId: review.id,
             content: aiResponse.response,
             status: autoApprove ? "APPROVED" : "DRAFTED",
+            autoApproved: autoApprove,
           },
         });
 

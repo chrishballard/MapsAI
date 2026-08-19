@@ -38,10 +38,15 @@ beforeEach(() => {
 });
 
 describe('GET /api/reviews/settings', () => {
-  it('returns the profile settings', async () => {
+  it('returns the profile settings including star reply modes', async () => {
     mocks.prisma.profile.findUnique.mockResolvedValue({
       reviewsEnabled: false,
       reviewInstructions: 'Respond as Ben.',
+      reviewReplyMode1: 'IGNORE',
+      reviewReplyMode2: 'DRAFT',
+      reviewReplyMode3: 'DRAFT',
+      reviewReplyMode4: 'AUTO',
+      reviewReplyMode5: 'AUTO',
     });
 
     const res = await GET(
@@ -54,6 +59,11 @@ describe('GET /api/reviews/settings', () => {
     await expect(res.json()).resolves.toEqual({
       reviewsEnabled: false,
       reviewInstructions: 'Respond as Ben.',
+      reviewReplyMode1: 'IGNORE',
+      reviewReplyMode2: 'DRAFT',
+      reviewReplyMode3: 'DRAFT',
+      reviewReplyMode4: 'AUTO',
+      reviewReplyMode5: 'AUTO',
     });
   });
 
@@ -110,6 +120,29 @@ describe('PATCH /api/reviews/settings', () => {
 
   it('rejects a body with nothing to update', async () => {
     const res = await PATCH(patchRequest({ profileId: 'p1' }));
+
+    expect(res.status).toBe(400);
+    expect(mocks.prisma.profile.update).not.toHaveBeenCalled();
+  });
+
+  it('updates a single star reply mode on its own', async () => {
+    const res = await PATCH(
+      patchRequest({ profileId: 'p1', reviewReplyMode1: 'IGNORE' })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.prisma.profile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p1' },
+        data: { reviewReplyMode1: 'IGNORE' },
+      })
+    );
+  });
+
+  it('rejects an unknown reply mode value', async () => {
+    const res = await PATCH(
+      patchRequest({ profileId: 'p1', reviewReplyMode3: 'SOMETIMES' })
+    );
 
     expect(res.status).toBe(400);
     expect(mocks.prisma.profile.update).not.toHaveBeenCalled();
