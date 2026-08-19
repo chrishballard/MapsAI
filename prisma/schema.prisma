@@ -74,9 +74,16 @@ model Profile {
   reviewReplyMode4   ReviewReplyMode @default(DRAFT)
   reviewReplyMode5   ReviewReplyMode @default(DRAFT)
   postFrequency      Int         @default(4)
+  // Secret token for the public client photo-upload page (/u/[token]).
+  // Null until a share link is generated; rotating it kills the old link.
+  uploadToken        String?     @unique
+  // Last time the image library was refreshed from GBP media — throttles
+  // the automatic sync that runs during post generation.
+  mediaSyncedAt      DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   posts           Post[]
+  images          ProfileImage[]
   promptTemplate  PromptTemplate?
   reviews         Review[]
   dailyMetrics    DailyMetric[]
@@ -115,7 +122,11 @@ model Post {
   type         PostType   @default(WHATS_NEW)
   content      String
   callToAction String?
+  // Resolved image URL recorded at publish time (or a manually set absolute
+  // URL). The library image attached to the post lives in imageId.
   mediaUrl     String?
+  imageId      String?
+  image        ProfileImage? @relation(fields: [imageId], references: [id], onDelete: SetNull)
   status       PostStatus @default(DRAFT)
   scheduledAt  DateTime?
   publishedAt  DateTime?
@@ -126,6 +137,53 @@ model Post {
 
   @@index([profileId, status])
   @@index([status, scheduledAt])
+  @@index([imageId])
+}
+
+// --- Image Library Models ---
+
+enum ProfileImageSource {
+  GBP    // synced from the profile's existing Google Business Profile media
+  TEAM   // uploaded by a Vineyard Growth team member in the dashboard
+  CLIENT // uploaded by the client through the public share link
+}
+
+enum ProfileImageStatus {
+  PENDING  // client uploads wait here until a team member approves them
+  APPROVED // in the rotation — eligible to be attached to posts
+  HIDDEN   // kept but excluded from the rotation
+}
+
+model ProfileImage {
+  id              String             @id @default(cuid())
+  profileId       String
+  profile         Profile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  source          ProfileImageSource
+  status          ProfileImageStatus @default(APPROVED)
+  // Unguessable token for the public serving route (/api/public/images/[token]).
+  // Google fetches post images from that URL, so it must work without auth.
+  publicToken     String             @unique
+  // Uploaded images (TEAM/CLIENT): bytes live in Postgres. thumbData is a
+  // ~480px JPEG generated at upload so grids never stream the original.
+  data            Bytes?
+  thumbData       Bytes?
+  contentType     String?
+  byteSize        Int?
+  // GBP-synced images: metadata only — Google already hosts the bytes.
+  googleMediaName String?            @unique
+  googleUrl       String?
+  thumbnailUrl    String?
+  width           Int?
+  height          Int?
+  category        String?
+  uploadedBy      String?
+  timesUsed       Int                @default(0)
+  lastUsedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  posts           Post[]
+
+  @@index([profileId, status])
 }
 
 model PromptTemplate {

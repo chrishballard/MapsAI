@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import NextImage from "next/image";
 import {
   Send,
   Check,
@@ -10,6 +11,7 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  ImagePlus,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ImagePickerDialog } from "./image-picker-dialog";
 
 interface PostDetailDialogProps {
   post: {
@@ -33,7 +36,10 @@ interface PostDetailDialogProps {
     publishedAt: string | null;
     createdAt: string;
     errorMessage: string | null;
+    profileId: string;
     profileName: string;
+    imageId: string | null;
+    imageUrl: string | null;
   };
   children: React.ReactNode;
 }
@@ -71,9 +77,27 @@ export function PostDetailDialog({ post, children }: PostDetailDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const statusConfig = STATUS_CONFIG[post.status] || STATUS_CONFIG.DRAFT;
   const StatusIcon = statusConfig.icon;
+  // Photo can change while the post is still in our hands.
+  const canEditImage =
+    post.status !== "PUBLISHING" && post.status !== "PUBLISHED";
+
+  async function handleSelectImage(imageId: string | null) {
+    const res = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      alert(data?.error || "Failed to update the photo");
+      return;
+    }
+    router.refresh();
+  }
 
   async function handlePublishNow() {
     if (!confirm("Publish this post to Google now?")) return;
@@ -192,6 +216,32 @@ export function PostDetailDialog({ post, children }: PostDetailDialogProps) {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Post photo */}
+            {post.imageUrl && (
+              <div className="relative w-full h-44 rounded-xl overflow-hidden bg-zinc-100 border border-zinc-100">
+                <NextImage
+                  src={post.imageUrl}
+                  alt="Post photo"
+                  fill
+                  sizes="480px"
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
+            )}
+            {canEditImage && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPickerOpen(true)}
+                disabled={loading}
+                className="gap-1.5"
+              >
+                <ImagePlus size={14} />
+                {post.imageUrl ? "Change photo" : "Add photo"}
+              </Button>
+            )}
+
             {/* Full post content */}
             <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
               <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-wrap">
@@ -280,6 +330,14 @@ export function PostDetailDialog({ post, children }: PostDetailDialogProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImagePickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        profileId={post.profileId}
+        currentImageId={post.imageId}
+        onSelect={handleSelectImage}
+      />
     </>
   );
 }

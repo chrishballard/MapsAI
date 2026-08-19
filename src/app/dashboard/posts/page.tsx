@@ -10,6 +10,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { Prisma, PostStatus, PostType } from "@/generated/prisma/client";
 import Link from "next/link";
+import NextImage from "next/image";
+import { displayImageUrl } from "@/lib/image-urls";
 import { PostFilters } from "./post-filters";
 import { PostActions, BulkApproveButton } from "./post-actions";
 import { PostDetailDialog } from "./post-detail-dialog";
@@ -90,6 +92,14 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
       where,
       include: {
         profile: { select: { id: true, name: true, category: true } },
+        image: {
+          select: {
+            publicToken: true,
+            googleUrl: true,
+            thumbnailUrl: true,
+            status: true,
+          },
+        },
       },
       orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }],
     }),
@@ -182,6 +192,12 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
             const StatusIcon = statusConfig.icon;
             const isFailed = post.status === "FAILED";
 
+            const imageUrl = post.image ? displayImageUrl(post.image) : null;
+            // A photo hidden after scheduling won't be published — say so
+            // instead of previewing an image that won't go out.
+            const imageHidden =
+              post.image != null && post.image.status !== "APPROVED";
+
             const dialogPost = {
               id: post.id,
               content: post.content,
@@ -192,7 +208,10 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
               publishedAt: post.publishedAt?.toISOString() ?? null,
               createdAt: post.createdAt.toISOString(),
               errorMessage: post.errorMessage,
+              profileId: post.profileId,
               profileName: post.profile.name,
+              imageId: post.imageId,
+              imageUrl,
             };
 
             return (
@@ -225,6 +244,23 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
                       </div>
                     </CardHeader>
                     <CardContent className="flex-1">
+                      {imageUrl && (
+                        <div className="relative w-full h-28 rounded-lg overflow-hidden bg-zinc-100 mb-3">
+                          <NextImage
+                            src={imageUrl}
+                            alt=""
+                            fill
+                            sizes="400px"
+                            unoptimized
+                            className={`object-cover ${imageHidden ? "opacity-40" : ""}`}
+                          />
+                          {imageHidden && (
+                            <span className="absolute bottom-1.5 left-1.5 text-[10px] font-bold uppercase tracking-wider bg-zinc-900/80 text-white px-1.5 py-0.5 rounded">
+                              Hidden, won&apos;t publish
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <p className="text-sm text-zinc-600 leading-relaxed line-clamp-4 italic">
                         &ldquo;{post.content.length > 150
                           ? `${post.content.slice(0, 150)}...`

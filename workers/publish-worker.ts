@@ -1,6 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { createGBPPost, listGBPPosts, GBPLocalPost } from "../src/lib/google-posts";
+import { resolvePostImageSourceUrl } from "../src/lib/image-urls";
 import { prisma } from "../src/lib/prisma";
 import { PostType } from "../src/generated/prisma/client";
 
@@ -41,15 +42,81 @@ async function findLiveMatchingPost(
   return livePosts.find((live) => live.summary === post.content);
 }
 
-async function markPublished(postId: string, googlePostId: string) {
+async function markPublished(
+  postId: string,
+  googlePostId: string,
+  extra: { mediaUrl?: string | null; note?: string | null } = {}
+) {
   await prisma.post.update({
     where: { id: postId },
     data: {
       status: "PUBLISHED",
       publishedAt: new Date(),
       googlePostId,
+      // Record the image URL that actually went out (or clear a stale one),
+      // and clear any error left over from a previous failed attempt. A
+      // non-fatal note (e.g. "image skipped") is kept for debugging.
+      ...(extra.mediaUrl !== undefined ? { mediaUrl: extra.mediaUrl } : {}),
+      errorMessage: extra.note ?? null,
     },
   });
+}
+
+/**
+ * Resolve the post's attached library image to a URL Google can fetch.
+ * When a photo is attached but can't go out (hidden after scheduling, or
+ * no public app URL to serve uploaded bytes from), skipNote carries the
+ * reason so it lands on the post record instead of only in worker stdout.
+ * Post.mediaUrl is a publish-time record, never an input.
+ */
+function resolvePostMedia(post: {
+  image: {
+    publicToken: string;
+    googleUrl: string | null;
+    thumbnailUrl: string | null;
+    status: string;
+  } | null;
+}): { url: string | null; skipNote: string | null } {
+  if (!post.image) return { url: null, skipNote: null };
+
+  // An image hidden/unapproved after the post was scheduled must not go out.
+  if (post.image.status !== "APPROVED") {
+    return {
+      url: null,
+      skipNote: "Image skipped: photo is no longer approved in the library",
+    };
+  }
+
+  const url = resolvePostImageSourceUrl(post.image);
+  if (!url) {
+    return {
+      url: null,
+      skipNote:
+        "Image skipped: no publicly reachable image URL (NEXTAUTH_URL must be a public https URL)",
+    };
+  }
+
+  return { url, skipNote: null };
+}
+
+/**
+ * Google rejected the request itself (HTTP 400 INVALID_ARGUMENT). When a
+ * photo was attached, the photo is by far the most likely culprit
+ * (unfetchable sourceUrl, unsupported content) — worth detaching so the
+ * retry can publish text-only. Non-400s (429/5xx/network) are transient and
+ * must retry unchanged, photo included.
+ */
+function isBadRequestError(err: unknown): boolean {
+  const e = err as {
+    response?: { status?: number };
+    status?: number;
+    code?: number | string;
+  };
+  const status =
+    e?.response?.status ??
+    e?.status ??
+    (typeof e?.code === "number" ? e.code : undefined);
+  return status === 400;
 }
 
 export const worker = new Worker<PublishJobData>(
@@ -65,6 +132,14 @@ export const worker = new Worker<PublishJobData>(
         profile: {
           include: {
             googleAccount: true,
+          },
+        },
+        image: {
+          select: {
+            publicToken: true,
+            googleUrl: true,
+            thumbnailUrl: true,
+            status: true,
           },
         },
       },
@@ -143,21 +218,70 @@ export const worker = new Worker<PublishJobData>(
 
       const topicType = POST_TYPE_TO_GBP[post.type];
 
-      const result = await createGBPPost({
-        googleAccountId: post.profile.googleAccountId,
-        accountResourceName: post.profile.accountResourceName,
-        locationName: post.profile.locationName,
-        summary: post.content,
-        topicType,
-        callToAction:
-          post.callToAction && post.callToAction.startsWith("http")
-            ? { actionType: "LEARN_MORE", url: post.callToAction }
+      const { url: mediaUrl, skipNote } = resolvePostMedia(post);
+      if (skipNote) {
+        console.warn(`Post ${postId}: ${skipNote}, publishing text-only`);
+      }
+      // An earlier attempt may have detached a Google-rejected image and
+      // left its reason on the post — keep that note through this publish.
+      const priorSkipNote = post.errorMessage?.startsWith("Image skipped:")
+        ? post.errorMessage
+        : null;
+
+      let result;
+      try {
+        result = await createGBPPost({
+          googleAccountId: post.profile.googleAccountId,
+          accountResourceName: post.profile.accountResourceName,
+          locationName: post.profile.locationName,
+          summary: post.content,
+          topicType,
+          callToAction:
+            post.callToAction && post.callToAction.startsWith("http")
+              ? { actionType: "LEARN_MORE", url: post.callToAction }
+              : undefined,
+          media: mediaUrl
+            ? [{ mediaFormat: "PHOTO" as const, sourceUrl: mediaUrl }]
             : undefined,
+        });
+      } catch (err) {
+        // Google rejected the request while a photo was attached: detach it
+        // with a note, then rethrow. The normal BullMQ retry publishes
+        // text-only through the same claim/dedupe/limiter machinery — never
+        // a second GBP write inside this job (the queue limiter is sized
+        // for one write per job, and an unchecked second create could
+        // duplicate a post that actually committed before the error).
+        if (mediaUrl && isBadRequestError(err)) {
+          const reason = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `Post ${postId}: request with photo rejected (${reason}), detaching the image for the retry`
+          );
+          await prisma.post
+            .update({
+              where: { id: postId },
+              data: {
+                imageId: null,
+                errorMessage: `Image skipped: ${reason}`.slice(0, 500),
+              },
+            })
+            .catch((detachErr) =>
+              console.error(
+                `Failed to detach image on post ${postId}: ${detachErr}`
+              )
+            );
+        }
+        throw err;
+      }
+
+      await markPublished(postId, result.name, {
+        mediaUrl,
+        note: skipNote ?? priorSkipNote,
       });
 
-      await markPublished(postId, result.name);
-
-      console.log(`Post ${postId} published successfully as ${result.name}`);
+      console.log(
+        `Post ${postId} published successfully as ${result.name}` +
+          (mediaUrl ? " (with image)" : "")
+      );
     } catch (err) {
       // Release the claim so a retry can re-attempt. The live-post check
       // above keeps a timed-out-but-created post from being published twice.

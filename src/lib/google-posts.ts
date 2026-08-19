@@ -7,6 +7,10 @@ interface CreateGBPPostParams {
   summary: string;
   topicType: "STANDARD" | "EVENT" | "OFFER";
   callToAction?: { actionType: string; url?: string };
+  // Google fetches each sourceUrl server-side at creation time, so the URL
+  // must be publicly reachable (our public image route, or Google's own CDN
+  // for photos synced from the profile).
+  media?: Array<{ mediaFormat: "PHOTO"; sourceUrl: string }>;
 }
 
 interface GBPPostResponse {
@@ -60,6 +64,7 @@ export async function createGBPPost(
     summary,
     topicType,
     callToAction,
+    media,
   } = params;
 
   const oauth2Client = await createGoogleClient(googleAccountId);
@@ -75,6 +80,10 @@ export async function createGBPPost(
 
   if (callToAction) {
     body.callToAction = callToAction;
+  }
+
+  if (media && media.length > 0) {
+    body.media = media;
   }
 
   const response = await oauth2Client.request<GBPPostResponse>({
