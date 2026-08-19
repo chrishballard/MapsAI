@@ -8,6 +8,7 @@ import { parseBody, idSchema } from "@/lib/api-validation";
 import { listProfileImages } from "@/lib/image-library";
 import { storeUploadedImages, filesFromForm } from "@/lib/image-upload";
 import { MAX_FILES_PER_UPLOAD } from "@/lib/image-validation";
+import { enqueueCaptionsForProfile } from "@/lib/queue/image-caption-queue";
 import type { ProfileImageStatus } from "@/generated/prisma/client";
 
 /** List a profile's image library (metadata only — bytes stay in the DB). */
@@ -70,6 +71,13 @@ export async function POST(request: Request) {
     uploadedBy,
   });
 
+  // Team uploads land APPROVED, so queue their vision captions right away.
+  // enqueueCaptionsForProfile never throws — a queue problem never fails
+  // the upload.
+  if (results.some((r) => r.ok)) {
+    await enqueueCaptionsForProfile(result.id);
+  }
+
   return NextResponse.json({
     results,
     stored: results.filter((r) => r.ok).length,
@@ -95,6 +103,12 @@ export async function PATCH(request: Request) {
     where: { profileId: result.id, status: parsed.data.from },
     data: { status: parsed.data.to },
   });
+
+  // Newly approved images (bulk "Approve all") need vision captions before
+  // they can be matched to posts. Never fails the status change.
+  if (parsed.data.to === "APPROVED" && updated.count > 0) {
+    await enqueueCaptionsForProfile(result.id);
+  }
 
   return NextResponse.json({ updated: updated.count });
 }

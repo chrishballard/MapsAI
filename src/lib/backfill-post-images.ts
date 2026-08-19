@@ -38,8 +38,9 @@ export interface BackfillSummary {
 /** The same criteria the candidate query uses, re-evaluated atomically at
  *  write time: a post that was published, became due, or got an image since
  *  the candidate query ran must be left alone (the publish worker may be
- *  processing it right now). */
-function stillBackfillable() {
+ *  processing it right now). Shared with the caption-aware rematch script,
+ *  which guards its writes with the identical shape. */
+export function stillBackfillable() {
   return [
     { status: "SCHEDULED" as const, scheduledAt: { gt: new Date() } },
     { status: "DRAFT" as const },

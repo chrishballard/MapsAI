@@ -2,6 +2,7 @@ import { createGoogleClient } from "./google";
 import { prisma } from "./prisma";
 import { newImageToken } from "./image-tokens";
 import { IMAGE_MIN_WIDTH, IMAGE_MIN_HEIGHT } from "./image-validation";
+import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
 
 export interface GBPMediaItem {
   name: string; // "accounts/{a}/locations/{l}/media/{id}"
@@ -63,7 +64,12 @@ export interface MediaSyncResult {
  * recorded mediaUrl; the FK nulls out via onDelete: SetNull).
  */
 export async function syncProfileMediaToLibrary(
-  profileId: string
+  profileId: string,
+  options: {
+    /** Set when the caller captions inline right after the sync (onboarding
+     *  pre-pass) — the enqueue hook would double-bill the same images. */
+    skipCaptionEnqueue?: boolean;
+  } = {}
 ): Promise<MediaSyncResult> {
   const profile = await prisma.profile.findUniqueOrThrow({
     where: { id: profileId },
@@ -147,7 +153,15 @@ export async function syncProfileMediaToLibrary(
         row.width !== shared.width ||
         row.height !== shared.height ||
         row.category !== shared.category;
-      if (changed) updates.push({ id: row.id, data: shared });
+      if (changed) {
+        // A refreshed googleUrl gives a permanently fetch-skipped image a
+        // new chance — clear the skip so captioning retries with it.
+        const data =
+          row.googleUrl !== shared.googleUrl
+            ? { ...shared, captionSkipReason: null }
+            : shared;
+        updates.push({ id: row.id, data });
+      }
     } else {
       creates.push({
         profileId,
@@ -185,6 +199,19 @@ export async function syncProfileMediaToLibrary(
       select: { id: true },
     }),
   ]);
+
+  // Queue vision captions for anything approved and uncaptioned — new rows
+  // from this sync included (createMany returns no ids, so the queue helper
+  // re-queries). Also re-captions photos that were deleted from GBP and came
+  // back as brand-new rows. Never lets a queue problem fail the sync.
+  if (!options.skipCaptionEnqueue) {
+    await enqueueCaptionsForProfile(profileId).catch((err) =>
+      console.warn(
+        `[google-media] Failed to enqueue captions for profile ${profileId}:`,
+        err
+      )
+    );
+  }
 
   return {
     added: creates.length,

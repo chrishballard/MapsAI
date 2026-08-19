@@ -2,11 +2,8 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateMonthlyPosts } from "@/lib/post-generator";
-import {
-  pickImagesForPosts,
-  markImagesUsed,
-  isImageFkViolation,
-} from "@/lib/post-images";
+import { markImagesUsed, isImageFkViolation } from "@/lib/post-images";
+import { pickImagesForPostContents } from "@/lib/post-image-matcher";
 import { PostType } from "@/generated/prisma/client";
 import { z } from "zod";
 import { idSchema, parseBody } from "@/lib/api-validation";
@@ -73,11 +70,14 @@ export async function POST(request: Request) {
         profile.postFrequency ?? 4
       );
 
-      // Rotate a library image onto each draft; an empty library just
-      // means text-only posts (pickImagesForPosts never throws).
-      const images = await pickImagesForPosts(
+      // Match a library image to each draft's content; an empty library
+      // just means text-only posts (the picker never throws).
+      const images = await pickImagesForPostContents(
         profile.id,
-        generated.posts.length
+        generated.posts.map((post) => ({
+          content: post.content,
+          type: post.suggestedType,
+        }))
       );
 
       // Save generated posts as DRAFT — atomically, so a mid-batch failure

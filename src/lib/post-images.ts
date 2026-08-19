@@ -6,10 +6,51 @@ import { syncProfileMediaToLibrary } from "./google-media";
 // at least this old. The Images page button syncs unconditionally.
 const AUTO_SYNC_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/** An approved library image with the caption fields the matcher needs. */
+export interface ApprovedPoolImage {
+  id: string;
+  aiDescription: string | null;
+  aiTags: string[];
+  aiGeneric: boolean | null;
+  captionedAt: Date | null;
+  captionSkipReason: string | null;
+}
+
+/**
+ * Load the profile's approved image pool, least-recently-used first
+ * (never-used images come before everything else). When the library is
+ * empty, tries one throttled GBP media sync before giving up. Can throw on
+ * a DB failure — callers own their degradation.
+ */
+export async function ensureApprovedPool(
+  profileId: string
+): Promise<ApprovedPoolImage[]> {
+  let pool = await approvedPool(profileId);
+
+  // Empty library: try filling it from the profile's existing GBP photos.
+  if (pool.length === 0 && (await shouldAutoSync(profileId))) {
+    try {
+      await syncProfileMediaToLibrary(profileId);
+      pool = await approvedPool(profileId);
+    } catch (err) {
+      console.warn(
+        `[post-images] GBP media auto-sync failed for profile ${profileId}:`,
+        err
+      );
+    }
+  }
+
+  return pool;
+}
+
 /**
  * Pick one library image id per post, rotating through the approved pool
  * least-recently-used first (never-used images come before everything
  * else). When the batch is larger than the pool, images repeat in order.
+ *
+ * Content-blind — post generation now matches on captions via
+ * pickImagesForPostContents; this remains as its zero-captions fallback
+ * and for the original backfill script.
  *
  * Never throws and pads with nulls when the profile has no usable images —
  * an image problem must never fail post generation; posts just go out
@@ -23,24 +64,10 @@ export async function pickImagesForPosts(
   const none: (string | null)[] = new Array(count).fill(null);
 
   try {
-    let pool = await approvedImageIds(profileId);
-
-    // Empty library: try filling it from the profile's existing GBP photos.
-    if (pool.length === 0 && (await shouldAutoSync(profileId))) {
-      try {
-        await syncProfileMediaToLibrary(profileId);
-        pool = await approvedImageIds(profileId);
-      } catch (err) {
-        console.warn(
-          `[post-images] GBP media auto-sync failed for profile ${profileId}:`,
-          err
-        );
-      }
-    }
-
+    const pool = await ensureApprovedPool(profileId);
     if (pool.length === 0) return none;
 
-    return Array.from({ length: count }, (_, i) => pool[i % pool.length]);
+    return Array.from({ length: count }, (_, i) => pool[i % pool.length].id);
   } catch (err) {
     console.warn(
       `[post-images] Image selection failed for profile ${profileId}:`,
@@ -100,17 +127,23 @@ export function isImageFkViolation(err: unknown): boolean {
   return candidates.some((c) => String(c ?? "").includes("imageId"));
 }
 
-async function approvedImageIds(profileId: string): Promise<string[]> {
-  const rows = await prisma.profileImage.findMany({
+async function approvedPool(profileId: string): Promise<ApprovedPoolImage[]> {
+  return prisma.profileImage.findMany({
     where: { profileId, status: "APPROVED" },
     orderBy: [
       { lastUsedAt: { sort: "asc", nulls: "first" } },
       { timesUsed: "asc" },
       { createdAt: "asc" },
     ],
-    select: { id: true },
+    select: {
+      id: true,
+      aiDescription: true,
+      aiTags: true,
+      aiGeneric: true,
+      captionedAt: true,
+      captionSkipReason: true,
+    },
   });
-  return rows.map((r) => r.id);
 }
 
 async function shouldAutoSync(profileId: string): Promise<boolean> {

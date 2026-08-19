@@ -4,6 +4,8 @@ import { syncProfileReviews } from "./sync/reviews";
 import { syncProfileMetrics } from "./sync/metrics";
 import { initReviewSyncScheduler } from "./queue/review-sync-queue";
 import { initMetricsSyncScheduler } from "./queue/metrics-sync-queue";
+import { syncProfileMediaToLibrary } from "./google-media";
+import { captionUncaptionedApproved } from "./image-captioner";
 
 const LOG_PREFIX = "[onboarding-sync]";
 
@@ -61,6 +63,29 @@ export async function runInitialSync(profileId: string): Promise<void> {
         `${LOG_PREFIX} ${profile.name} already has ${futureScheduledCount} future scheduled posts, skipping generation`
       );
     } else {
+      // Caption pre-pass: pull the profile's GBP photos in and caption a
+      // bounded number BEFORE the first batch generates, so post/photo
+      // matching has captions to work with from day one. Both steps are
+      // best-effort — a failure just means the first batch matches with
+      // fewer captions, never that generation is blocked.
+      try {
+        // skipCaptionEnqueue: we caption inline right below — letting the
+        // sync hook enqueue worker jobs too would double-bill the same
+        // images (the worker shares this process).
+        await syncProfileMediaToLibrary(profileId, {
+          skipCaptionEnqueue: true,
+        });
+      } catch (err) {
+        console.warn(
+          `${LOG_PREFIX} Media pre-sync failed for ${profile.name}:`,
+          err
+        );
+      }
+      await captionUncaptionedApproved(profileId, {
+        limit: 50,
+        concurrency: 3,
+      });
+
       console.log(`${LOG_PREFIX} Generating posts for ${profile.name}`);
       await generateAndSchedulePosts(profile, { logPrefix: LOG_PREFIX });
     }

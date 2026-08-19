@@ -2,11 +2,8 @@ import { prisma } from "./prisma";
 import { generateMonthlyPosts } from "./post-generator";
 import { calculateRollingScheduleDates } from "./scheduling";
 import { schedulePostPublish } from "./queue/publish-queue";
-import {
-  pickImagesForPosts,
-  markImagesUsed,
-  isImageFkViolation,
-} from "./post-images";
+import { markImagesUsed, isImageFkViolation } from "./post-images";
+import { pickImagesForPostContents } from "./post-image-matcher";
 import { PostType } from "../generated/prisma/client";
 
 export interface PostGenerationProfile {
@@ -89,9 +86,15 @@ export async function generateAndSchedulePosts(
     options.takenDates
   );
 
-  // Rotate a library image onto each post, least-recently-used first. An
-  // empty library just means text-only posts; pickImagesForPosts never throws.
-  const images = await pickImagesForPosts(profileId, generated.posts.length);
+  // Match a library image to each post's content so text and photo never
+  // clash — falls back through generic rotation to text-only, never throws.
+  const images = await pickImagesForPostContents(
+    profileId,
+    generated.posts.map((post) => ({
+      content: post.content,
+      type: post.suggestedType,
+    }))
+  );
 
   // Create the whole batch atomically: a mid-batch failure must not leave
   // partial posts behind — the future-scheduled-count guard in the daily
