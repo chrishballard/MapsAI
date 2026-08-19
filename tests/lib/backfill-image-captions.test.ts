@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findMany: vi.fn() },
-    profileImage: { findMany: vi.fn() },
+    profileImage: { findMany: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
   },
   captionImages: vi.fn(),
 }));
@@ -105,6 +105,34 @@ describe('live run', () => {
     expect(summary.profilesChecked).toBe(2);
     expect(summary.results).toHaveLength(1);
     expect(summary.results[0].name).toBe('Badger');
+  });
+
+  it('retryTooLarge clears TOO_LARGE skips before scanning (live only)', async () => {
+    mocks.prisma.profileImage.updateMany.mockResolvedValue({ count: 7 });
+
+    const summary = await backfillImageCaptions({
+      retryTooLarge: true,
+      log: () => {},
+    });
+
+    expect(mocks.prisma.profileImage.updateMany).toHaveBeenCalledWith({
+      where: { captionSkipReason: 'TOO_LARGE' },
+      data: { captionSkipReason: null },
+    });
+    expect(summary.tooLargeRetried).toBe(7);
+  });
+
+  it('retryTooLarge on a dry run counts but stays inert', async () => {
+    mocks.prisma.profileImage.count.mockResolvedValue(7);
+
+    const summary = await backfillImageCaptions({
+      dryRun: true,
+      retryTooLarge: true,
+      log: () => {},
+    });
+
+    expect(summary.tooLargeRetried).toBe(7);
+    expect(mocks.prisma.profileImage.updateMany).not.toHaveBeenCalled();
   });
 
   it('records a profile-level failure and keeps going', async () => {
