@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getSelectedProfileId } from "@/lib/selected-profile";
+import { ratingNotIgnoredFilter } from "@/lib/review-reply-mode";
 import { TasksTable, type TaskItem } from "./tasks-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
@@ -64,9 +65,12 @@ export async function TasksSection() {
       where: {
         ...profileFilter,
         // Profiles with review management off produce no review tasks —
-        // approving one would be refused by the API anyway.
+        // approving one would be refused by the API anyway. Ratings set to
+        // Ignore aren't pending work either, so their drafts stay off the
+        // list too.
         profile: { reviewsEnabled: true },
         response: { status: "DRAFTED" },
+        ...ratingNotIgnoredFilter(),
       },
       orderBy: { createdAt: "desc" },
       include: {

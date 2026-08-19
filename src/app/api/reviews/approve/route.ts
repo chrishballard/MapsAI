@@ -7,6 +7,7 @@ import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
 } from "@/lib/reviews-enabled";
+import { ratingNotIgnoredFilter } from "@/lib/review-reply-mode";
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
@@ -32,13 +33,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // Find all reviews for profile with DRAFTED responses
-  // (excluding reviews that were already replied to outside RankMaps)
+  // Find all reviews for profile with DRAFTED responses — excluding reviews
+  // that were already replied to outside RankMaps, and ratings set to
+  // Ignore: their drafts are hidden from the pending queue, so "approve
+  // all" must not publish them behind the operator's back.
   const reviews = await prisma.review.findMany({
     where: {
       profileId,
       repliedExternally: false,
       response: { status: "DRAFTED" },
+      ...ratingNotIgnoredFilter(),
     },
     include: { response: true },
   });
@@ -59,9 +63,11 @@ export async function POST(request: Request) {
   for (const review of reviews) {
     if (!review.response) continue;
 
+    // A person clicked Approve — clear autoApproved so the publish worker
+    // treats this as a human decision, whatever the star mode is now.
     await prisma.reviewResponse.update({
       where: { id: review.response.id },
-      data: { status: "APPROVED" },
+      data: { status: "APPROVED", autoApproved: false },
     });
 
     try {

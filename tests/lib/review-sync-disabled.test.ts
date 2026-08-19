@@ -35,10 +35,14 @@ const baseProfile = {
   googleAccountId: 'ga1',
   accountResourceName: 'accounts/1',
   locationName: 'locations/123',
-  autoApproveReviews: false,
   reviewsEnabled: true,
   reviewInstructions: null as string | null,
-};
+  reviewReplyMode1: 'DRAFT',
+  reviewReplyMode2: 'DRAFT',
+  reviewReplyMode3: 'DRAFT',
+  reviewReplyMode4: 'DRAFT',
+  reviewReplyMode5: 'DRAFT',
+} as const;
 
 const gbpReview = {
   name: 'accounts/1/locations/123/reviews/r1',

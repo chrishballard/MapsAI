@@ -73,18 +73,21 @@ export async function POST(
     customInstructions: review.profile.reviewInstructions,
   });
 
-  // Upsert: create if none exists, update if it does
+  // Upsert: create if none exists, update if it does. Either way this is a
+  // fresh human-track draft, so autoApproved resets.
   const reviewResponse = await prisma.reviewResponse.upsert({
     where: { reviewId: id },
     create: {
       reviewId: id,
       content: aiResponse.response,
       status: "DRAFTED",
+      autoApproved: false,
     },
     update: {
       content: aiResponse.response,
       status: "DRAFTED",
       errorMessage: null,
+      autoApproved: false,
     },
   });
 

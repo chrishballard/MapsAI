@@ -56,9 +56,11 @@ export async function POST(
     );
   }
 
+  // A person clicked Approve — clear autoApproved so the publish worker
+  // treats this as a human decision, whatever the star mode is now.
   const updatedResponse = await prisma.reviewResponse.update({
     where: { id: review.response.id },
-    data: { status: "APPROVED" },
+    data: { status: "APPROVED", autoApproved: false },
   });
 
   // Queue for publishing

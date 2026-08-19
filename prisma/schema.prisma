@@ -56,6 +56,9 @@ model Profile {
   websiteUrl      String?
   isConnected     Boolean        @default(true)
   isOnboarded     Boolean        @default(false)
+  // Superseded 2026-08-18 by the per-star reviewReplyMode fields below —
+  // nothing reads or writes this anymore. Kept so old app instances survive
+  // the deploy overlap; drop in a later migration.
   autoApproveReviews Boolean     @default(false)
   // Master switch for review management. When off: no review syncing,
   // no AI drafting, no approving, and no publishing for this profile.
@@ -63,6 +66,13 @@ model Profile {
   // Operator-authored instructions ("Train RankMaps") appended to the review
   // response prompt — e.g. persona, phrasing to use, things never to say.
   reviewInstructions String?     @db.Text
+  // Per-star reply handling for new reviews. reviewsEnabled=false overrides
+  // all five: with reviews off nothing is drafted or published at any rating.
+  reviewReplyMode1   ReviewReplyMode @default(DRAFT)
+  reviewReplyMode2   ReviewReplyMode @default(DRAFT)
+  reviewReplyMode3   ReviewReplyMode @default(DRAFT)
+  reviewReplyMode4   ReviewReplyMode @default(DRAFT)
+  reviewReplyMode5   ReviewReplyMode @default(DRAFT)
   postFrequency      Int         @default(4)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -143,6 +153,13 @@ enum ReviewResponseStatus {
   SKIPPED
 }
 
+// How RankMaps handles a new review at a given star rating.
+enum ReviewReplyMode {
+  IGNORE // store the review only — never draft or publish a reply
+  DRAFT  // draft an AI reply that waits for the operator's approval
+  AUTO   // draft, auto-approve, and publish without waiting
+}
+
 model Review {
   id             String          @id @default(cuid())
   profileId      String
@@ -166,6 +183,10 @@ model ReviewResponse {
   review    Review               @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   content   String
   status    ReviewResponseStatus @default(DRAFTED)
+  // True when the AUTO reply mode approved this response with no human
+  // involved. The publish worker reverts these to DRAFTED if the rating's
+  // mode is no longer AUTO at publish time; a human approval resets it.
+  autoApproved Boolean            @default(false)
   publishedAt DateTime?
   errorMessage String?
   createdAt DateTime             @default(now())

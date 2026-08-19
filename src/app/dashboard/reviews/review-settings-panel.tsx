@@ -4,8 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { StarReplyModeRows } from "@/components/reviews/star-reply-mode-rows";
 import { sendJson } from "@/lib/fetch-json";
 import { MAX_REVIEW_INSTRUCTIONS_CHARS as MAX_INSTRUCTIONS } from "@/lib/reviews-enabled";
+import {
+  REPLY_MODE_FIELDS,
+  replyModesRecord,
+  type ReviewReplyMode,
+  type StarRating,
+  type StarReplyModes,
+} from "@/lib/review-reply-mode";
 import { cn } from "@/lib/utils";
 
 const PLACEHOLDER =
@@ -16,6 +24,7 @@ interface ReviewSettingsPanelProps {
   profileName: string;
   reviewsEnabled: boolean;
   reviewInstructions: string | null;
+  replyModes: StarReplyModes;
 }
 
 export function ReviewSettingsPanel({
@@ -23,9 +32,14 @@ export function ReviewSettingsPanel({
   profileName,
   reviewsEnabled: initialEnabled,
   reviewInstructions,
+  replyModes,
 }: ReviewSettingsPanelProps) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [modes, setModes] = useState<Record<StarRating, ReviewReplyMode>>(
+    () => replyModesRecord(replyModes)
+  );
+  const [pendingRating, setPendingRating] = useState<StarRating | null>(null);
   const [instructions, setInstructions] = useState(reviewInstructions ?? "");
   const [savedInstructions, setSavedInstructions] = useState(
     reviewInstructions ?? ""
@@ -36,6 +50,30 @@ export function ReviewSettingsPanel({
   const [error, setError] = useState<string | null>(null);
 
   const instructionsDirty = instructions !== savedInstructions;
+
+  async function handleModeChange(rating: StarRating, mode: ReviewReplyMode) {
+    const previous = modes[rating];
+    if (previous === mode) return;
+    setPendingRating(rating);
+    setError(null);
+    // Optimistic — reverted below if the request fails.
+    setModes((current) => ({ ...current, [rating]: mode }));
+    try {
+      await sendJson(
+        "/api/reviews/settings",
+        { profileId, [REPLY_MODE_FIELDS[rating]]: mode },
+        "PATCH"
+      );
+      router.refresh();
+    } catch (err) {
+      setModes((current) => ({ ...current, [rating]: previous }));
+      setError(
+        err instanceof Error ? err.message : "Failed to update reply handling"
+      );
+    } finally {
+      setPendingRating(null);
+    }
+  }
 
   async function handleToggle() {
     const next = !enabled;
@@ -127,6 +165,25 @@ export function ReviewSettingsPanel({
               )}
             />
           </button>
+        </div>
+      </div>
+
+      {/* Per-star reply handling */}
+      <div className="border-t border-zinc-100 pt-5">
+        <h3 className="text-sm font-semibold text-zinc-900">
+          Reply handling by star rating
+        </h3>
+        <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
+          Choose what RankMaps does when a new review comes in at each rating:
+          ignore it, draft a reply for your approval, or reply automatically.
+          Applies while review management is on.
+        </p>
+        <div className="mt-3">
+          <StarReplyModeRows
+            values={modes}
+            onChange={handleModeChange}
+            pendingRating={pendingRating}
+          />
         </div>
       </div>
 
