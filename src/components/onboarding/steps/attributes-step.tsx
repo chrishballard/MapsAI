@@ -34,7 +34,11 @@ interface AttributeState {
 
 interface AttributesStepProps {
   profileId: string;
-  onComplete: () => Promise<void>;
+  onComplete?: () => Promise<void>;
+  // Rendered outside the onboarding wizard (Profile Settings page):
+  // no auto-advance, no skip; pushes stay on the page and the form can be
+  // edited and pushed again.
+  standalone?: boolean;
 }
 
 function parseAttribute(attr: GBPAttribute): AttributeState {
@@ -77,9 +81,15 @@ function groupAttributes(
   return groups;
 }
 
-export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
+export function AttributesStep({
+  profileId,
+  onComplete,
+  standalone = false,
+}: AttributesStepProps) {
   const [attributes, setAttributes] = useState<AttributeState[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [pushing, setPushing] = useState(false);
   const [pushSuccess, setPushSuccess] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
@@ -90,13 +100,24 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
 
   useEffect(() => {
     async function fetchAttributes() {
+      setLoading(true);
+      setLoadError(null);
       try {
-        const data = await fetchJson<{ attributes?: GBPAttribute[] }>(
-          `/api/onboarding/attributes?profileId=${profileId}`
-        );
+        const data = await fetchJson<{
+          attributes?: GBPAttribute[];
+          error?: string | null;
+        }>(`/api/onboarding/attributes?profileId=${profileId}`);
+        // The route degrades to { attributes: [], error } when Google is
+        // unreachable — that is an outage, not a category without attributes.
+        if (data.error && (!data.attributes || data.attributes.length === 0)) {
+          setLoadError(
+            "Couldn't reach Google — attributes can't be loaded right now."
+          );
+          return;
+        }
         if (!data.attributes || data.attributes.length === 0) {
           setNoAttributes(true);
-          setTimeout(() => onComplete(), 1500);
+          if (!standalone) setTimeout(() => onComplete?.(), 1500);
           return;
         }
         setAttributes(
@@ -104,13 +125,14 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         );
       } catch (err) {
         console.error("Failed to load attributes:", err);
+        setLoadError("Couldn't load attributes. Please try again.");
       } finally {
         setLoading(false);
       }
     }
     fetchAttributes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId]);
+  }, [profileId, retryKey]);
 
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {
@@ -131,11 +153,15 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
     setAttributes((prev) =>
       prev.map((a) => (a.attributeId === attributeId ? { ...a, ...update } : a))
     );
+    // Outside the wizard the form stays live after a push — clear the success
+    // state on the next edit so the push button re-enables.
+    if (standalone) setPushSuccess(false);
   };
 
   const handlePush = async () => {
     setPushing(true);
     setPushError(null);
+    setPushSuccess(false);
     try {
       const payload = attributes
         .map((attr) => {
@@ -181,7 +207,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
       );
       if (data.success) {
         setPushSuccess(true);
-        setTimeout(() => onComplete(), 2500);
+        if (!standalone) setTimeout(() => onComplete?.(), 2500);
       } else {
         setPushError(data.error || "Failed to push attributes to Google");
       }
@@ -202,6 +228,25 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-center">
+        <AlertCircle className="w-12 h-12 text-amber-400" />
+        <h3 className="text-lg font-semibold text-foreground">
+          Couldn&apos;t load attributes
+        </h3>
+        <p className="text-sm text-zinc-400 max-w-md">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="border border-border text-foreground hover:bg-muted/50 rounded-md px-4 py-2 text-sm font-medium"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (noAttributes) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-center">
@@ -209,7 +254,11 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         <h3 className="text-lg font-semibold text-foreground">
           No attributes available for this business category
         </h3>
-        <p className="text-sm text-zinc-400">Auto-advancing...</p>
+        <p className="text-sm text-zinc-400">
+          {standalone
+            ? "Google doesn't offer attributes for this category, so there is nothing to edit here."
+            : "Auto-advancing..."}
+        </p>
       </div>
     );
   }
@@ -226,9 +275,11 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
             <p className="text-sm font-medium text-emerald-800">
               Attributes successfully pushed to Google Business Profile
             </p>
-            <p className="text-xs text-emerald-600 mt-0.5">
-              Advancing to next step...
-            </p>
+            {!standalone && (
+              <p className="text-xs text-emerald-600 mt-0.5">
+                Advancing to next step...
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -423,7 +474,7 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
         <button
           type="button"
           onClick={handlePush}
-          disabled={pushing || pushSuccess}
+          disabled={pushing || (!standalone && pushSuccess)}
           className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-lg px-6 py-2.5 font-medium text-sm"
         >
           {pushing ? (
@@ -435,13 +486,15 @@ export function AttributesStep({ profileId, onComplete }: AttributesStepProps) {
             "Push to Google"
           )}
         </button>
-        <button
-          type="button"
-          onClick={() => onComplete()}
-          className="w-full text-muted-foreground underline text-sm py-2 mt-2"
-        >
-          Skip for Now
-        </button>
+        {!standalone && (
+          <button
+            type="button"
+            onClick={() => onComplete?.()}
+            className="w-full text-muted-foreground underline text-sm py-2 mt-2"
+          >
+            Skip for Now
+          </button>
+        )}
       </div>
     </div>
   );

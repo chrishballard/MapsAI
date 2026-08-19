@@ -10,6 +10,7 @@ import {
   MousePointerClick,
   Phone,
   MapPin,
+  Settings,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { ReoptimizeSection } from "./reoptimize-section";
@@ -133,6 +134,15 @@ export default async function ProfileDetailPage({
             >
               {profile.isConnected ? "Connected" : "Disconnected"}
             </span>
+            {onboardingProgress?.isComplete && (
+              <Link
+                href={`/dashboard/profiles/${id}/settings`}
+                className="inline-flex items-center gap-1.5 border border-border text-foreground hover:bg-muted/50 rounded-md px-3 py-1.5 text-sm font-medium"
+              >
+                <Settings size={14} />
+                Profile Settings
+              </Link>
+            )}
             {profile.isOnboarded && <OffboardButton profileId={id} />}
           </div>
         </div>
