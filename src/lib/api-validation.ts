@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { MAX_SERVICES_PER_GENERATE } from "@/lib/gbp-limits";
 
 /**
  * Parse and validate a JSON request body against a zod schema.
@@ -71,6 +72,16 @@ export const monthStringSchema = z
     const d = new Date(`${s}-01T00:00:00Z`);
     return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 7) === s;
   }, "must be a valid month");
+
+/**
+ * Service names for description generation. Shared by the onboarding and
+ * reoptimize generate routes; the cap matches the save endpoints — the UI
+ * pre-checks every GBP service type and service-rich categories expose 30-70.
+ */
+export const serviceNamesSchema = z
+  .array(z.string().min(1).max(200))
+  .min(1)
+  .max(MAX_SERVICES_PER_GENERATE);
 
 /** GBP description content: non-blank, 750 char max. */
 export const descriptionContentSchema = z

@@ -45,6 +45,7 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
   const [ignoredDescIds, setIgnoredDescIds] = useState<Set<string>>(new Set());
   const [ignoredServiceIds, setIgnoredServiceIds] = useState<Set<string>>(new Set());
   const [pushing, setPushing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
   const [bulkIgnoreOpen, setBulkIgnoreOpen] = useState(false);
 
@@ -95,6 +96,7 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
   async function handleApproveDescription() {
     if (!savedDescription) return;
     setPushing(true);
+    setActionError(null);
     try {
       const res = await fetch('/api/reoptimize/description/push', {
         method: 'POST',
@@ -105,7 +107,12 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
         setSavedDescription((prev) =>
           prev ? { ...prev, isApproved: true, isPushed: true } : prev
         );
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setActionError(errData.error || 'Failed to push the description');
       }
+    } catch {
+      setActionError('Network error. Please try again.');
     } finally {
       setPushing(false);
     }
@@ -126,6 +133,7 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
       )
     );
     setPushing(true);
+    setActionError(null);
     try {
       // Persist the approval — the push route only sends services approved in the DB
       const saveRes = await fetch('/api/reoptimize/services', {
@@ -143,7 +151,11 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
           ],
         }),
       });
-      if (!saveRes.ok) return;
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({}));
+        setActionError(errData.error || 'Failed to save the approval');
+        return;
+      }
 
       // Push all approved services
       const res = await fetch('/api/reoptimize/services/push', {
@@ -160,7 +172,13 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
               : s
           )
         );
+      } else {
+        setActionError(
+          data.error || 'Failed to push services to Google Business Profile'
+        );
       }
+    } catch {
+      setActionError('Network error. Please try again.');
     } finally {
       setPushing(false);
     }
@@ -172,6 +190,7 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
 
   async function handleBulkApprove() {
     setPushing(true);
+    setActionError(null);
     try {
       const promises: Promise<unknown>[] = [];
 
@@ -181,11 +200,14 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ profileId, content: savedDescription.content }),
-          }).then((res) => {
+          }).then(async (res) => {
             if (res.ok) {
               setSavedDescription((prev) =>
                 prev ? { ...prev, isApproved: true, isPushed: true } : prev
               );
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              setActionError(errData.error || 'Failed to push the description');
             }
           })
         );
@@ -216,7 +238,11 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
                 })),
               }),
             });
-            if (!saveRes.ok) return;
+            if (!saveRes.ok) {
+              const errData = await saveRes.json().catch(() => ({}));
+              setActionError(errData.error || 'Failed to save the approvals');
+              return;
+            }
 
             const res = await fetch('/api/reoptimize/services/push', {
               method: 'POST',
@@ -230,12 +256,19 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
                   s.isApproved && !s.isPushed ? { ...s, isPushed: true } : s
                 )
               );
+            } else {
+              setActionError(
+                data.error ||
+                  'Failed to push services to Google Business Profile'
+              );
             }
           })()
         );
       }
 
       await Promise.all(promises);
+    } catch {
+      setActionError('Network error. Please try again.');
     } finally {
       setPushing(false);
       setBulkApproveOpen(false);
@@ -276,6 +309,15 @@ export function SuggestionsPanel({ profileId }: SuggestionsPanelProps) {
 
   return (
     <div className="space-y-4">
+      {/* Action Error Banner */}
+      {actionError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <p className="text-sm font-medium text-red-800">{actionError}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Bulk actions toolbar */}
       <div className="flex items-center justify-between py-3">
         <p className="text-sm text-zinc-500">

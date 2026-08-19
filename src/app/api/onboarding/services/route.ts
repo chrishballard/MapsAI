@@ -95,7 +95,11 @@ export async function POST(request: NextRequest) {
   if (parsed.error) return parsed.error;
   const { profileId, services } = parsed.data;
 
-  const updatedServices = await saveProfileServices(profileId, services);
+  // The wizard always sends its complete list — deselected services must be
+  // removed or their stale approved rows get pushed back to Google
+  const updatedServices = await saveProfileServices(profileId, services, {
+    replace: true,
+  });
 
   return NextResponse.json({ services: updatedServices });
 }
