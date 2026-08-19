@@ -55,9 +55,11 @@ export const worker = new Worker<ReviewPublishJobData>(
       console.log(
         `Review management is off for ${review.profile.name}, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
       );
+      // autoApproved clears too: a reverted response is back on the human
+      // track and only publishes again once a person approves it.
       await prisma.reviewResponse.update({
         where: { id: reviewResponseId },
-        data: { status: "DRAFTED", errorMessage: null },
+        data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
       });
       return;
     }
@@ -76,7 +78,7 @@ export const worker = new Worker<ReviewPublishJobData>(
       );
       await prisma.reviewResponse.update({
         where: { id: reviewResponseId },
-        data: { status: "DRAFTED", errorMessage: null },
+        data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
       });
       return;
     }

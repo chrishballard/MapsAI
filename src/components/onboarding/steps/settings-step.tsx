@@ -32,6 +32,10 @@ export function SettingsStep({
   const [postFrequency, setPostFrequency] = useState(4);
   const [replyModes, setReplyModes] =
     useState<Record<StarRating, ReviewReplyMode>>(DEFAULT_REPLY_MODES);
+  // Guards against clobbering saved modes with the DRAFT defaults when the
+  // settings fetch fails: until the real values load, the rows stay
+  // disabled and Save leaves the modes out of the PATCH entirely.
+  const [modesLoaded, setModesLoaded] = useState(false);
   const [isCustom, setIsCustom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,6 +62,7 @@ export function SettingsStep({
           4: data.reviewReplyMode4 ?? "DRAFT",
           5: data.reviewReplyMode5 ?? "DRAFT",
         });
+        setModesLoaded(true);
         if (!PRESETS.includes(freq)) {
           setIsCustom(true);
         }
@@ -102,11 +107,15 @@ export function SettingsStep({
         {
           profileId,
           postFrequency,
-          reviewReplyMode1: replyModes[1],
-          reviewReplyMode2: replyModes[2],
-          reviewReplyMode3: replyModes[3],
-          reviewReplyMode4: replyModes[4],
-          reviewReplyMode5: replyModes[5],
+          ...(modesLoaded
+            ? {
+                reviewReplyMode1: replyModes[1],
+                reviewReplyMode2: replyModes[2],
+                reviewReplyMode3: replyModes[3],
+                reviewReplyMode4: replyModes[4],
+                reviewReplyMode5: replyModes[5],
+              }
+            : {}),
         },
         "PATCH"
       );
@@ -191,7 +200,17 @@ export function SettingsStep({
             </p>
           </div>
         </div>
-        <StarReplyModeRows values={replyModes} onChange={handleModeChange} />
+        <StarReplyModeRows
+          values={replyModes}
+          onChange={handleModeChange}
+          disabled={!modesLoaded}
+        />
+        {!modesLoaded && (
+          <p className="text-xs text-zinc-400">
+            Couldn&apos;t load the current reply settings — these are locked so
+            saving won&apos;t change them. Reload the page to edit.
+          </p>
+        )}
       </div>
 
       {/* Save & Continue */}

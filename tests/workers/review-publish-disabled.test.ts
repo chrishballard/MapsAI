@@ -79,7 +79,7 @@ describe('review publish worker with review management off', () => {
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: { status: 'DRAFTED', errorMessage: null },
+      data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
     });
   });
 

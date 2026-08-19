@@ -92,7 +92,7 @@ describe('review publish worker star-mode guard', () => {
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: { status: 'DRAFTED', errorMessage: null },
+      data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
     });
   });
 
@@ -106,7 +106,7 @@ describe('review publish worker star-mode guard', () => {
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: { status: 'DRAFTED', errorMessage: null },
+      data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
     });
   });
 

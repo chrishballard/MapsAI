@@ -199,6 +199,10 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
 
       {selectedProfile && (
         <ReviewSettingsPanel
+          // Remount when the selected business changes — the panel seeds
+          // client state from props, and router.refresh() alone would leave
+          // the previous business's toggle/modes/instructions on screen.
+          key={selectedProfile.id}
           profileId={selectedProfile.id}
           profileName={selectedProfile.name}
           reviewsEnabled={selectedProfile.reviewsEnabled}
