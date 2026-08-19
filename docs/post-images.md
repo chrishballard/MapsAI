@@ -33,9 +33,11 @@ caller:
   pulls GBP photos in and captions up to 50 inline so day-one posts match.
 
 Caption inputs: the ~480px thumbnail (uploads) or a server-side fetch of
-`googleUrl` (GBP rows). Images with no usable input are skipped permanently
-and stay uncaptioned — they're treated as "unknown" and never blind-attached
-once the profile has captions.
+`googleUrl` (GBP rows). Images with no usable input get a persisted
+`captionSkipReason` and are excluded from every re-enqueue query (a GBP
+sync that refreshes the image's URL clears the skip so it retries). They
+stay uncaptioned — treated as "unknown" and never blind-attached once the
+profile has captions.
 
 `scripts/backfill-image-captions.ts` captions existing libraries
 (`--dry-run` is fully inert: no writes, no Claude calls — prints counts and

@@ -231,9 +231,20 @@ async function rematchProfile(
   for (let start = 0; start < eligible.length; start += REMATCH_CHUNK_SIZE) {
     const chunk = eligible.slice(start, start + REMATCH_CHUNK_SIZE);
 
+    // Don't offer specifics an earlier chunk already assigned — the model
+    // can't know about them and would re-pick photos other posts now carry.
+    const availableSpecifics = sentSpecifics.filter(
+      (img) => !usedSpecifics.has(img.id)
+    );
+
     let decisions: { action: string; imageId?: string; reason: string }[];
     try {
-      decisions = await matchChunk(profile, chunk, sentSpecifics, generics);
+      decisions = await matchChunk(
+        profile,
+        chunk,
+        availableSpecifics,
+        generics
+      );
     } catch (err) {
       result.skipped += chunk.length;
       log(
@@ -246,29 +257,36 @@ async function rematchProfile(
     for (let i = 0; i < chunk.length; i++) {
       const post = chunk[i];
       const decision = decisions[i];
+      const action = decision.action.trim().toUpperCase();
 
-      if (decision.action === "KEEP") {
+      if (action === "KEEP") {
         result.kept++;
         continue;
       }
 
       let newImageId: string | null;
-      if (decision.action === "DETACH") {
+      if (action === "DETACH") {
         newImageId = null;
-      } else if (decision.action === "ASSIGN_GENERIC") {
+      } else if (action === "ASSIGN_GENERIC") {
         if (generics.length === 0) {
           result.skipped++;
           continue;
         }
         newImageId = generics[genericCursor++ % generics.length].id;
-      } else if (decision.action === "ASSIGN") {
+      } else if (action === "ASSIGN") {
         const id = decision.imageId;
-        if (!id || !specificIds.has(id) || usedSpecifics.has(id)) {
+        if (id && specificIds.has(id) && !usedSpecifics.has(id)) {
+          usedSpecifics.add(id);
+          newImageId = id;
+        } else if (generics.length > 0) {
+          // Invented or already-used id: the matcher still judged the
+          // current pairing wrong, so swap in a safe generic rather than
+          // keep a known clash (mirrors the generation matcher).
+          newImageId = generics[genericCursor++ % generics.length].id;
+        } else {
           result.skipped++;
           continue;
         }
-        usedSpecifics.add(id);
-        newImageId = id;
       } else {
         result.skipped++;
         continue;
@@ -283,7 +301,7 @@ async function rematchProfile(
         postId: post.id,
         from: post.imageId,
         to: newImageId,
-        reason: decision.reason,
+        reason: decision.reason.slice(0, 140),
       });
 
       if (dryRun) {
@@ -346,21 +364,17 @@ async function matchChunk(
   const hasSpecifics = sentSpecifics.length > 0;
   const hasGenerics = generics.length > 0;
 
-  const actionValues = hasSpecifics
-    ? (["KEEP", "ASSIGN", "ASSIGN_GENERIC", "DETACH"] as [string, ...string[]])
-    : (["KEEP", "ASSIGN_GENERIC", "DETACH"] as [string, ...string[]]);
-
-  const decisionShape: Record<string, z.ZodType> = {
-    action: z.enum(actionValues),
-    reason: z.string().max(140),
-  };
-  if (hasSpecifics) {
-    decisionShape.imageId = z
-      .enum(sentSpecifics.map((img) => img.id) as [string, ...string[]])
-      .optional();
-  }
+  // Deliberately permissive on the wire (zodOutputFormat sends enum/length
+  // constraints only as description hints; a strict schema would hard-fail
+  // the whole chunk on one stray value). The caller validates per decision.
   const schema = z.object({
-    decisions: z.array(z.object(decisionShape)).length(chunk.length),
+    decisions: z.array(
+      z.object({
+        action: z.string(),
+        imageId: z.string().optional(),
+        reason: z.string(),
+      })
+    ),
   });
 
   const prompt = [

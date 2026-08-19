@@ -110,7 +110,13 @@ describe('enqueueCaptionsForProfile', () => {
     expect(enqueued).toBe(2);
     expect(mocks.prisma.profileImage.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { profileId: 'p1', status: 'APPROVED', captionedAt: null },
+        where: {
+          profileId: 'p1',
+          status: 'APPROVED',
+          captionedAt: null,
+          // Permanently skipped images must never be re-enqueued.
+          captionSkipReason: null,
+        },
       })
     );
     expect(mocks.queueAdd).toHaveBeenCalledTimes(2);

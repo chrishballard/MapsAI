@@ -72,4 +72,35 @@ describe('syncProfileMediaToLibrary caption hook', () => {
 
     expect(result).toMatchObject({ added: 1, total: 1 });
   });
+
+  it('skipCaptionEnqueue suppresses the hook (onboarding captions inline instead)', async () => {
+    const result = await syncProfileMediaToLibrary('p1', {
+      skipCaptionEnqueue: true,
+    });
+
+    expect(result).toMatchObject({ added: 1 });
+    expect(mocks.enqueueCaptionsForProfile).not.toHaveBeenCalled();
+  });
+
+  it('a refreshed googleUrl clears a stale permanent fetch skip', async () => {
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      {
+        id: 'row1',
+        googleMediaName: 'accounts/1/locations/2/media/m1',
+        googleUrl: 'https://lh3.googleusercontent.com/old',
+        thumbnailUrl: null,
+        width: 800,
+        height: 600,
+        category: null,
+      },
+    ]);
+
+    await syncProfileMediaToLibrary('p1');
+
+    const updateArg = mocks.prisma.profileImage.update.mock.calls.find(
+      (call) => (call[0] as { where: { id: string } }).where.id === 'row1'
+    )?.[0] as { data: Record<string, unknown> };
+    expect(updateArg.data.googleUrl).toBe('https://lh3.googleusercontent.com/m1');
+    expect(updateArg.data.captionSkipReason).toBe(null);
+  });
 });

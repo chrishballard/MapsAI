@@ -85,7 +85,13 @@ export async function backfillImageCaptions(
 
     try {
       const images = await prisma.profileImage.findMany({
-        where: { profileId: profile.id, status: "APPROVED", captionedAt: null },
+        where: {
+          profileId: profile.id,
+          status: "APPROVED",
+          captionedAt: null,
+          // Permanent skips are recorded on the row and never retried.
+          captionSkipReason: null,
+        },
         orderBy: { createdAt: "asc" },
         // Never pull image bytes just to count rows.
         select: { id: true, source: true },

@@ -184,6 +184,10 @@ model ProfileImage {
   aiTags          String[]           @default([])
   aiGeneric       Boolean?
   captionedAt     DateTime?
+  // Permanent caption skip (NO_INPUT/TOO_LARGE/...): excluded from every
+  // re-enqueue query so unusable images aren't reprocessed forever. Cleared
+  // when a GBP sync refreshes the image's URL (a stale-URL skip may recover).
+  captionSkipReason String?
   timesUsed       Int                @default(0)
   lastUsedAt      DateTime?
   createdAt       DateTime           @default(now())

@@ -44,9 +44,13 @@ export function formatPostLines(posts: PostForMatching[]): string[] {
 /**
  * Ask Claude which specific photo (if any) fits each post. Returns one
  * choice per post: a specific image id, GENERIC, or NONE. Throws on any
- * Claude failure — callers own their fallback. The structured-output enum
- * is built from the actual ids, so an out-of-pool id is structurally
- * impossible in the common case (and validated again in code regardless).
+ * Claude failure — callers own their fallback.
+ *
+ * The wire schema is deliberately permissive: zodOutputFormat sends enum
+ * and length constraints only as description hints, so a strict client-side
+ * schema would hard-fail the whole batch on one invented id or extra entry.
+ * The in-code validation in resolveChoices (and the caller's length check)
+ * is the real enforcement — it degrades per post instead of per batch.
  */
 export async function matchPostsToSpecificImages(args: {
   businessName: string | null;
@@ -57,13 +61,8 @@ export async function matchPostsToSpecificImages(args: {
 }): Promise<string[]> {
   const { businessName, category, posts, specificImages, hasGenerics } = args;
 
-  const choiceSchema = z.enum([
-    GENERIC_CHOICE,
-    NONE_CHOICE,
-    ...specificImages.map((img) => img.id),
-  ] as [string, ...string[]]);
   const schema = z.object({
-    choices: z.array(choiceSchema).length(posts.length),
+    choices: z.array(z.string()),
   });
 
   const prompt = [
@@ -128,8 +127,9 @@ export async function pickImagesForPostContents(
     if (pool.length === 0) return none;
 
     // Self-heal: anything approved but uncaptioned gets queued so the next
-    // batch can match it. Queue problems never affect this batch.
-    if (pool.some((img) => !img.captionedAt)) {
+    // batch can match it — except images already marked permanently
+    // unusable. Queue problems never affect this batch.
+    if (pool.some((img) => !img.captionedAt && !img.captionSkipReason)) {
       await enqueueCaptionsForProfile(profileId).catch(() => {});
     }
 

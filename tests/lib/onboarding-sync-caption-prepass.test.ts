@@ -73,7 +73,12 @@ describe('onboarding caption pre-pass', () => {
   it('syncs media and captions before generating the first batch', async () => {
     await runInitialSync('p1');
 
-    expect(mocks.syncProfileMediaToLibrary).toHaveBeenCalledWith('p1');
+    // skipCaptionEnqueue: the pre-pass captions inline; letting the sync
+    // hook enqueue worker jobs too would double-bill the same images.
+    expect(mocks.syncProfileMediaToLibrary).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ skipCaptionEnqueue: true })
+    );
     expect(mocks.captionUncaptionedApproved).toHaveBeenCalledWith(
       'p1',
       expect.objectContaining({ limit: expect.any(Number) })

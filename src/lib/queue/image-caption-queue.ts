@@ -62,7 +62,15 @@ export async function enqueueCaptionsForProfile(
 ): Promise<number> {
   try {
     const rows = await prisma.profileImage.findMany({
-      where: { profileId, status: "APPROVED", captionedAt: null },
+      where: {
+        profileId,
+        status: "APPROVED",
+        captionedAt: null,
+        // Permanently skipped images (no usable input) must never be
+        // re-enqueued — without this they'd be reprocessed on every sync
+        // and every generation batch, forever.
+        captionSkipReason: null,
+      },
       select: { id: true },
     });
 

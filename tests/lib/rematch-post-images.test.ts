@@ -193,7 +193,23 @@ describe('rematch safety', () => {
     expect(mocks.markImagesUsed).not.toHaveBeenCalled();
   });
 
-  it('an invented replacement id skips the post rather than guessing', async () => {
+  it('an invented replacement id demotes to a generic instead of guessing or keeping a judged clash', async () => {
+    mocks.prisma.post.findMany.mockResolvedValue([post('post1', null, null)]);
+    mocks.generate.mockResolvedValue({
+      decisions: [{ action: 'ASSIGN', imageId: 'made-up', reason: 'fits' }],
+    });
+
+    const summary = await rematchPostImages({ log: () => {} });
+
+    expect(summary.postsChanged).toBe(1);
+    const arg = mocks.prisma.post.updateMany.mock.calls[0][0];
+    expect(arg.data).toEqual({ imageId: 'g1' });
+  });
+
+  it('an invented replacement id with no generics available skips the post', async () => {
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      specific('s1', 'a remodeled kitchen'),
+    ]);
     mocks.prisma.post.findMany.mockResolvedValue([post('post1', null, null)]);
     mocks.generate.mockResolvedValue({
       decisions: [{ action: 'ASSIGN', imageId: 'made-up', reason: 'fits' }],
@@ -205,7 +221,7 @@ describe('rematch safety', () => {
     expect(mocks.prisma.post.updateMany).not.toHaveBeenCalled();
   });
 
-  it('one specific image is assigned at most once per profile run', async () => {
+  it('one specific image is assigned at most once per profile run; repeats demote to a generic', async () => {
     mocks.prisma.post.findMany.mockResolvedValue([
       post('post1', null, null),
       post('post2', null, null),
@@ -219,9 +235,57 @@ describe('rematch safety', () => {
 
     const summary = await rematchPostImages({ log: () => {} });
 
-    expect(summary.postsChanged).toBe(1);
-    expect(summary.postsSkipped).toBe(1);
-    expect(mocks.prisma.post.updateMany).toHaveBeenCalledTimes(1);
+    expect(summary.postsChanged).toBe(2);
+    const writes = mocks.prisma.post.updateMany.mock.calls.map(
+      (call) => (call[0] as { data: { imageId: string | null } }).data.imageId
+    );
+    expect(writes).toEqual(['s1', 'g1']);
+  });
+
+  it('later chunks are not offered specifics already used by earlier chunks', async () => {
+    // 13 eligible posts -> two matcher calls (chunk size 12). Chunk 1 uses
+    // s1; chunk 2's prompt must no longer offer it, or the model could
+    // re-pick a photo that another post already carries.
+    mocks.prisma.post.findMany.mockResolvedValue(
+      Array.from({ length: 13 }, (_, i) => post(`post${i + 1}`, null, null))
+    );
+    mocks.generate
+      .mockResolvedValueOnce({
+        decisions: [
+          { action: 'ASSIGN', imageId: 's1', reason: 'fits' },
+          ...Array.from({ length: 11 }, () => ({
+            action: 'KEEP',
+            reason: 'fine',
+          })),
+        ],
+      })
+      .mockResolvedValueOnce({
+        decisions: [{ action: 'KEEP', reason: 'fine' }],
+      });
+
+    await rematchPostImages({ log: () => {} });
+
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    const secondPrompt = mocks.generate.mock.calls[1][0].prompt as string;
+    expect(secondPrompt).not.toContain('- s1:');
+  });
+
+  it('keeps the wire schema permissive — a chatty reason must not fail the chunk', async () => {
+    mocks.prisma.post.findMany.mockResolvedValue([post('post1', null, null)]);
+    mocks.generate.mockResolvedValue({
+      decisions: [{ action: 'KEEP', reason: 'fits' }],
+    });
+
+    await rematchPostImages({ log: () => {} });
+
+    const schema = mocks.generate.mock.calls[0][0].schema;
+    expect(
+      schema.safeParse({
+        decisions: [
+          { action: 'ASSIGN', imageId: 'not-in-enum', reason: 'R'.repeat(300) },
+        ],
+      }).success
+    ).toBe(true);
   });
 
   it('skips profiles with no captioned images (caption backfill first)', async () => {

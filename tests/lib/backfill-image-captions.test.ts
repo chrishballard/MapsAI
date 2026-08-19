@@ -59,6 +59,8 @@ describe('dry run', () => {
       profileId: 'p1',
       status: 'APPROVED',
       captionedAt: null,
+      // Permanent skips are recorded on the row and never retried.
+      captionSkipReason: null,
     });
     // Never pull image bytes just to count rows.
     expect(query.select).toEqual({ id: true, source: true });

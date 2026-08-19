@@ -31,6 +31,7 @@ function imageRow(overrides: Record<string, unknown> = {}) {
     googleUrl: null,
     category: null,
     captionedAt: null,
+    captionSkipReason: null,
     profile: { name: 'Badger Gutters', category: 'Gutter cleaning service' },
     ...overrides,
   };
@@ -148,7 +149,44 @@ describe('captionImage permanent skips (no Claude call, captionedAt untouched)',
 
     expect(result).toMatchObject({ ok: false, skipped: 'NO_INPUT' });
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it('persists the skip reason so the image is never reprocessed', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(imageRow());
+
+    await captionImage('img1');
+
+    const arg = mocks.prisma.profileImage.update.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: 'img1' });
+    expect(arg.data).toEqual({ captionSkipReason: 'NO_INPUT' });
+    expect(arg.select).toEqual({ id: true });
+  });
+
+  it('is a noop for an image already marked permanently skipped', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({
+        googleUrl: 'https://lh3.googleusercontent.com/x',
+        captionSkipReason: 'FETCH_DENIED',
+      })
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'FETCH_DENIED' });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+  });
+
+  it('treats the row as GONE when the skip persist hits P2025', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(imageRow());
+    mocks.prisma.profileImage.update.mockRejectedValue(
+      Object.assign(new Error('Record not found'), { code: 'P2025' })
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'GONE' });
   });
 
   it('TOO_LARGE when stored bytes exceed the vision size cap', async () => {
@@ -271,6 +309,25 @@ describe('captionImage persistence', () => {
     expect(arg.select).toEqual({ id: true });
   });
 
+  it('does not constrain lengths on the wire — the slices are the enforcement', async () => {
+    // zodOutputFormat demotes max/maxItems to description hints, so strict
+    // schema caps would make generate() throw on benign over-limit output
+    // (a billed retry loop) instead of reaching the tolerate-and-trim path.
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+
+    await captionImage('img1');
+
+    const schema = mocks.generate.mock.calls[0][0].schema;
+    const overLimit = schema.safeParse({
+      description: 'X'.repeat(400),
+      tags: ['commercial gutter installation equipment', 'a', 'b', 'c', 'd', 'e'],
+      generic: true,
+    });
+    expect(overLimit.success).toBe(true);
+  });
+
   it('is an idempotent noop for an already-captioned image', async () => {
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
       imageRow({ thumbData: new Uint8Array([1]), captionedAt: new Date() })
@@ -324,6 +381,7 @@ describe('captionUncaptionedApproved (bounded pre-pass)', () => {
       profileId: 'p1',
       status: 'APPROVED',
       captionedAt: null,
+      captionSkipReason: null,
     });
     expect(query.take).toBe(10);
   });

@@ -35,6 +35,7 @@ function specific(id: string, description = `photo of ${id}`) {
     aiTags: ['subject'],
     aiGeneric: false,
     captionedAt: new Date('2026-08-19'),
+    captionSkipReason: null,
   };
 }
 
@@ -45,6 +46,7 @@ function generic(id: string) {
     aiTags: ['storefront'],
     aiGeneric: true,
     captionedAt: new Date('2026-08-19'),
+    captionSkipReason: null,
   };
 }
 
@@ -55,7 +57,12 @@ function uncaptioned(id: string) {
     aiTags: [],
     aiGeneric: null,
     captionedAt: null,
+    captionSkipReason: null,
   };
+}
+
+function permanentlySkipped(id: string) {
+  return { ...uncaptioned(id), captionSkipReason: 'NO_INPUT' };
 }
 
 const POSTS = [
@@ -149,6 +156,24 @@ describe('pickImagesForPostContents matching', () => {
     expect(prompt).toContain('s40');
     expect(prompt).not.toContain('s41');
   });
+
+  it('keeps the wire schema permissive — id validation happens in code', async () => {
+    // zodOutputFormat sends enum constraints only as description hints, so a
+    // strict client-side enum would hard-fail the whole batch on one invented
+    // id instead of reaching the per-post demotion path.
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      specific('s1'),
+      generic('g1'),
+    ]);
+    mocks.generate.mockResolvedValue({ choices: ['s1', 'GENERIC'] });
+
+    await pickImagesForPostContents('p1', POSTS);
+
+    const schema = mocks.generate.mock.calls[0][0].schema;
+    expect(
+      schema.safeParse({ choices: ['made-up-id', 'GENERIC'] }).success
+    ).toBe(true);
+  });
 });
 
 describe('pickImagesForPostContents fallback ladder', () => {
@@ -183,6 +208,17 @@ describe('pickImagesForPostContents fallback ladder', () => {
     await pickImagesForPostContents('p1', POSTS);
 
     expect(mocks.enqueueCaptionsForProfile).toHaveBeenCalledWith('p1');
+  });
+
+  it('does not re-enqueue permanently skipped images', async () => {
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      generic('g1'),
+      permanentlySkipped('u1'),
+    ]);
+
+    await pickImagesForPostContents('p1', POSTS);
+
+    expect(mocks.enqueueCaptionsForProfile).not.toHaveBeenCalled();
   });
 
   it('survives an enqueue failure', async () => {

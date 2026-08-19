@@ -13,6 +13,7 @@ export interface ApprovedPoolImage {
   aiTags: string[];
   aiGeneric: boolean | null;
   captionedAt: Date | null;
+  captionSkipReason: string | null;
 }
 
 /**
@@ -140,6 +141,7 @@ async function approvedPool(profileId: string): Promise<ApprovedPoolImage[]> {
       aiTags: true,
       aiGeneric: true,
       captionedAt: true,
+      captionSkipReason: true,
     },
   });
 }

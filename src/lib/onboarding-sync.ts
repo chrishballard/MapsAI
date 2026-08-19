@@ -69,7 +69,12 @@ export async function runInitialSync(profileId: string): Promise<void> {
       // best-effort — a failure just means the first batch matches with
       // fewer captions, never that generation is blocked.
       try {
-        await syncProfileMediaToLibrary(profileId);
+        // skipCaptionEnqueue: we caption inline right below — letting the
+        // sync hook enqueue worker jobs too would double-bill the same
+        // images (the worker shares this process).
+        await syncProfileMediaToLibrary(profileId, {
+          skipCaptionEnqueue: true,
+        });
       } catch (err) {
         console.warn(
           `${LOG_PREFIX} Media pre-sync failed for ${profile.name}:`,

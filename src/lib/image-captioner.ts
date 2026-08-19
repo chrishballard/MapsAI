@@ -41,9 +41,13 @@ export interface CaptionResult {
   error?: string;
 }
 
+// No length caps on the wire: zodOutputFormat sends max/maxItems only as
+// description hints, so strict caps here would make generate() throw on a
+// benign over-limit response (a billed retry loop) instead of reaching the
+// tolerate-and-trim slices below.
 const CaptionSchema = z.object({
-  description: z.string().max(MAX_DESCRIPTION_CHARS),
-  tags: z.array(z.string().max(40)).max(MAX_TAGS),
+  description: z.string(),
+  tags: z.array(z.string()),
   generic: z.boolean(),
 });
 
@@ -87,19 +91,28 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       googleUrl: true,
       category: true,
       captionedAt: true,
+      captionSkipReason: true,
       profile: { select: { name: true, category: true } },
     },
   });
 
   if (!image) return { imageId, ok: false, skipped: "GONE" };
   if (image.captionedAt) return { imageId, ok: true };
+  if (image.captionSkipReason) {
+    // Already found unusable — don't re-pull bytes or re-hit the CDN.
+    return {
+      imageId,
+      ok: false,
+      skipped: image.captionSkipReason as CaptionSkipReason,
+    };
+  }
 
   let input: { mediaType: string; base64: string };
   try {
     input = await resolveVisionInput(image);
   } catch (err) {
     if (err instanceof PermanentCaptionSkip) {
-      return { imageId, ok: false, skipped: err.reason };
+      return persistSkip(imageId, err.reason);
     }
     throw err;
   }
@@ -149,7 +162,9 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       where: { id: imageId },
       data: {
         aiDescription: caption.description.slice(0, MAX_DESCRIPTION_CHARS),
-        aiTags: caption.tags.slice(0, MAX_TAGS).map((t) => t.toLowerCase()),
+        aiTags: caption.tags
+          .slice(0, MAX_TAGS)
+          .map((t) => t.toLowerCase().slice(0, 80)),
         aiGeneric: caption.generic,
         captionedAt: new Date(),
       },
@@ -166,6 +181,32 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
   }
 
   return { imageId, ok: true };
+}
+
+/**
+ * Record a permanent skip on the row so re-enqueue queries exclude it —
+ * without this, every sync and generation batch would reprocess the image
+ * forever. A GBP sync that refreshes the image's URL clears the marker
+ * (a stale-URL skip may recover with the new URL). Throws on transient
+ * persist failure so the job retries; P2025 means the row is gone.
+ */
+async function persistSkip(
+  imageId: string,
+  reason: Exclude<CaptionSkipReason, "GONE">
+): Promise<CaptionResult> {
+  try {
+    await prisma.profileImage.update({
+      where: { id: imageId },
+      data: { captionSkipReason: reason },
+      select: { id: true },
+    });
+  } catch (err) {
+    if ((err as { code?: string })?.code === "P2025") {
+      return { imageId, ok: false, skipped: "GONE" };
+    }
+    throw err;
+  }
+  return { imageId, ok: false, skipped: reason };
 }
 
 /**
@@ -216,7 +257,12 @@ export async function captionUncaptionedApproved(
 ): Promise<number> {
   try {
     const rows = await prisma.profileImage.findMany({
-      where: { profileId, status: "APPROVED", captionedAt: null },
+      where: {
+        profileId,
+        status: "APPROVED",
+        captionedAt: null,
+        captionSkipReason: null,
+      },
       orderBy: { createdAt: "asc" },
       take: options.limit ?? 50,
       select: { id: true },
