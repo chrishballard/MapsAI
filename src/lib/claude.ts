@@ -23,8 +23,11 @@ if (process.env.NODE_ENV !== "production")
 
 interface GenerateOptions<Schema extends z.ZodType> {
   system: string;
-  /** A single user message, or a full messages array for multi-turn calls. */
-  prompt: string | { role: "user" | "assistant"; content: string }[];
+  /**
+   * A single user message, or a full messages array for multi-turn calls.
+   * Message content may include non-text blocks (e.g. images for vision).
+   */
+  prompt: string | Anthropic.MessageParam[];
   schema: Schema;
   maxTokens: number;
   /** Error message thrown when Claude returns no parseable output. */
