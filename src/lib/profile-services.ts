@@ -5,7 +5,7 @@ import {
   fetchCategoryId,
   pushServicesToGBP,
 } from "@/lib/google-business-info";
-import { MAX_SERVICE_DESCRIPTION_LENGTH } from "@/lib/service-generator";
+import { MAX_SERVICE_DESCRIPTION_LENGTH } from "@/lib/gbp-limits";
 
 export interface ProfileServiceInput {
   serviceName: string;
@@ -31,14 +31,31 @@ interface GBPServiceItem {
 /**
  * Upsert a profile's services, persisting descriptions and approval state.
  * Updating a service resets its pushed status so edits get re-pushed.
+ *
+ * With replace: true the input is treated as the COMPLETE set and rows absent
+ * from it are deleted. Callers that send their full current list (the
+ * onboarding wizard, the reoptimize editor) must use it: pushApprovedServices
+ * pushes ALL approved rows, so a stale approved row left behind would
+ * resurrect a deselected service on Google. Callers that save a partial list
+ * (the optimization suggestions panel approves one service at a time) must
+ * NOT set it.
  */
 export async function saveProfileServices(
   profileId: string,
-  services: ProfileServiceInput[]
+  services: ProfileServiceInput[],
+  options: { replace?: boolean } = {}
 ) {
-  await prisma.$transaction(
-    services.map((service) =>
-      prisma.profileService.upsert({
+  await prisma.$transaction(async (tx) => {
+    if (options.replace) {
+      await tx.profileService.deleteMany({
+        where: {
+          profileId,
+          serviceName: { notIn: services.map((s) => s.serviceName) },
+        },
+      });
+    }
+    for (const service of services) {
+      await tx.profileService.upsert({
         where: {
           profileId_serviceName: {
             profileId,
@@ -59,9 +76,9 @@ export async function saveProfileServices(
           isPushed: false,
           pushedAt: null,
         },
-      })
-    )
-  );
+      });
+    }
+  });
 
   return prisma.profileService.findMany({
     where: { profileId },
@@ -125,7 +142,7 @@ export async function pushApprovedServices(
   if (overlong.length > 0) {
     return {
       success: false,
-      error: `These descriptions are over Google's 300 character limit: ${overlong
+      error: `These descriptions are over Google's ${MAX_SERVICE_DESCRIPTION_LENGTH} character limit: ${overlong
         .map((s) => s.serviceName)
         .join(", ")}. Shorten them and try again.`,
       status: 400,

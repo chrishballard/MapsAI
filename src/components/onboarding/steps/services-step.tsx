@@ -12,6 +12,11 @@ import {
   Wrench,
 } from "lucide-react";
 import { fetchJson, sendJson } from "@/lib/fetch-json";
+import {
+  MAX_SERVICE_DESCRIPTION_LENGTH,
+  MAX_SERVICE_NAME_LENGTH,
+  MAX_SERVICES_PER_GENERATE,
+} from "@/lib/gbp-limits";
 
 interface ServiceItem {
   id?: string;
@@ -34,12 +39,8 @@ interface ServicesStepProps {
   onComplete: () => Promise<void>;
 }
 
-// Google's hard limit for a GBP service description (kept in sync with
-// MAX_SERVICE_DESCRIPTION_LENGTH in @/lib/service-generator, which can't be
-// imported here without pulling the Anthropic SDK into the client bundle).
-const MAX_DESCRIPTION_LENGTH = 300;
-// Google's limit for custom (free-form) service names.
-const MAX_SERVICE_NAME_LENGTH = 120;
+const isOverlong = (s: ServiceItem) =>
+  s.description.length > MAX_SERVICE_DESCRIPTION_LENGTH;
 
 export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -51,6 +52,9 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const [pushing, setPushing] = useState(false);
   const [pushSuccess, setPushSuccess] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  // Non-blocking notice (e.g. deferred save) — must NOT use pushError, whose
+  // banner carries a Retry button wired to the push flow
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [customServiceInput, setCustomServiceInput] = useState("");
   const [showSelection, setShowSelection] = useState(true);
 
@@ -173,10 +177,15 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
       }>("/api/onboarding/services/generate", { profileId, serviceNames });
 
       // A service is "structured" only if GBP offers a matching service type;
-      // custom additions are free-form
-      const structuredNames = new Set(
-        availableServices.map((a) => a.displayName.toLowerCase())
-      );
+      // custom additions are free-form. Existing services keep their flag so
+      // a regenerate during a GBP outage (availableServices empty) doesn't
+      // reclassify real service types as custom.
+      const structuredNames = new Set([
+        ...availableServices.map((a) => a.displayName.toLowerCase()),
+        ...services
+          .filter((s) => s.isStructured)
+          .map((s) => s.serviceName.toLowerCase()),
+      ]);
       const newServices: ServiceItem[] = genData.services.map((s) => ({
         serviceName: s.serviceName,
         description: s.description,
@@ -201,10 +210,11 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             isApproved: false,
           })),
         });
+        setSaveWarning(null);
       } catch (saveErr) {
         console.error("Failed to save generated services:", saveErr);
-        setPushError(
-          "Descriptions were generated but couldn't be saved yet — they'll be saved when you push to Google."
+        setSaveWarning(
+          "Descriptions were generated but couldn't be saved yet. They'll be saved when you push to Google."
         );
       }
     } catch (err) {
@@ -221,16 +231,17 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   // --- Card Phase Handlers ---
 
   const approvedCount = services.filter((s) => s.isApproved).length;
+  // Count only what Approve All can actually approve — overlong cards are
+  // skipped by it, so counting them would leave the button a no-op at "(1)"
   const unapprovedCount = services.filter(
-    (s) => !s.isApproved && !s.isPushed
+    (s) => !s.isApproved && !s.isPushed && !isOverlong(s)
   ).length;
   const allPushed =
     services.length > 0 && services.every((s) => s.isPushed);
+  // Pushed rows count too: the push flow re-saves everything (resetting
+  // pushed status), so the server guard would reject them all the same
   const overlongApproved = services.filter(
-    (s) =>
-      s.isApproved &&
-      !s.isPushed &&
-      s.description.length > MAX_DESCRIPTION_LENGTH
+    (s) => s.isApproved && isOverlong(s)
   );
 
   const approveService = (index: number) => {
@@ -255,9 +266,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
     // Overlong descriptions can't be approved — Google rejects the whole push
     setServices((prev) =>
       prev.map((s) =>
-        s.isPushed || s.description.length > MAX_DESCRIPTION_LENGTH
-          ? s
-          : { ...s, isApproved: true }
+        s.isPushed || isOverlong(s) ? s : { ...s, isApproved: true }
       )
     );
   };
@@ -265,6 +274,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   const handlePush = async () => {
     setPushing(true);
     setPushError(null);
+    setSaveWarning(null);
     try {
       // Step 1: Save all services to DB (persist edits + approval states)
       await sendJson("/api/onboarding/services", {
@@ -308,7 +318,8 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
   };
 
   const handleSkip = async () => {
-    // Save current services to DB before skipping
+    // Save current services to DB before skipping — and refuse to advance if
+    // that fails, or the whole generated batch would be silently lost
     if (services.length > 0) {
       try {
         await sendJson("/api/onboarding/services", {
@@ -320,8 +331,13 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             isApproved: s.isApproved,
           })),
         });
+        setSaveWarning(null);
       } catch (err) {
         console.error("Failed to save services before skipping:", err);
+        setSaveWarning(
+          "Couldn't save your services, so the step wasn't skipped. Please try again."
+        );
+        return;
       }
     }
     await onComplete();
@@ -491,10 +507,19 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
         </div>
 
         {/* Generate Descriptions Button */}
+        {totalSelected > MAX_SERVICES_PER_GENERATE && (
+          <p className="text-xs text-red-600 text-center">
+            Up to {MAX_SERVICES_PER_GENERATE} services can be generated at
+            once — deselect {totalSelected - MAX_SERVICES_PER_GENERATE} to
+            continue.
+          </p>
+        )}
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={totalSelected === 0}
+          disabled={
+            totalSelected === 0 || totalSelected > MAX_SERVICES_PER_GENERATE
+          }
           className="w-full flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-md py-2.5 font-medium text-sm"
         >
           <Sparkles className="w-4 h-4" />
@@ -539,6 +564,14 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           >
             Retry
           </button>
+        </div>
+      )}
+
+      {/* Non-blocking Save Notice */}
+      {saveWarning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <p className="text-sm font-medium text-amber-800">{saveWarning}</p>
         </div>
       )}
 
@@ -587,24 +620,27 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             )}
           </div>
 
-          {/* Editable Textarea */}
+          {/* Editable Textarea — an overlong pushed row stays editable so the
+              user can shorten it and unblock the push */}
           <textarea
             value={service.description}
             onChange={(e) => updateDescription(index, e.target.value)}
             rows={3}
-            disabled={service.isPushed}
+            disabled={service.isPushed && !isOverlong(service)}
             className="w-full border border-border rounded-md p-2 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 disabled:bg-muted/50"
           />
 
           {/* Character Count */}
-          {service.description.length > MAX_DESCRIPTION_LENGTH ? (
+          {isOverlong(service) ? (
             <p className="text-xs text-red-600 mt-1">
               {service.description.length} characters — over Google&apos;s{" "}
-              {MAX_DESCRIPTION_LENGTH} character limit. Shorten to push.
+              {MAX_SERVICE_DESCRIPTION_LENGTH} character limit. Shorten to
+              push.
             </p>
           ) : (
             <p className="text-xs text-zinc-400 mt-1">
-              {service.description.length} / {MAX_DESCRIPTION_LENGTH} characters
+              {service.description.length} / {MAX_SERVICE_DESCRIPTION_LENGTH}{" "}
+              characters
             </p>
           )}
 
@@ -638,9 +674,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
               <button
                 type="button"
                 onClick={() => approveService(index)}
-                disabled={
-                  service.description.length > MAX_DESCRIPTION_LENGTH
-                }
+                disabled={isOverlong(service)}
                 className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CheckCircle2 className="w-4 h-4" />
@@ -669,8 +703,8 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           <>
             {overlongApproved.length > 0 && (
               <p className="text-xs text-red-600 text-center">
-                Shorten these to {MAX_DESCRIPTION_LENGTH} characters before
-                pushing:{" "}
+                Shorten these to {MAX_SERVICE_DESCRIPTION_LENGTH} characters
+                before pushing:{" "}
                 {overlongApproved.map((s) => s.serviceName).join(", ")}
               </p>
             )}

@@ -2,10 +2,13 @@ import { requireSession, requireProfile } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchStructuredServices } from "@/lib/google-business-info";
-import { generateServiceDescriptions } from "@/lib/service-generator";
+import {
+  generateServiceDescriptions,
+  ServiceGenerationIncompleteError,
+} from "@/lib/service-generator";
 import { saveProfileServices } from "@/lib/profile-services";
 import { z } from "zod";
-import { idSchema, parseBody } from "@/lib/api-validation";
+import { idSchema, parseBody, serviceNamesSchema } from "@/lib/api-validation";
 
 export async function GET(request: NextRequest) {
   const unauthorized = await requireSession();
@@ -86,9 +89,7 @@ export async function POST(request: NextRequest) {
     request,
     z.object({
       profileId: idSchema,
-      // Matches the save endpoint's cap — service-rich GBP categories expose
-      // 30-70 service types and the UI pre-checks all of them.
-      serviceNames: z.array(z.string().min(1).max(200)).min(1).max(100),
+      serviceNames: serviceNamesSchema,
     })
   );
   if (parsed.error) return parsed.error;
@@ -151,6 +152,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ services: savedServices });
   } catch (error: unknown) {
     console.error("Service description generation failed:", error);
+    if (error instanceof ServiceGenerationIncompleteError) {
+      // Actionable and safe to surface: names the services that need a retry.
+      // The saved set is untouched — the replace transaction only runs on a
+      // complete generation result.
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
     return NextResponse.json(
       { error: "Failed to generate service descriptions" },
       { status: 500 }
@@ -178,10 +185,13 @@ export async function PUT(request: NextRequest) {
         )
         .min(1)
         .max(100),
+      // true when the caller sends its complete list (reoptimize editor);
+      // partial savers (suggestions panel) omit it
+      replace: z.boolean().optional(),
     })
   );
   if (parsed.error) return parsed.error;
-  const { profileId, services } = parsed.data;
+  const { profileId, services, replace } = parsed.data;
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
@@ -195,7 +205,9 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  const updatedServices = await saveProfileServices(profileId, services);
+  const updatedServices = await saveProfileServices(profileId, services, {
+    replace: replace ?? false,
+  });
 
   return NextResponse.json({ services: updatedServices });
 }

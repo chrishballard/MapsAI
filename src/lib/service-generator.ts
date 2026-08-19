@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generate } from "./claude";
+import { MAX_SERVICE_DESCRIPTION_LENGTH } from "./gbp-limits";
 
 const ServiceDescriptionSchema = z.object({
   services: z.array(
@@ -10,9 +11,6 @@ const ServiceDescriptionSchema = z.object({
   ),
 });
 
-/** Google's hard limit for a GBP service description. */
-export const MAX_SERVICE_DESCRIPTION_LENGTH = 300;
-
 /**
  * Small batches keep each Claude call well under the token budget and keep
  * instruction-following tight — long lists are where names get dropped or
@@ -21,9 +19,28 @@ export const MAX_SERVICE_DESCRIPTION_LENGTH = 300;
 const BATCH_SIZE = 10;
 const BATCH_CONCURRENCY = 3;
 
-/** Case/whitespace-insensitive key so Claude's name drift still matches. */
+/** Thrown when some services still have no description after the retry pass.
+ * Callers replace saved data with the result set, so a partial result must
+ * never be returned — it would silently destroy existing descriptions. */
+export class ServiceGenerationIncompleteError extends Error {
+  constructor(public missingServices: string[]) {
+    super(
+      `Could not generate descriptions for: ${missingServices.join(", ")}. Please try again.`
+    );
+    this.name = "ServiceGenerationIncompleteError";
+  }
+}
+
+/**
+ * Matching key tolerant of Claude's name drift: casing, whitespace, and
+ * punctuation ("Kitchen & Bath" vs "kitchen and bath", curly apostrophes).
+ */
 function nameKey(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, " ").trim();
+  return name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /** Cut an overlong description at the last word boundary within the limit. */
@@ -32,27 +49,9 @@ export function clampDescription(text: string): string {
   if (trimmed.length <= MAX_SERVICE_DESCRIPTION_LENGTH) return trimmed;
   const slice = trimmed.slice(0, MAX_SERVICE_DESCRIPTION_LENGTH);
   const lastSpace = slice.lastIndexOf(" ");
-  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    async () => {
-      while (next < items.length) {
-        const i = next++;
-        results[i] = await fn(items[i]);
-      }
-    }
-  );
-  await Promise.all(workers);
-  return results;
+  const cut = lastSpace > 0 ? slice.slice(0, lastSpace) : slice;
+  // A space-less cut can land mid-surrogate-pair — drop a dangling half
+  return cut.replace(/[\uD800-\uDBFF]$/, "").trim();
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -74,8 +73,10 @@ interface GenerationContext {
 
 /**
  * One Claude call for a batch of service names. Returns descriptions keyed by
- * normalized name; a thrown API error is caught by the caller, which routes
- * the batch's names into the retry pass.
+ * the INPUT names' keys: outputs are matched by normalized name, and when
+ * Claude answered for every service but rewrote a name beyond recognition,
+ * the leftovers are paired up positionally (Claude preserves list order).
+ * Blank descriptions count as missing so the retry pass re-asks for them.
  */
 async function generateBatch(
   context: GenerationContext,
@@ -123,11 +124,39 @@ Rules:
     errorMessage: "Failed to parse service descriptions from Claude",
   });
 
-  const byKey = new Map<string, string>();
-  for (const s of parsed.services) {
-    byKey.set(nameKey(s.serviceName), s.description);
+  const outputs = parsed.services.filter((s) => s.description.trim() !== "");
+  const outputByKey = new Map<string, string>();
+  for (const s of outputs) {
+    outputByKey.set(nameKey(s.serviceName), s.description);
   }
-  return byKey;
+
+  const matched = new Map<string, string>();
+  const consumedKeys = new Set<string>();
+  const unmatchedInputs: string[] = [];
+  for (const name of serviceNames) {
+    const key = nameKey(name);
+    const description = outputByKey.get(key);
+    if (description !== undefined) {
+      matched.set(key, description);
+      consumedKeys.add(key);
+    } else {
+      unmatchedInputs.push(name);
+    }
+  }
+
+  // Positional fallback: a complete, in-order answer with rewritten names
+  if (unmatchedInputs.length > 0 && outputs.length === serviceNames.length) {
+    const unconsumedOutputs = outputs.filter(
+      (s) => !consumedKeys.has(nameKey(s.serviceName))
+    );
+    if (unconsumedOutputs.length === unmatchedInputs.length) {
+      unmatchedInputs.forEach((name, i) => {
+        matched.set(nameKey(name), unconsumedOutputs[i].description);
+      });
+    }
+  }
+
+  return matched;
 }
 
 /**
@@ -138,9 +167,12 @@ Rules:
  * back to the EXACT input names — Claude's output names are only used for
  * matching, never returned — and names Claude drops (or whole failed batches)
  * get one retry pass. Descriptions are clamped to Google's 300-character
- * limit. A service still missing after retry comes back with an empty
- * description rather than failing the whole run; the call only throws if
- * nothing at all could be generated.
+ * limit.
+ *
+ * All-or-nothing: if any service still has no description after the retry
+ * pass, this throws ServiceGenerationIncompleteError instead of returning a
+ * partial set — callers replace their saved services with the result, so a
+ * partial return would silently destroy existing descriptions.
  */
 export async function generateServiceDescriptions(params: {
   businessName: string;
@@ -151,19 +183,12 @@ export async function generateServiceDescriptions(params: {
   serviceNames: string[];
   websiteText?: string | null;
 }): Promise<{ serviceName: string; description: string }[]> {
-  const context: GenerationContext = {
-    businessName: params.businessName,
-    category: params.category,
-    address: params.address,
-    keywords: params.keywords,
-    cities: params.cities,
-    websiteText: params.websiteText,
-  };
+  const { serviceNames, ...context } = params;
 
-  // Dedupe case-insensitively, keeping the first casing and input order
+  // Dedupe case/punctuation-insensitively, keeping first casing + input order
   const canonicalNames: string[] = [];
   const seen = new Set<string>();
-  for (const name of params.serviceNames) {
+  for (const name of serviceNames) {
     const key = nameKey(name);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -175,33 +200,34 @@ export async function generateServiceDescriptions(params: {
   const descriptions = new Map<string, string>();
   let lastError: unknown = null;
 
-  const runPass = async (names: string[], concurrency: number) => {
+  const runPass = async (names: string[]) => {
     const batches = chunk(names, BATCH_SIZE);
-    await mapWithConcurrency(batches, concurrency, async (batch) => {
-      try {
-        const generated = await generateBatch(context, batch);
-        for (const name of batch) {
-          const description = generated.get(nameKey(name));
-          if (description !== undefined) {
-            descriptions.set(nameKey(name), description);
+    for (const wave of chunk(batches, BATCH_CONCURRENCY)) {
+      await Promise.all(
+        wave.map(async (batch) => {
+          try {
+            const generated = await generateBatch(context, batch);
+            for (const [key, description] of generated) {
+              descriptions.set(key, description);
+            }
+          } catch (error: unknown) {
+            lastError = error;
+            console.error(
+              `[service-generator] Batch of ${batch.length} failed:`,
+              error
+            );
           }
-        }
-      } catch (error: unknown) {
-        lastError = error;
-        console.error(
-          `[service-generator] Batch of ${batch.length} failed:`,
-          error
-        );
-      }
-    });
+        })
+      );
+    }
   };
 
-  await runPass(canonicalNames, BATCH_CONCURRENCY);
+  await runPass(canonicalNames);
 
   // One retry for anything a batch dropped or a failed batch lost
   const missing = canonicalNames.filter((n) => !descriptions.has(nameKey(n)));
   if (missing.length > 0) {
-    await runPass(missing, 1);
+    await runPass(missing);
   }
 
   if (descriptions.size === 0) {
@@ -213,12 +239,12 @@ export async function generateServiceDescriptions(params: {
   const stillMissing = canonicalNames.filter(
     (n) => !descriptions.has(nameKey(n))
   );
-  for (const name of stillMissing) {
-    console.warn(`[service-generator] Missing description for service: ${name}`);
+  if (stillMissing.length > 0) {
+    throw new ServiceGenerationIncompleteError(stillMissing);
   }
 
   return canonicalNames.map((serviceName) => ({
     serviceName,
-    description: clampDescription(descriptions.get(nameKey(serviceName)) ?? ""),
+    description: clampDescription(descriptions.get(nameKey(serviceName))!),
   }));
 }

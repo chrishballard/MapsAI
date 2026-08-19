@@ -13,6 +13,10 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import {
+  MAX_SERVICE_DESCRIPTION_LENGTH,
+  MAX_SERVICE_NAME_LENGTH,
+} from "@/lib/gbp-limits";
 
 // --- Interfaces ---
 
@@ -43,6 +47,9 @@ interface GBPService {
   serviceTypeId: string;
   displayName: string;
 }
+
+const isOverlong = (s: ServiceItem) =>
+  s.description.length > MAX_SERVICE_DESCRIPTION_LENGTH;
 
 // --- Main Component ---
 
@@ -353,8 +360,11 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   };
 
   const approveAll = () => {
+    // Overlong descriptions can't be approved — Google rejects the whole push
     setSavedServices((prev) =>
-      prev.map((s) => (s.isPushed ? s : { ...s, isApproved: true }))
+      prev.map((s) =>
+        s.isPushed || isOverlong(s) ? s : { ...s, isApproved: true }
+      )
     );
   };
 
@@ -363,7 +373,9 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
     setSvcError(null);
     setSvcFailedOp(null);
     try {
-      // Persist edits + approval state first — the push route reads from the DB
+      // Persist edits + approval state first — the push route reads from the DB.
+      // This is the complete list, so replace: removed services must not
+      // linger as approved rows that would get pushed back to Google.
       const saveRes = await fetch("/api/reoptimize/services", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -375,6 +387,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
             isStructured: s.isStructured,
             isApproved: s.isApproved,
           })),
+          replace: true,
         }),
       });
       if (!saveRes.ok) {
@@ -446,9 +459,13 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
   const descCharColor = descCharCount > 750 ? "text-red-600" : "text-emerald-600";
 
   const approvedCount = savedServices.filter((s) => s.isApproved).length;
+  // Count only what Approve All can actually approve — it skips overlong cards
   const unapprovedCount = savedServices.filter(
-    (s) => !s.isApproved && !s.isPushed
+    (s) => !s.isApproved && !s.isPushed && !isOverlong(s)
   ).length;
+  const overlongApproved = savedServices.filter(
+    (s) => s.isApproved && isOverlong(s)
+  );
 
   // --- Loading State ---
 
@@ -909,6 +926,7 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     <input
                       type="text"
                       value={customServiceInput}
+                      maxLength={MAX_SERVICE_NAME_LENGTH}
                       onChange={(e) => setCustomServiceInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -1010,13 +1028,22 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         updateServiceDescription(index, e.target.value)
                       }
                       rows={3}
-                      disabled={service.isPushed}
+                      disabled={service.isPushed && !isOverlong(service)}
                       className="w-full border border-border rounded-md p-2 text-sm text-foreground focus:ring-4 focus:ring-brand-50 focus:border-brand-300 disabled:opacity-50 disabled:bg-muted/50"
                     />
 
-                    <p className="text-xs text-zinc-400 mt-1">
-                      {service.description.length} characters
-                    </p>
+                    {isOverlong(service) ? (
+                      <p className="text-xs text-red-600 mt-1">
+                        {service.description.length} characters — over
+                        Google&apos;s {MAX_SERVICE_DESCRIPTION_LENGTH}{" "}
+                        character limit. Shorten to push.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {service.description.length} /{" "}
+                        {MAX_SERVICE_DESCRIPTION_LENGTH} characters
+                      </p>
+                    )}
 
                     <div className="mt-2">
                       {service.isPushed ? (
@@ -1056,7 +1083,8 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                         <button
                           type="button"
                           onClick={() => approveService(index)}
-                          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100"
+                          disabled={isOverlong(service)}
+                          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-3 py-1 text-sm hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <CheckCircle2 className="w-4 h-4" />
                           Approve
@@ -1078,10 +1106,21 @@ export function ReoptimizeSection({ profileId }: { profileId: string }) {
                     </button>
                   )}
 
+                  {overlongApproved.length > 0 && (
+                    <p className="text-xs text-red-600 text-center">
+                      Shorten these to {MAX_SERVICE_DESCRIPTION_LENGTH}{" "}
+                      characters before pushing:{" "}
+                      {overlongApproved.map((s) => s.serviceName).join(", ")}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={pushServices}
-                    disabled={approvedCount === 0 || svcPushing}
+                    disabled={
+                      approvedCount === 0 ||
+                      svcPushing ||
+                      overlongApproved.length > 0
+                    }
                     className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 rounded-md px-6 py-2.5 font-medium text-sm"
                   >
                     {svcPushing ? (

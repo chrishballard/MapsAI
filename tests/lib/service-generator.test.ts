@@ -56,36 +56,28 @@ beforeEach(() => {
 });
 
 describe('generateServiceDescriptions batching', () => {
-  it('handles 25 services by splitting into batches of at most 10', async () => {
-    const serviceNames = Array.from({ length: 25 }, (_, i) => `Service ${i + 1}`);
+  it('handles a 69-service category by splitting into batches of at most 10', async () => {
+    const serviceNames = Array.from(
+      { length: 69 },
+      (_, i) => `Legal Service ${i + 1}`
+    );
 
     const result = await generateServiceDescriptions({
       ...baseParams,
       serviceNames,
     });
 
-    expect(result).toHaveLength(25);
+    expect(result).toHaveLength(69);
     // Every Claude call carried 10 or fewer services
     for (const call of mocks.generate.mock.calls) {
       expect(namesFromPrompt(call[0].prompt).length).toBeLessThanOrEqual(10);
     }
-    expect(mocks.generate.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(mocks.generate.mock.calls.length).toBeGreaterThanOrEqual(7);
     // Input order preserved, every service described
     expect(result.map((r) => r.serviceName)).toEqual(serviceNames);
     for (const r of result) {
       expect(r.description.length).toBeGreaterThan(0);
     }
-  });
-
-  it('handles 69 services (Divorce Matters-sized category) without error', async () => {
-    const serviceNames = Array.from({ length: 69 }, (_, i) => `Legal Service ${i + 1}`);
-
-    const result = await generateServiceDescriptions({
-      ...baseParams,
-      serviceNames,
-    });
-
-    expect(result.map((r) => r.serviceName)).toEqual(serviceNames);
   });
 });
 
@@ -104,6 +96,53 @@ describe('generateServiceDescriptions name fidelity', () => {
       'Water Heater Repair',
       'Drain Cleaning',
     ]);
+  });
+
+  it('matches names when Claude rewrites punctuation ("&" → "and", apostrophes)', async () => {
+    mocks.generate.mockImplementation(
+      echoDescriptions({
+        mutateName: (n) =>
+          n.replace(/&/g, 'and').replace(/'/g, '’'),
+      })
+    );
+
+    const result = await generateServiceDescriptions({
+      ...baseParams,
+      serviceNames: ["Kitchen & Bath Remodeling", "Men's Haircut"],
+    });
+
+    expect(result.map((r) => r.serviceName)).toEqual([
+      'Kitchen & Bath Remodeling',
+      "Men's Haircut",
+    ]);
+    for (const r of result) {
+      expect(r.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('falls back to positional matching when a rewritten name is unrecognizable', async () => {
+    // Claude answers for every service in order but rewrites one name beyond
+    // any normalization ("Trip & Fall" → "Slip and Fall Accidents")
+    mocks.generate.mockImplementation(
+      echoDescriptions({
+        mutateName: (n) =>
+          n === 'Trip & Fall' ? 'Slip and Fall Accidents' : n,
+      })
+    );
+
+    const result = await generateServiceDescriptions({
+      ...baseParams,
+      serviceNames: ['Divorce Mediation', 'Trip & Fall', 'Child Custody'],
+    });
+
+    expect(result.map((r) => r.serviceName)).toEqual([
+      'Divorce Mediation',
+      'Trip & Fall',
+      'Child Custody',
+    ]);
+    for (const r of result) {
+      expect(r.description.length).toBeGreaterThan(0);
+    }
   });
 
   it('drops services Claude invented that were never requested', async () => {
@@ -163,23 +202,43 @@ describe('generateServiceDescriptions retry for dropped services', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('returns an empty description (not an error) for a service Claude never describes', async () => {
+  it('throws naming the service when a description is still missing after retry', async () => {
+    // A partial result must never be returned — the reoptimize route replaces
+    // its saved set with the result, so missing services would destroy data
     mocks.generate.mockImplementation(
       echoDescriptions({ omit: new Set(['Sewer Line Repair']) })
     );
 
-    const result = await generateServiceDescriptions({
-      ...baseParams,
-      serviceNames: ['Drain Cleaning', 'Sewer Line Repair'],
+    await expect(
+      generateServiceDescriptions({
+        ...baseParams,
+        serviceNames: ['Drain Cleaning', 'Sewer Line Repair'],
+      })
+    ).rejects.toThrow(/Sewer Line Repair/);
+  });
+
+  it('treats a blank description as missing and retries it', async () => {
+    let firstCall = true;
+    mocks.generate.mockImplementation(async (opts: { prompt: string }) => {
+      if (firstCall) {
+        firstCall = false;
+        return echoDescriptions({
+          description: (n) => (n === 'Drain Cleaning' ? '   ' : `About ${n}.`),
+        })(opts);
+      }
+      return echoDescriptions()(opts);
     });
 
-    expect(result.map((r) => r.serviceName)).toEqual([
-      'Drain Cleaning',
-      'Sewer Line Repair',
-    ]);
+    const result = await generateServiceDescriptions({
+      ...baseParams,
+      serviceNames: ['Drain Cleaning', 'Leak Detection'],
+    });
+
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
     expect(
-      result.find((r) => r.serviceName === 'Sewer Line Repair')!.description
-    ).toBe('');
+      result.find((r) => r.serviceName === 'Drain Cleaning')!.description.trim()
+        .length
+    ).toBeGreaterThan(0);
   });
 
   it('recovers services from a failed batch via the retry pass', async () => {

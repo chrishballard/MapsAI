@@ -22,8 +22,17 @@ vi.mock('@/lib/auth/require-session', () => ({
   requireSession: vi.fn(async () => null),
   requireProfile: mocks.requireProfile,
 }));
+class MockIncompleteError extends Error {
+  constructor(public missingServices: string[]) {
+    super(
+      `Could not generate descriptions for: ${missingServices.join(', ')}. Please try again.`
+    );
+  }
+}
+
 vi.mock('@/lib/service-generator', () => ({
   generateServiceDescriptions: mocks.generateServiceDescriptions,
+  ServiceGenerationIncompleteError: MockIncompleteError,
 }));
 vi.mock('@/lib/website-scraper', () => ({
   scrapeWebsiteText: mocks.scrapeWebsiteText,
@@ -102,5 +111,18 @@ describe('onboarding services generate route', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBeTruthy();
+  });
+
+  it('surfaces which services failed when generation is incomplete', async () => {
+    mocks.generateServiceDescriptions.mockRejectedValue(
+      new MockIncompleteError(['Sewer Line Repair'])
+    );
+
+    const res = await generatePOST(
+      generateRequest(['Drain Cleaning', 'Sewer Line Repair'])
+    );
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toContain('Sewer Line Repair');
   });
 });

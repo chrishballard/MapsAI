@@ -1,19 +1,20 @@
 import { requireProfile } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateServiceDescriptions } from "@/lib/service-generator";
+import {
+  generateServiceDescriptions,
+  ServiceGenerationIncompleteError,
+} from "@/lib/service-generator";
 import { scrapeWebsiteText } from "@/lib/website-scraper";
 import { z } from "zod";
-import { idSchema, parseBody } from "@/lib/api-validation";
+import { idSchema, parseBody, serviceNamesSchema } from "@/lib/api-validation";
 
 export async function POST(request: NextRequest) {
   const parsed = await parseBody(
     request,
     z.object({
       profileId: idSchema,
-      // Matches the save endpoint's cap — service-rich GBP categories expose
-      // 30-70 service types and the UI pre-checks all of them.
-      serviceNames: z.array(z.string().min(1).max(200)).min(1).max(100),
+      serviceNames: serviceNamesSchema,
     })
   );
   if (parsed.error) return parsed.error;
@@ -52,6 +53,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ services: result });
   } catch (error: unknown) {
     console.error("Service description generation failed:", error);
+    if (error instanceof ServiceGenerationIncompleteError) {
+      // Actionable and safe to surface: names the services that need a retry
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
     return NextResponse.json(
       { error: "Failed to generate service descriptions" },
       { status: 500 }
