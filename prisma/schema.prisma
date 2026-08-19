@@ -177,6 +177,13 @@ model ProfileImage {
   height          Int?
   category        String?
   uploadedBy      String?
+  // AI vision caption (set by the image-caption worker; captionedAt null =
+  // not yet captioned). aiGeneric: true = safe to accompany any post by this
+  // business; false = subject-specific, only attach to posts it fits.
+  aiDescription   String?
+  aiTags          String[]           @default([])
+  aiGeneric       Boolean?
+  captionedAt     DateTime?
   timesUsed       Int                @default(0)
   lastUsedAt      DateTime?
   createdAt       DateTime           @default(now())
