@@ -320,7 +320,15 @@ async function resolveVisionInput(
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
-      if (response.status >= 400 && response.status < 500) {
+      // 429 is a rate-limit burst, not a verdict on the URL — it must stay
+      // transient, or a busy backfill would permanently poison rows (a
+      // persisted FETCH_DENIED only recovers if the URL changes). Other
+      // 4xx = stale/denied URL: skip until a sync refreshes it.
+      if (
+        response.status !== 429 &&
+        response.status >= 400 &&
+        response.status < 500
+      ) {
         throw new PermanentCaptionSkip("FETCH_DENIED");
       }
       throw new Error(

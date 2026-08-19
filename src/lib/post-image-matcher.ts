@@ -208,9 +208,13 @@ function resolveChoices(
   let genericCursor = 0;
 
   return choices.map((choice) => {
-    if (choice === NONE_CHOICE) return null;
+    // The keywords arrive without a wire-level enum, so tolerate casing and
+    // whitespace drift — "none" must honor the judgment, not demote. Ids
+    // are matched exactly (cuids are case-sensitive).
+    const keyword = choice.trim().toUpperCase();
+    if (keyword === NONE_CHOICE) return null;
 
-    let resolved = choice;
+    let resolved = keyword === GENERIC_CHOICE ? GENERIC_CHOICE : choice;
     if (
       resolved !== GENERIC_CHOICE &&
       (!validIds.has(resolved) || usedSpecifics.has(resolved))

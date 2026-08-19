@@ -266,6 +266,18 @@ describe('captionImage transient failures (throw so BullMQ retries)', () => {
     await expect(captionImage('img1')).rejects.toThrow();
   });
 
+  it('treats a 429 from the image host as transient, never a sticky skip', async () => {
+    // A rate-limit burst during the backfill must not permanently poison
+    // rows (a persisted FETCH_DENIED only recovers if the URL changes).
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.fetch.mockResolvedValue(fetchResponse({ ok: false, status: 429 }));
+
+    await expect(captionImage('img1')).rejects.toThrow();
+    expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+  });
+
   it('throws when the Claude call fails', async () => {
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
       imageRow({ thumbData: new Uint8Array([1]) })

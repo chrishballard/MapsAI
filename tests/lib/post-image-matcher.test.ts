@@ -125,6 +125,20 @@ describe('pickImagesForPostContents matching', () => {
     expect(picked).toEqual(['s1', null]);
   });
 
+  it('normalizes casing/whitespace on the GENERIC and NONE tokens', async () => {
+    // With no wire-level enum, a model may emit "none" or " GENERIC " —
+    // that must honor the judgment, not fall through to the demotion path.
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      specific('s1'),
+      generic('g1'),
+    ]);
+    mocks.generate.mockResolvedValue({ choices: [' generic ', 'none'] });
+
+    const picked = await pickImagesForPostContents('p1', POSTS);
+
+    expect(picked).toEqual(['g1', null]);
+  });
+
   it('sends posts and only the specific images to Claude', async () => {
     mocks.prisma.profileImage.findMany.mockResolvedValue([
       specific('s1', 'a new roof install'),
