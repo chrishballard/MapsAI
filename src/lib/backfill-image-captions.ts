@@ -2,10 +2,10 @@ import { prisma } from "./prisma";
 import { captionImages, type CaptionSkipReason } from "./image-captioner";
 
 // Rough per-image cost at the pinned Sonnet model ($3/M input, $15/M output).
-// GBP-hosted photos are fetched full-size (the API downscales to ~1,600
-// image tokens); uploads are captioned from the ~480px thumbnail (~250
-// tokens). Both add ~400 prompt tokens in and ~150 out.
-const EST_COST_GBP_IMAGE_USD = (2000 * 3 + 150 * 15) / 1_000_000; // ~$0.0083
+// GBP-hosted photos are fetched as ~512px CDN variants (~350 image tokens,
+// full-size ~1,600 only when the variant is unavailable); uploads use the
+// ~480px thumbnail (~250 tokens). Both add ~400 prompt tokens in, ~150 out.
+const EST_COST_GBP_IMAGE_USD = (750 * 3 + 150 * 15) / 1_000_000; // ~$0.0045
 const EST_COST_UPLOAD_IMAGE_USD = (650 * 3 + 150 * 15) / 1_000_000; // ~$0.0042
 
 const CAPTION_CONCURRENCY = 3;
@@ -35,6 +35,8 @@ export interface CaptionBackfillSummary {
   imagesFailed: number;
   /** Estimated Claude spend for captioning every uncaptioned image found. */
   estimatedCostUsd: number;
+  /** TOO_LARGE skips cleared for retry (or countable on a dry run). */
+  tooLargeRetried: number;
   profilesErrored: string[];
   /** Per-profile detail, only for profiles that had uncaptioned images. */
   results: ProfileCaptionResult[];
@@ -52,10 +54,35 @@ export interface CaptionBackfillSummary {
  * tolerate per-image failures (re-run to retry transient ones).
  */
 export async function backfillImageCaptions(
-  options: { dryRun?: boolean; log?: (message: string) => void } = {}
+  options: {
+    dryRun?: boolean;
+    log?: (message: string) => void;
+    /** Clear TOO_LARGE skips first so the scan retries them — for after the
+     *  sized-CDN-variant fix made oversized originals captionable. */
+    retryTooLarge?: boolean;
+  } = {}
 ): Promise<CaptionBackfillSummary> {
   const dryRun = options.dryRun ?? false;
   const log = options.log ?? console.log;
+
+  let tooLargeRetried = 0;
+  if (options.retryTooLarge) {
+    if (dryRun) {
+      tooLargeRetried = await prisma.profileImage.count({
+        where: { captionSkipReason: "TOO_LARGE" },
+      });
+    } else {
+      const cleared = await prisma.profileImage.updateMany({
+        where: { captionSkipReason: "TOO_LARGE" },
+        data: { captionSkipReason: null },
+      });
+      tooLargeRetried = cleared.count;
+    }
+    log(
+      `[caption-backfill] ${tooLargeRetried} TOO_LARGE skip(s) ` +
+        (dryRun ? "would be retried" : "cleared for retry")
+    );
+  }
 
   // Same population the daily generation worker serves.
   const profiles = await prisma.profile.findMany({
@@ -76,6 +103,7 @@ export async function backfillImageCaptions(
     imagesSkipped: 0,
     imagesFailed: 0,
     estimatedCostUsd: 0,
+    tooLargeRetried,
     profilesErrored: [],
     results: [],
   };

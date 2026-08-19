@@ -33,7 +33,7 @@ caller:
   pulls GBP photos in and captions up to 50 inline so day-one posts match.
 
 Caption inputs: the ~480px thumbnail (uploads) or a server-side fetch of
-`googleUrl` (GBP rows). Images with no usable input get a persisted
+`googleUrl`'s ~512px CDN size-variant (GBP rows; raw URL as fallback). Images with no usable input get a persisted
 `captionSkipReason` and are excluded from every re-enqueue query (a GBP
 sync that refreshes the image's URL clears the skip so it retries). They
 stay uncaptioned — treated as "unknown" and never blind-attached once the

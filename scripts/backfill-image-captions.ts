@@ -5,11 +5,14 @@
  * transient per-image failures are retried on the next run.
  *
  * Usage:
- *   node --env-file=.env --import tsx scripts/backfill-image-captions.ts [--dry-run]
+ *   node --env-file=.env --import tsx scripts/backfill-image-captions.ts [--dry-run] [--retry-too-large]
  *
  * Dry run is fully inert — no DB writes, no Claude calls. It prints the
  * per-profile image counts and the estimated Claude spend so the live run
  * can be approved knowingly.
+ *
+ * --retry-too-large clears TOO_LARGE skips first so the run retries them
+ * (for after the sized-CDN-variant fix made oversized originals work).
  *
  * Requires DATABASE_URL; a live run also needs ANTHROPIC_API_KEY.
  */
@@ -17,6 +20,7 @@ import { prisma } from "../src/lib/prisma";
 import { backfillImageCaptions } from "../src/lib/backfill-image-captions";
 
 const dryRun = process.argv.includes("--dry-run");
+const retryTooLarge = process.argv.includes("--retry-too-large");
 
 async function main() {
   console.log(
@@ -25,7 +29,7 @@ async function main() {
       : "Captioning library images with Claude vision..."
   );
 
-  const summary = await backfillImageCaptions({ dryRun });
+  const summary = await backfillImageCaptions({ dryRun, retryTooLarge });
 
   console.log("");
   if (dryRun) {

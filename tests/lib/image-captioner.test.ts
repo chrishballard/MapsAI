@@ -103,7 +103,10 @@ describe('captionImage input selection', () => {
     expect(imageBlock.source.data).toBe(Buffer.from(data).toString('base64'));
   });
 
-  it('fetches googleUrl server-side for GBP-synced rows', async () => {
+  it('fetches a downscaled CDN variant of googleUrl for GBP-synced rows', async () => {
+    // Full-res originals routinely exceed the vision byte cap (450 skipped
+    // in the first prod backfill) and cost ~5x the tokens; the CDN's size
+    // suffix serves a small variant.
     const bytes = new Uint8Array([7, 7]);
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
       imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo', category: 'INTERIOR' })
@@ -113,13 +116,46 @@ describe('captionImage input selection', () => {
     const result = await captionImage('img1');
 
     expect(result.ok).toBe(true);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(mocks.fetch).toHaveBeenCalledWith(
-      'https://lh3.googleusercontent.com/photo',
+      'https://lh3.googleusercontent.com/photo=s512',
       expect.objectContaining({ signal: expect.anything() })
     );
     const content = mocks.generate.mock.calls[0][0].prompt[0].content;
     const imageBlock = content.find((b: { type: string }) => b.type === 'image');
     expect(imageBlock.source.data).toBe(Buffer.from(bytes).toString('base64'));
+  });
+
+  it('falls back to the raw googleUrl when the sized variant fails', async () => {
+    const bytes = new Uint8Array([8, 8]);
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.fetch
+      .mockResolvedValueOnce(fetchResponse({ ok: false, status: 404 }))
+      .mockResolvedValueOnce(fetchResponse({ bytes }));
+
+    const result = await captionImage('img1');
+
+    expect(result.ok).toBe(true);
+    expect(mocks.fetch.mock.calls.map((c) => c[0])).toEqual([
+      'https://lh3.googleusercontent.com/photo=s512',
+      'https://lh3.googleusercontent.com/photo',
+    ]);
+  });
+
+  it('does not append a size suffix to an already-parameterized URL', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo=w1000' })
+    );
+    mocks.fetch.mockResolvedValue(fetchResponse());
+
+    await captionImage('img1');
+
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch.mock.calls[0][0]).toBe(
+      'https://lh3.googleusercontent.com/photo=w1000'
+    );
   });
 
   it('includes business context and the GBP category hint in the prompt', async () => {

@@ -314,40 +314,66 @@ async function resolveVisionInput(
 
   // GBP-synced rows: fetch Google's CDN copy ourselves rather than passing
   // the URL to the API — our own fetch has deterministic, classifiable
-  // failure modes (4xx = stale URL, 5xx/network = retry).
+  // failure modes (4xx = stale URL, 5xx/network = retry). Prefer the CDN's
+  // downscaled variant: full-res originals routinely exceed the vision byte
+  // cap (450 TOO_LARGE skips in the first prod backfill) and cost ~5x the
+  // tokens. Fall back to the raw URL when the variant isn't available —
+  // only the raw URL's failures classify.
   if (image.googleUrl) {
-    const response = await fetch(image.googleUrl, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      // 429 is a rate-limit burst, not a verdict on the URL — it must stay
-      // transient, or a busy backfill would permanently poison rows (a
-      // persisted FETCH_DENIED only recovers if the URL changes). Other
-      // 4xx = stale/denied URL: skip until a sync refreshes it.
-      if (
-        response.status !== 429 &&
-        response.status >= 400 &&
-        response.status < 500
-      ) {
-        throw new PermanentCaptionSkip("FETCH_DENIED");
+    const sized = sizedGoogleUrl(image.googleUrl);
+    if (sized) {
+      try {
+        return await fetchVisionBytes(sized);
+      } catch {
+        // Variant unavailable (some URLs don't accept the suffix) — the
+        // raw fetch below is the authoritative attempt.
       }
-      throw new Error(
-        `Image fetch failed with HTTP ${response.status} for ${image.googleUrl}`
-      );
     }
-    const mediaType = (response.headers.get("content-type") ?? "")
-      .split(";")[0]
-      .trim()
-      .toLowerCase();
-    if (!SUPPORTED_MEDIA_TYPES.has(mediaType)) {
-      throw new PermanentCaptionSkip("UNSUPPORTED_TYPE");
-    }
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.length > MAX_VISION_BYTES) {
-      throw new PermanentCaptionSkip("TOO_LARGE");
-    }
-    return { mediaType, base64: Buffer.from(bytes).toString("base64") };
+    return fetchVisionBytes(image.googleUrl);
   }
 
   throw new PermanentCaptionSkip("NO_INPUT");
+}
+
+// The CDN's max-dimension suffix. 512px is plenty for subject recognition
+// (uploads caption fine from 480px thumbs) at ~350 image tokens.
+const GBP_VISION_SIZE = 512;
+
+/** CDN size-variant URL, or null when the URL is already parameterized. */
+function sizedGoogleUrl(url: string): string | null {
+  return url.includes("=") ? null : `${url}=s${GBP_VISION_SIZE}`;
+}
+
+async function fetchVisionBytes(
+  url: string
+): Promise<{ mediaType: string; base64: string }> {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    // 429 is a rate-limit burst, not a verdict on the URL — it must stay
+    // transient, or a busy backfill would permanently poison rows (a
+    // persisted FETCH_DENIED only recovers if the URL changes). Other
+    // 4xx = stale/denied URL: skip until a sync refreshes it.
+    if (
+      response.status !== 429 &&
+      response.status >= 400 &&
+      response.status < 500
+    ) {
+      throw new PermanentCaptionSkip("FETCH_DENIED");
+    }
+    throw new Error(`Image fetch failed with HTTP ${response.status} for ${url}`);
+  }
+  const mediaType = (response.headers.get("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!SUPPORTED_MEDIA_TYPES.has(mediaType)) {
+    throw new PermanentCaptionSkip("UNSUPPORTED_TYPE");
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > MAX_VISION_BYTES) {
+    throw new PermanentCaptionSkip("TOO_LARGE");
+  }
+  return { mediaType, base64: Buffer.from(bytes).toString("base64") };
 }
