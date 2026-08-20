@@ -118,7 +118,11 @@ describe('calculateRollingScheduleDates', () => {
     const dates = calculateRollingScheduleDates(4, anchor);
     const gap = daysBetween(anchor, dates[0]);
     expect(gap).toBeGreaterThanOrEqual(5); // ~7.5d interval, weekday-snapped
-    expect(gap).toBeLessThanOrEqual(10);
+    // Worst case ~10.21d: when anchor+7.5d lands on a Saturday, weekday
+    // snapping adds up to 2 days, plus the 17:00 UTC pin vs the anchor's
+    // time of day. A ≤10 bound here failed only when the real clock fell in
+    // that window — the long-hunted "first-run flake".
+    expect(gap).toBeLessThanOrEqual(10.5);
   });
 
   it('starts promptly (about tomorrow) for a stale or missing anchor', () => {
