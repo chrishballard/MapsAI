@@ -86,12 +86,19 @@ export interface RematchSummary {
  * run scripts/backfill-image-captions.ts first.
  */
 export async function rematchPostImages(
-  options: { dryRun?: boolean; log?: (message: string) => void } = {}
+  options: {
+    dryRun?: boolean;
+    log?: (message: string) => void;
+    /** Case-insensitive name substrings — when set, only matching profiles
+     *  run (each matcher call bills, so targeted re-runs shouldn't re-review
+     *  the ~90 already-done profiles). */
+    profileFilter?: string[];
+  } = {}
 ): Promise<RematchSummary> {
   const dryRun = options.dryRun ?? false;
   const log = options.log ?? console.log;
 
-  const profiles = await prisma.profile.findMany({
+  let profiles = await prisma.profile.findMany({
     where: {
       isConnected: true,
       isOnboarded: true,
@@ -100,6 +107,19 @@ export async function rematchPostImages(
     orderBy: { name: "asc" },
     select: { id: true, name: true, category: true },
   });
+
+  const filters = (options.profileFilter ?? [])
+    .map((f) => f.trim().toLowerCase())
+    .filter(Boolean);
+  if (filters.length > 0) {
+    profiles = profiles.filter((p) =>
+      filters.some((f) => p.name.toLowerCase().includes(f))
+    );
+    log(
+      `[rematch] Profile filter (${filters.join(", ")}) matched ` +
+        `${profiles.length} profile(s)`
+    );
+  }
 
   const summary: RematchSummary = {
     dryRun,
