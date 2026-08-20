@@ -1,8 +1,8 @@
 /**
  * READ-ONLY diagnostic for permanently skipped caption images: breaks the
- * skips down by reason, and live-tests a sample of FETCH_DENIED googleUrls
- * to distinguish genuinely stale URLs (still 4xx) from a rate-limit burst
- * during the backfill (now 200 — recoverable by clearing the skip).
+ * skips down by reason, prints sample rows, and live-tests candidate CDN
+ * size-variant URL forms for TOO_LARGE rows (headers only, bodies
+ * discarded) so the captioner's downscale logic can be fixed empirically.
  *
  * Writes NOTHING to the database and calls no AI.
  *
@@ -11,7 +11,37 @@
  */
 import { prisma } from "../src/lib/prisma";
 
-const SAMPLE_SIZE = 20;
+const SAMPLE_SIZE = 5;
+
+async function probe(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const type = response.headers.get("content-type") ?? "?";
+    const length = response.headers.get("content-length") ?? "?";
+    await response.body?.cancel();
+    return `HTTP ${response.status}, type=${type}, bytes=${length}`;
+  } catch (err) {
+    return `error (${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
+function candidateUrls(url: string): { label: string; url: string }[] {
+  const candidates: { label: string; url: string }[] = [
+    { label: "raw", url },
+  ];
+  if (url.includes("=")) {
+    candidates.push({
+      label: "tail-replaced =s512",
+      url: url.replace(/=[^/=]*$/, "=s512"),
+    });
+  } else {
+    candidates.push(
+      { label: "appended =s512", url: `${url}=s512` },
+      { label: "appended =w512-h512-k-no", url: `${url}=w512-h512-k-no` }
+    );
+  }
+  return candidates;
+}
 
 async function main() {
   const byReason = await prisma.profileImage.groupBy({
@@ -30,48 +60,32 @@ async function main() {
     return;
   }
 
-  const denied = await prisma.profileImage.findMany({
-    where: { captionSkipReason: "FETCH_DENIED", googleUrl: { not: null } },
+  const tooLarge = await prisma.profileImage.findMany({
+    where: { captionSkipReason: "TOO_LARGE", googleUrl: { not: null } },
     orderBy: { updatedAt: "desc" },
     take: SAMPLE_SIZE,
-    select: { id: true, googleUrl: true, profile: { select: { name: true } } },
+    select: {
+      id: true,
+      googleUrl: true,
+      width: true,
+      height: true,
+      byteSize: true,
+      profile: { select: { name: true } },
+    },
   });
 
-  if (denied.length === 0) {
-    console.log("\nNo FETCH_DENIED rows to sample.");
-    await prisma.$disconnect();
-    return;
-  }
-
-  console.log(
-    `\nLive-testing ${denied.length} sampled FETCH_DENIED URLs (read-only):`
-  );
-  const statusTally = new Map<string, number>();
-  for (const row of denied) {
-    let status: string;
-    try {
-      const response = await fetch(row.googleUrl!, {
-        signal: AbortSignal.timeout(8000),
-      });
-      status = String(response.status);
-      // Discard the body — only the status matters.
-      await response.body?.cancel();
-    } catch (err) {
-      status = `error (${err instanceof Error ? err.message : String(err)})`;
+  for (const row of tooLarge) {
+    console.log(`\n${row.profile.name} ${row.id}`);
+    console.log(`  stored dimensions: ${row.width}x${row.height}`);
+    console.log(`  googleUrl: ${row.googleUrl}`);
+    for (const candidate of candidateUrls(row.googleUrl!)) {
+      const result = await probe(candidate.url);
+      console.log(`  [${candidate.label}] ${result}`);
+      if (candidate.label !== "raw") {
+        console.log(`    -> ${candidate.url}`);
+      }
     }
-    statusTally.set(status, (statusTally.get(status) ?? 0) + 1);
-    console.log(`  [${status}] ${row.profile.name} ${row.id}`);
   }
-
-  console.log("\nSample status tally:");
-  for (const [status, count] of statusTally) {
-    console.log(`  ${status}: ${count}`);
-  }
-  console.log(
-    "\nInterpretation: mostly 200 = the backfill got rate-limited and these " +
-      "are recoverable (skips can be cleared and re-run); mostly 4xx = the " +
-      "URLs really are stale/denied and the skips are correct."
-  );
 
   await prisma.$disconnect();
 }
