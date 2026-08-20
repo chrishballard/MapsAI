@@ -326,6 +326,33 @@ describe('rematch safety', () => {
   });
 });
 
+describe('profile filter', () => {
+  it('limits the run to profiles whose name matches a filter substring', async () => {
+    mocks.prisma.profile.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Acme', category: 'Remodeler' },
+      { id: 'p2', name: 'Zubowicz Aesthetics', category: 'Med spa' },
+    ]);
+    mocks.prisma.post.findMany.mockResolvedValue([post('post1', null, null)]);
+    mocks.generate.mockResolvedValue({
+      decisions: [{ action: 'KEEP', reason: 'fine' }],
+    });
+
+    const summary = await rematchPostImages({
+      profileFilter: ['ZUBOWICZ'],
+      log: () => {},
+    });
+
+    expect(summary.profilesChecked).toBe(1);
+    // Only Zubowicz's pool and posts are ever queried.
+    expect(mocks.prisma.profileImage.findMany).toHaveBeenCalledTimes(1);
+    expect(
+      (mocks.prisma.profileImage.findMany.mock.calls[0][0] as {
+        where: { profileId: string };
+      }).where.profileId
+    ).toBe('p2');
+  });
+});
+
 describe('rematch dry run', () => {
   it('calls the matcher but writes nothing, recording proposals', async () => {
     mocks.prisma.post.findMany.mockResolvedValue([

@@ -11,7 +11,11 @@
  * manual edits always win (guarded writes).
  *
  * Usage:
- *   node --env-file=.env --import tsx scripts/rematch-post-images.ts [--dry-run]
+ *   node --env-file=.env --import tsx scripts/rematch-post-images.ts [--dry-run] [--profile=<name,name,...>]
+ *
+ * --profile limits the run to profiles whose name contains any of the
+ * comma-separated substrings (case-insensitive) — targeted re-runs
+ * shouldn't re-bill matcher calls for profiles already done.
  *
  * NOTE: --dry-run writes NOTHING to the database but DOES call the Claude
  * matcher (and bills for it) — the preview is meaningless without it.
@@ -22,6 +26,11 @@ import { prisma } from "../src/lib/prisma";
 import { rematchPostImages } from "../src/lib/rematch-post-images";
 
 const dryRun = process.argv.includes("--dry-run");
+const profileFilter = process.argv
+  .filter((arg) => arg.startsWith("--profile="))
+  .flatMap((arg) => arg.slice("--profile=".length).split(","))
+  .map((name) => name.trim())
+  .filter(Boolean);
 
 async function main() {
   console.log(
@@ -30,7 +39,7 @@ async function main() {
       : "Re-matching photos on unpublished posts..."
   );
 
-  const summary = await rematchPostImages({ dryRun });
+  const summary = await rematchPostImages({ dryRun, profileFilter });
 
   const verb = dryRun ? "proposed" : "changed";
   console.log("");
