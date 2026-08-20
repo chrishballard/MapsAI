@@ -117,9 +117,11 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
     throw err;
   }
 
-  const caption = await generate({
-    system: CAPTION_SYSTEM_PROMPT,
-    prompt: [
+  let caption: z.infer<typeof CaptionSchema>;
+  try {
+    caption = await generate({
+      system: CAPTION_SYSTEM_PROMPT,
+      prompt: [
       {
         role: "user",
         content: [
@@ -152,10 +154,19 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
         ],
       },
     ],
-    schema: CaptionSchema,
-    maxTokens: 500,
-    errorMessage: "Failed to parse image caption from Claude",
-  });
+      schema: CaptionSchema,
+      maxTokens: 500,
+      errorMessage: "Failed to parse image caption from Claude",
+    });
+  } catch (err) {
+    // The API rejects images over 8,000px on a side with a 400 even when
+    // the bytes fit the size guard — retrying can never help, so record it
+    // as the permanent skip it is instead of burning billed retries.
+    if (isDimensionRejection(err)) {
+      return persistSkip(imageId, "TOO_LARGE");
+    }
+    throw err;
+  }
 
   try {
     await prisma.profileImage.update({
@@ -181,6 +192,16 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
   }
 
   return { imageId, ok: true };
+}
+
+/** A 400 from the vision API because the image exceeds its pixel-dimension cap. */
+function isDimensionRejection(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  return (
+    e?.status === 400 &&
+    typeof e.message === "string" &&
+    /image dimensions exceed max allowed size/i.test(e.message)
+  );
 }
 
 /**
@@ -339,9 +360,19 @@ async function resolveVisionInput(
 // (uploads caption fine from 480px thumbs) at ~350 image tokens.
 const GBP_VISION_SIZE = 512;
 
-/** CDN size-variant URL, or null when the URL is already parameterized. */
+/**
+ * CDN size-variant URL. GBP googleUrls carry a trailing size parameter —
+ * in prod it's always `=s0`, i.e. "serve the original" (verified
+ * 2026-08-20; the originals are what blew the vision byte cap) — which
+ * gets tail-replaced with our size. Bare URLs get the suffix appended.
+ * Returns null only for shapes we don't recognize (variant skipped, raw
+ * fetch decides).
+ */
 function sizedGoogleUrl(url: string): string | null {
-  return url.includes("=") ? null : `${url}=s${GBP_VISION_SIZE}`;
+  const suffix = `=s${GBP_VISION_SIZE}`;
+  if (!url.includes("=")) return `${url}${suffix}`;
+  if (/=[^/=]*$/.test(url)) return url.replace(/=[^/=]*$/, suffix);
+  return null;
 }
 
 async function fetchVisionBytes(
