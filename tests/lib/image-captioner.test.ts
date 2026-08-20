@@ -144,9 +144,12 @@ describe('captionImage input selection', () => {
     ]);
   });
 
-  it('does not append a size suffix to an already-parameterized URL', async () => {
+  it('replaces an existing size suffix — GBP URLs end in =s0 (original size)', async () => {
+    // Verified against prod 2026-08-20: every GBP googleUrl carries =s0 and
+    // serves the multi-MB original; tail-replacing with =s512 returns a
+    // ~100KB variant with HTTP 200.
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
-      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo=w1000' })
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/A0iHDUW-abc_def=s0' })
     );
     mocks.fetch.mockResolvedValue(fetchResponse());
 
@@ -154,8 +157,43 @@ describe('captionImage input selection', () => {
 
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(mocks.fetch.mock.calls[0][0]).toBe(
-      'https://lh3.googleusercontent.com/photo=w1000'
+      'https://lh3.googleusercontent.com/A0iHDUW-abc_def=s512'
     );
+  });
+
+  it('replaces other parameter suffixes too (=w1000 etc.)', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo=w1000-h800-k-no' })
+    );
+    mocks.fetch.mockResolvedValue(fetchResponse());
+
+    await captionImage('img1');
+
+    expect(mocks.fetch.mock.calls[0][0]).toBe(
+      'https://lh3.googleusercontent.com/photo=s512'
+    );
+  });
+
+  it('persists TOO_LARGE when the vision API rejects the image dimensions', async () => {
+    // >8000px originals can be small enough in bytes to pass the size guard
+    // but still be rejected by the API — retrying can never help those.
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+    mocks.generate.mockRejectedValue(
+      Object.assign(
+        new Error(
+          '400 {"type":"error","error":{"type":"invalid_request_error","message":"messages.0.content.0.image.source.base64.data: At least one of the image dimensions exceed max allowed size: 8000 pixels"}}'
+        ),
+        { status: 400 }
+      )
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'TOO_LARGE' });
+    const arg = mocks.prisma.profileImage.update.mock.calls[0][0];
+    expect(arg.data).toEqual({ captionSkipReason: 'TOO_LARGE' });
   });
 
   it('includes business context and the GBP category hint in the prompt', async () => {
