@@ -41,7 +41,9 @@ vi.mock('../../src/lib/google-reviews', () => ({
 }));
 
 await import('../../workers/review-publish-worker');
-const { REVIEW_REMOVED_SKIP_MESSAGE } = await import('../../src/lib/review-removal');
+const { REVIEW_REMOVED_SKIP_MESSAGE, ReviewNotFoundError } = await import(
+  '../../src/lib/review-removal'
+);
 
 function job(): Job<{ reviewResponseId: string }> {
   return { data: { reviewResponseId: 'resp1' } } as Job<{
@@ -92,7 +94,7 @@ describe('review publish worker and removed reviews', () => {
     mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
       approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
     );
-    mocks.fetchSingleReview.mockRejectedValue({ response: { status: 404 } });
+    mocks.fetchSingleReview.mockRejectedValue(new ReviewNotFoundError('x'));
 
     await mocks.processor!(job());
 
@@ -131,6 +133,32 @@ describe('review publish worker and removed reviews', () => {
     await expect(mocks.processor!(job())).rejects.toBeTruthy();
 
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a 404 as "removed" when the sync never flagged the review', async () => {
+    // Only the sync's flag plus Google's confirmation together mean gone.
+    // A bare not-found on an unflagged review is an anomaly: retry, and
+    // let the failed handler mark it FAILED for a human.
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approvedResponse({ removedAt: null })
+    );
+    mocks.fetchSingleReview.mockRejectedValue(new ReviewNotFoundError('x'));
+
+    await expect(mocks.processor!(job())).rejects.toBeTruthy();
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
+  });
+
+  it('retries when only one endpoint said 404 (a plain error, not a typed not-found)', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
+    );
+    mocks.fetchSingleReview.mockRejectedValue({ response: { status: 404 } });
+
+    await expect(mocks.processor!(job())).rejects.toBeTruthy();
+
     expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
   });
 

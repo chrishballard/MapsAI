@@ -75,6 +75,11 @@ DROP TABLE review_dupes;
 
 ALTER TABLE "Review" ALTER COLUMN "googleReviewKey" SET NOT NULL;
 
+-- Identity is (profileId, googleReviewKey) now. The old global unique on the
+-- raw resource name would make the second profile for a shared location
+-- fail its sync on every review.
+DROP INDEX "Review_googleReviewId_key";
+
 CREATE UNIQUE INDEX "Review_profileId_googleReviewKey_key"
   ON "Review"("profileId", "googleReviewKey");
 

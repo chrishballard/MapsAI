@@ -4,7 +4,10 @@ import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews
 import { prisma } from "../src/lib/prisma";
 import { replyModeForRating } from "../src/lib/review-reply-mode";
 import { reviewResourceName } from "../src/lib/review-key";
-import { REVIEW_REMOVED_SKIP_MESSAGE } from "../src/lib/review-removal";
+import {
+  REVIEW_REMOVED_SKIP_MESSAGE,
+  isReviewNotFound,
+} from "../src/lib/review-removal";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -100,7 +103,8 @@ export const worker = new Worker<ReviewPublishJobData>(
     // slip between pages of a long sync pass and look removed for half an
     // hour. Google's answer for this one review decides. Gone (404): skip,
     // with the marker the sync uses to re-queue if it ever reappears.
-    // Still there: clear the flag and carry on.
+    // Still there: clear the flag and carry on. "Gone" means every endpoint
+    // fetchSingleReview tried said 404 (a typed error), not just the last.
     let liveReview;
     try {
       liveReview = await fetchSingleReview(
@@ -108,9 +112,7 @@ export const worker = new Worker<ReviewPublishJobData>(
         resourceName
       );
     } catch (err) {
-      const status = (err as { response?: { status?: number } }).response
-        ?.status;
-      if (review.removedAt && status === 404) {
+      if (review.removedAt && isReviewNotFound(err)) {
         console.warn(
           `Review ${review.id} is gone on Google, skipping publish for response ${reviewResponseId}`
         );

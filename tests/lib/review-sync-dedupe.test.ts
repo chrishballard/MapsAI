@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      count: vi.fn(),
     },
     reviewResponse: { create: vi.fn(), update: vi.fn() },
     profile: { update: vi.fn() },
@@ -75,6 +76,7 @@ beforeEach(() => {
   mocks.prisma.review.create.mockResolvedValue({ id: 'rev1' });
   mocks.prisma.review.update.mockResolvedValue({});
   mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
+  mocks.prisma.review.count.mockResolvedValue(0);
   mocks.prisma.profile.update.mockResolvedValue({});
   mocks.prisma.reviewResponse.update.mockResolvedValue({});
 });
@@ -180,7 +182,18 @@ describe("Google's review totals", () => {
     });
   });
 
-  it('leaves the stored totals alone when the API omits them', async () => {
+  it('does not zero the count when we still hold live reviews and Google returns nothing', async () => {
+    // An empty body for a profile with stored reviews is a hiccup, not a
+    // real zero: the cited count must not collapse for a sync cycle.
+    mocks.fetchReviews.mockResolvedValue({ reviews: [] });
+    mocks.prisma.review.count.mockResolvedValue(581);
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.profile.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves the stored totals alone, and does not sweep, when the API omits totals but returns reviews', async () => {
     mocks.fetchReviews.mockResolvedValue({
       reviews: [gbpReview('accounts/-/locations/123/reviews/AbC')],
     });
@@ -188,6 +201,8 @@ describe("Google's review totals", () => {
     await syncProfileReviews(profile);
 
     expect(mocks.prisma.profile.update).not.toHaveBeenCalled();
+    // No total means no proof the pass was complete: fail closed.
+    expect(mocks.prisma.review.updateMany).not.toHaveBeenCalled();
   });
 });
 

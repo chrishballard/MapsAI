@@ -32,7 +32,7 @@ async function plan() {
     WITH keyed AS (
       SELECT r.id, r."profileId",
         regexp_replace(r."googleReviewId", '^accounts/[^/]+/', '') AS key,
-        r."repliedExternally", rr.status, rr."publishedAt"
+        r."repliedExternally", r."createdAt", rr.status, rr."publishedAt"
       FROM "Review" r LEFT JOIN "ReviewResponse" rr ON rr."reviewId" = r.id
     ),
     grp AS (
@@ -48,7 +48,9 @@ async function plan() {
         ORDER BY CASE k.status WHEN 'PUBLISHED' THEN 0 WHEN 'APPROVED' THEN 1
           WHEN 'DRAFTED' THEN 2 WHEN 'PENDING' THEN 3 WHEN 'FAILED' THEN 4
           WHEN 'SKIPPED' THEN 5 ELSE 6 END,
-        k."publishedAt" DESC NULLS LAST
+        k."publishedAt" DESC NULLS LAST,
+        k."createdAt" ASC,
+        k.id ASC
       ) AS rn
       FROM keyed k JOIN grp g ON g."profileId" = k."profileId" AND g.key = k.key
     )

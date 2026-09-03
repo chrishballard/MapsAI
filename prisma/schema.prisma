@@ -241,8 +241,10 @@ model Review {
   profileId      String
   profile        Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
   // Raw resource name as Google last returned it. Its account segment is
-  // mutable (real id vs the `accounts/-` wildcard), so it is NOT identity.
-  googleReviewId String          @unique
+  // mutable (real id vs the `accounts/-` wildcard), so it is NOT identity
+  // and NOT unique: the same location connected under two Google accounts
+  // is two profiles that may both see the same string.
+  googleReviewId String
   // Stable identity: the `locations/{loc}/reviews/{id}` suffix. Matched on
   // during sync so the same review never gets a second row.
   googleReviewKey String

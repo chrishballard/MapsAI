@@ -226,12 +226,18 @@ export async function syncProfileReviews(
 
   // A location with no reviews comes back as an empty object: proto3 JSON
   // drops zero-valued fields, so totalReviewCount is simply absent. After a
-  // complete pass that is a real zero and the stored count must say so.
+  // complete pass that is a real zero and the stored count must say so —
+  // but only when we hold no live reviews either. An empty body for a
+  // profile with hundreds of stored reviews is an API hiccup, and the
+  // cited count must not drop to 0 on that signal.
   if (
     !statsPersisted &&
     pagesComplete &&
     seenKeys.length === 0 &&
-    googleTotal === undefined
+    googleTotal === undefined &&
+    (await prisma.review.count({
+      where: { profileId: profile.id, removedAt: null },
+    })) === 0
   ) {
     await prisma.profile.update({
       where: { id: profile.id },
@@ -250,10 +256,11 @@ export async function syncProfileReviews(
   // and must not wipe a whole profile. The list is ordered by updateTime
   // and paginated, so a review whose updateTime moves mid-pass (a reply
   // lands, an edit) can slip between pages: only sweep when the pass
-  // covered at least as many distinct reviews as Google's own total.
+  // covered at least as many distinct reviews as Google's own total. No
+  // total at all means no proof, so no sweep.
   const distinctSeen = new Set(seenKeys).size;
   const coveredGoogleTotal =
-    googleTotal === undefined || distinctSeen >= googleTotal;
+    googleTotal !== undefined && distinctSeen >= googleTotal;
   if (pagesComplete && distinctSeen > 0 && coveredGoogleTotal) {
     const removed = await prisma.review.updateMany({
       where: {
