@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    reviewResponse: { create: vi.fn() },
+    reviewResponse: { create: vi.fn(), update: vi.fn() },
     profile: { update: vi.fn() },
   },
   fetchReviews: vi.fn(),
@@ -38,6 +38,7 @@ vi.mock('@/lib/queue/review-publish-queue', () => ({
 }));
 
 const { syncProfileReviews } = await import('@/lib/sync/reviews');
+const { REVIEW_REMOVED_SKIP_MESSAGE } = await import('@/lib/review-removal');
 
 const profile = {
   id: 'p1',
@@ -75,6 +76,7 @@ beforeEach(() => {
   mocks.prisma.review.update.mockResolvedValue({});
   mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
   mocks.prisma.profile.update.mockResolvedValue({});
+  mocks.prisma.reviewResponse.update.mockResolvedValue({});
 });
 
 describe('review identity', () => {
@@ -161,6 +163,23 @@ describe("Google's review totals", () => {
     });
   });
 
+  it('records a zero count when a complete pass returns no reviews and Google omits the totals', async () => {
+    // proto3 JSON drops zero-valued fields, so a location with no reviews
+    // comes back as an empty object. That is a real zero, not a hiccup.
+    mocks.fetchReviews.mockResolvedValue({ reviews: [] });
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+      data: {
+        googleReviewCount: 0,
+        googleAverageRating: null,
+        reviewStatsSyncedAt: expect.any(Date),
+      },
+    });
+  });
+
   it('leaves the stored totals alone when the API omits them', async () => {
     mocks.fetchReviews.mockResolvedValue({
       reviews: [gbpReview('accounts/-/locations/123/reviews/AbC')],
@@ -214,6 +233,93 @@ describe('removed reviews', () => {
     await expect(syncProfileReviews(profile)).rejects.toThrow('503');
 
     expect(mocks.prisma.review.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('skips the removal pass when fewer distinct reviews came back than Google says exist', async () => {
+    // The list is ordered by updateTime desc and paginated. A review whose
+    // updateTime changes mid-pass (a reply lands, an edit) jumps ahead of
+    // the cursor and is never returned, so a short pass proves nothing.
+    mocks.fetchReviews.mockResolvedValue({
+      reviews: [
+        gbpReview('accounts/-/locations/123/reviews/A'),
+        gbpReview('accounts/-/locations/123/reviews/B'),
+      ],
+      totalReviewCount: 3,
+      averageRating: 5,
+    });
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.review.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('skips the removal pass when pagination stopped on a repeated page token', async () => {
+    mocks.fetchReviews
+      .mockResolvedValueOnce({
+        reviews: [gbpReview('accounts/-/locations/123/reviews/A')],
+        nextPageToken: 'p2',
+        totalReviewCount: 2,
+      })
+      .mockResolvedValueOnce({
+        reviews: [gbpReview('accounts/-/locations/123/reviews/B')],
+        nextPageToken: 'p2',
+        totalReviewCount: 2,
+      });
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.review.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('re-approves and re-queues a reply that was skipped because the review looked removed, once it reappears', async () => {
+    mocks.fetchReviews.mockResolvedValue({
+      reviews: [gbpReview('accounts/-/locations/123/reviews/AbC')],
+      totalReviewCount: 1,
+      averageRating: 5,
+    });
+    mocks.prisma.review.findUnique.mockResolvedValue({
+      id: 'existing',
+      removedAt: new Date('2026-08-20T00:00:00Z'),
+      response: {
+        id: 'resp9',
+        status: 'SKIPPED',
+        errorMessage: REVIEW_REMOVED_SKIP_MESSAGE,
+      },
+    });
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.review.update).toHaveBeenCalledWith({
+      where: { id: 'existing' },
+      data: { removedAt: null },
+    });
+    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
+      where: { id: 'resp9' },
+      data: { status: 'APPROVED', errorMessage: null },
+    });
+    expect(mocks.scheduleReviewPublish).toHaveBeenCalledWith('resp9');
+  });
+
+  it('leaves a reply skipped for any other reason alone when its review reappears', async () => {
+    mocks.fetchReviews.mockResolvedValue({
+      reviews: [gbpReview('accounts/-/locations/123/reviews/AbC')],
+      totalReviewCount: 1,
+      averageRating: 5,
+    });
+    mocks.prisma.review.findUnique.mockResolvedValue({
+      id: 'existing',
+      removedAt: new Date('2026-08-20T00:00:00Z'),
+      response: {
+        id: 'resp9',
+        status: 'SKIPPED',
+        errorMessage: 'Review already has a reply on Google — skipped to avoid overwriting',
+      },
+    });
+
+    await syncProfileReviews(profile);
+
+    expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
+    expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
   });
 
   it('skips the removal pass when Google returns no reviews at all', async () => {

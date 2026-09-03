@@ -4,6 +4,7 @@ import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews
 import { prisma } from "../src/lib/prisma";
 import { replyModeForRating } from "../src/lib/review-reply-mode";
 import { reviewResourceName } from "../src/lib/review-key";
+import { REVIEW_REMOVED_SKIP_MESSAGE } from "../src/lib/review-removal";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -84,22 +85,6 @@ export const worker = new Worker<ReviewPublishJobData>(
       return;
     }
 
-    // A review Google has removed (spam filter, reviewer deleted it) has
-    // nothing to reply to. Skip rather than retry into a 404.
-    if (review.removedAt) {
-      console.warn(
-        `Review ${review.id} was removed on Google, skipping publish for response ${reviewResponseId}`
-      );
-      await prisma.reviewResponse.update({
-        where: { id: reviewResponseId },
-        data: {
-          status: "SKIPPED",
-          errorMessage: "Review no longer exists on Google — skipped",
-        },
-      });
-      return;
-    }
-
     // Address Google with the profile's *current* account and the review's
     // stable key — the stored googleReviewId may carry a stale account
     // segment or the `accounts/-` wildcard.
@@ -110,10 +95,43 @@ export const worker = new Worker<ReviewPublishJobData>(
 
     // Safety check: fetch the live review from Google before publishing.
     // If this fetch fails we throw (BullMQ retries) — never publish blind.
-    const liveReview = await fetchSingleReview(
-      review.profile.googleAccountId,
-      resourceName
-    );
+    //
+    // The sync's removedAt flag is a hint, not the authority: a review can
+    // slip between pages of a long sync pass and look removed for half an
+    // hour. Google's answer for this one review decides. Gone (404): skip,
+    // with the marker the sync uses to re-queue if it ever reappears.
+    // Still there: clear the flag and carry on.
+    let liveReview;
+    try {
+      liveReview = await fetchSingleReview(
+        review.profile.googleAccountId,
+        resourceName
+      );
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response
+        ?.status;
+      if (review.removedAt && status === 404) {
+        console.warn(
+          `Review ${review.id} is gone on Google, skipping publish for response ${reviewResponseId}`
+        );
+        await prisma.reviewResponse.update({
+          where: { id: reviewResponseId },
+          data: {
+            status: "SKIPPED",
+            errorMessage: REVIEW_REMOVED_SKIP_MESSAGE,
+          },
+        });
+        return;
+      }
+      throw err;
+    }
+
+    if (review.removedAt) {
+      await prisma.review.update({
+        where: { id: review.id },
+        data: { removedAt: null },
+      });
+    }
 
     if (liveReview.reviewReply) {
       if (liveReview.reviewReply.comment === reviewResponse.content) {

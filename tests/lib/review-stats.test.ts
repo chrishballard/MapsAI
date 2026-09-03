@@ -42,6 +42,15 @@ describe('resolveReviewStats', () => {
     expect(stats).toEqual({ count: 0, averageRating: null, source: 'rankmaps' });
   });
 
+  it('accepts a precomputed live summary instead of the rows', () => {
+    const stats = resolveReviewStats({
+      googleReviewCount: null,
+      googleAverageRating: null,
+      liveSummary: { count: 590, averageRating: 4.9 },
+    });
+    expect(stats).toEqual({ count: 590, averageRating: 4.9, source: 'rankmaps' });
+  });
+
   it("uses Google's count even when Google reports no rating yet", () => {
     const stats = resolveReviewStats({
       googleReviewCount: 0,

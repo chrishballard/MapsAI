@@ -3,6 +3,7 @@ import { fetchReviews, STAR_RATING_MAP } from "../google-reviews";
 import { generateReviewResponse } from "../review-responder";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
 import { normalizeReviewKey } from "../review-key";
+import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
 import {
   replyModeForRating,
   type StarReplyModes,
@@ -35,9 +36,10 @@ export interface SyncProfileReviewsOptions {
  * same review coming back under a different account segment is never
  * stored twice. Google's own totalReviewCount / averageRating for the
  * location are persisted on the profile each sync — that is the count the
- * public sees and the one to cite. After a complete pass, stored reviews
+ * public sees and the one to cite. After a complete pass that returned at
+ * least as many distinct reviews as Google says exist, stored reviews
  * Google no longer returns are stamped removedAt (and un-stamped if they
- * reappear).
+ * reappear — with any reply skipped on that basis re-queued).
  *
  * Profiles with review management turned off are skipped entirely: no
  * fetching, no storing, no drafting.
@@ -62,8 +64,9 @@ export async function syncProfileReviews(
   let pageToken: string | undefined;
   let totalSynced = 0;
   let statsPersisted = false;
+  let googleTotal: number | undefined;
   // Every key Google returned this pass. Only trustworthy for the removal
-  // sweep if pagination ran to completion.
+  // sweep if pagination ran to completion and covered Google's own total.
   const seenKeys: string[] = [];
   let pagesComplete = false;
 
@@ -76,6 +79,7 @@ export async function syncProfileReviews(
     );
 
     if (!statsPersisted && typeof result.totalReviewCount === "number") {
+      googleTotal = result.totalReviewCount;
       await prisma.profile.update({
         where: { id: profile.id },
         data: {
@@ -101,6 +105,7 @@ export async function syncProfileReviews(
             googleReviewKey,
           },
         },
+        include: { response: true },
       });
       if (existing) {
         if (existing.removedAt) {
@@ -109,6 +114,26 @@ export async function syncProfileReviews(
             where: { id: existing.id },
             data: { removedAt: null },
           });
+          // A reply the worker skipped *because* the review looked removed
+          // had been approved; put it back on the approved track and
+          // re-queue it. Skips for any other reason stay skipped.
+          if (
+            existing.response?.status === "SKIPPED" &&
+            existing.response.errorMessage === REVIEW_REMOVED_SKIP_MESSAGE
+          ) {
+            await prisma.reviewResponse.update({
+              where: { id: existing.response.id },
+              data: { status: "APPROVED", errorMessage: null },
+            });
+            try {
+              await scheduleReviewPublish(existing.response.id);
+            } catch (queueErr) {
+              console.warn(
+                `${logPrefix} Failed to re-queue review response ${existing.response.id} for publishing:`,
+                queueErr
+              );
+            }
+          }
         }
         continue;
       }
@@ -199,12 +224,37 @@ export async function syncProfileReviews(
     if (!pageToken) pagesComplete = true;
   } while (pageToken);
 
+  // A location with no reviews comes back as an empty object: proto3 JSON
+  // drops zero-valued fields, so totalReviewCount is simply absent. After a
+  // complete pass that is a real zero and the stored count must say so.
+  if (
+    !statsPersisted &&
+    pagesComplete &&
+    seenKeys.length === 0 &&
+    googleTotal === undefined
+  ) {
+    await prisma.profile.update({
+      where: { id: profile.id },
+      data: {
+        googleReviewCount: 0,
+        googleAverageRating: null,
+        reviewStatsSyncedAt: new Date(),
+      },
+    });
+  }
+
   // Removal sweep: anything we hold that Google didn't return this pass is
   // no longer public (spam filter, reviewer deleted it). Only after a
   // complete pass — a failed or truncated page throws/breaks above — and
   // never on an empty list, which is indistinguishable from an API hiccup
-  // and must not wipe a whole profile.
-  if (pagesComplete && seenKeys.length > 0) {
+  // and must not wipe a whole profile. The list is ordered by updateTime
+  // and paginated, so a review whose updateTime moves mid-pass (a reply
+  // lands, an edit) can slip between pages: only sweep when the pass
+  // covered at least as many distinct reviews as Google's own total.
+  const distinctSeen = new Set(seenKeys).size;
+  const coveredGoogleTotal =
+    googleTotal === undefined || distinctSeen >= googleTotal;
+  if (pagesComplete && distinctSeen > 0 && coveredGoogleTotal) {
     const removed = await prisma.review.updateMany({
       where: {
         profileId: profile.id,

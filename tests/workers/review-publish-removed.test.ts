@@ -2,13 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 
 // A review Google has removed (spam filter, reviewer deleted it) must never
-// be replied to. And the resource name used for Google calls is rebuilt from
-// the profile's *current* account plus the review's normalized key, so a
-// review stored under a stale or wildcard account segment still resolves.
+// be replied to. The removedAt flag from the sync is a hint, not the
+// authority: Google's own answer for that one review decides. And the
+// resource name used for Google calls is rebuilt from the profile's
+// *current* account plus the review's normalized key, so a review stored
+// under a stale or wildcard account segment still resolves.
 
 const mocks = vi.hoisted(() => ({
   prisma: {
     reviewResponse: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
+    review: { update: vi.fn() },
   },
   fetchSingleReview: vi.fn(),
   publishReviewReply: vi.fn(),
@@ -38,6 +41,7 @@ vi.mock('../../src/lib/google-reviews', () => ({
 }));
 
 await import('../../workers/review-publish-worker');
+const { REVIEW_REMOVED_SKIP_MESSAGE } = await import('../../src/lib/review-removal');
 
 function job(): Job<{ reviewResponseId: string }> {
   return { data: { reviewResponseId: 'resp1' } } as Job<{
@@ -78,24 +82,56 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   mocks.prisma.reviewResponse.update.mockResolvedValue({});
+  mocks.prisma.review.update.mockResolvedValue({});
   mocks.fetchSingleReview.mockResolvedValue({ reviewReply: undefined });
   mocks.publishReviewReply.mockResolvedValue(undefined);
 });
 
 describe('review publish worker and removed reviews', () => {
-  it('skips a response whose review Google has removed', async () => {
+  it('skips a response whose review is flagged removed and Google confirms is gone', async () => {
     mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
       approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
     );
+    mocks.fetchSingleReview.mockRejectedValue({ response: { status: 404 } });
 
     await mocks.processor!(job());
 
-    expect(mocks.fetchSingleReview).not.toHaveBeenCalled();
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: expect.objectContaining({ status: 'SKIPPED' }),
+      data: { status: 'SKIPPED', errorMessage: REVIEW_REMOVED_SKIP_MESSAGE },
     });
+  });
+
+  it('un-removes and publishes when a review flagged removed still exists on Google', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
+    );
+    mocks.fetchSingleReview.mockResolvedValue({ reviewReply: undefined });
+
+    await mocks.processor!(job());
+
+    expect(mocks.prisma.review.update).toHaveBeenCalledWith({
+      where: { id: 'rev1' },
+      data: { removedAt: null },
+    });
+    expect(mocks.publishReviewReply).toHaveBeenCalledOnce();
+    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
+      where: { id: 'resp1' },
+      data: expect.objectContaining({ status: 'PUBLISHED' }),
+    });
+  });
+
+  it('retries (throws) when Google cannot be reached for a review flagged removed', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
+    );
+    mocks.fetchSingleReview.mockRejectedValue({ response: { status: 503 } });
+
+    await expect(mocks.processor!(job())).rejects.toBeTruthy();
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
   });
 
   it("addresses Google with the profile's current account and the normalized key", async () => {

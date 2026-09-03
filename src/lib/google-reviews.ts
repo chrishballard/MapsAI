@@ -124,9 +124,15 @@ export async function publishReviewReply(
 ): Promise<void> {
   const oauth2Client = await createGoogleClient(googleAccountId);
 
-  // Try both endpoints
+  // Exact resource name first, then the wildcard-account form (matching
+  // fetchReviews / fetchSingleReview — prod has replies that only ever
+  // succeeded under `accounts/-`), then the v1 host as a last resort.
+  const wildcard = reviewResourceName.replace(/^accounts\/[^/]+\//, "accounts/-/");
   const endpoints = [
     `https://mybusiness.googleapis.com/v4/${reviewResourceName}/reply`,
+    ...(wildcard !== reviewResourceName
+      ? [`https://mybusiness.googleapis.com/v4/${wildcard}/reply`]
+      : []),
     `https://mybusinessreviews.googleapis.com/v1/${reviewResourceName}/reply`,
   ];
 

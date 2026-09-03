@@ -26,7 +26,7 @@ export async function ReviewMetricsContent() {
   const now = new Date();
   const sixtyTwoDaysAgo = new Date(now.getTime() - 62 * 24 * 60 * 60 * 1000);
 
-  const [recentReviews, allReviews, latestReview, totalCount] = await Promise.all([
+  const [recentReviews, allReviews, latestReview, profileCounts] = await Promise.all([
     prisma.review.findMany({
       where: { ...profileFilter, removedAt: null, reviewDate: { gte: sixtyTwoDaysAgo } },
       select: { rating: true, reviewDate: true },
@@ -42,8 +42,21 @@ export async function ReviewMetricsContent() {
       orderBy: { reviewDate: "desc" },
       select: { reviewDate: true },
     }),
-    prisma.review.count({ where: { ...profileFilter, removedAt: null } }),
+    // Google's own count per profile (what the public sees), with the
+    // profile's live stored rows as the fallback before its first sync.
+    prisma.profile.findMany({
+      where: selectedProfileId ? { id: selectedProfileId } : {},
+      select: {
+        googleReviewCount: true,
+        _count: { select: { reviews: { where: { removedAt: null } } } },
+      },
+    }),
   ]);
+
+  const totalCount = profileCounts.reduce(
+    (sum, p) => sum + (p.googleReviewCount ?? p._count.reviews),
+    0
+  );
 
   // Empty state — no review data yet
   if (totalCount === 0) {

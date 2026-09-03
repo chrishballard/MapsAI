@@ -49,8 +49,11 @@ WHERE "profileId" IN (
   GROUP BY "profileId", "googleReviewKey" HAVING COUNT(*) > 1
 );
 
--- If any twin recorded that the review was already answered outside
--- RankMaps, the survivor must carry that flag too.
+-- If a twin recorded that the review was already answered outside
+-- RankMaps, the survivor must carry that flag too — unless the survivor
+-- holds our own PUBLISHED reply. In that case the twin was created by a
+-- later sync that saw *our* reply on the review and mis-flagged it; the
+-- PUBLISHED response is the record of what's live and must not be masked.
 UPDATE "Review" s
 SET "repliedExternally" = true
 FROM review_dupes keep
@@ -59,7 +62,11 @@ JOIN "Review" twin ON twin."profileId" = keep."profileId"
   AND twin.id <> keep.id
 WHERE keep.rn = 1
   AND s.id = keep.id
-  AND twin."repliedExternally" = true;
+  AND twin."repliedExternally" = true
+  AND NOT EXISTS (
+    SELECT 1 FROM "ReviewResponse" x
+    WHERE x."reviewId" = keep.id AND x.status = 'PUBLISHED'
+  );
 
 DELETE FROM "Review"
 WHERE id IN (SELECT id FROM review_dupes WHERE rn > 1);

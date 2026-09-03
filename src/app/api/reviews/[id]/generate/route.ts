@@ -49,6 +49,13 @@ export async function POST(
     );
   }
 
+  if (review.removedAt) {
+    return NextResponse.json(
+      { error: "This review was removed on Google and cannot be responded to" },
+      { status: 400 }
+    );
+  }
+
   // Never overwrite an APPROVED response — a publish job may already be
   // queued for it, and it must publish exactly the content that was approved.
   // PUBLISHED responses are the record of what's live on Google.

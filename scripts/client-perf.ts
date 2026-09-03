@@ -111,7 +111,7 @@ async function main() {
   const currentMonthStart = startOfMonth(now);
   const windowStart = addMonths(currentMonthStart, -5);
 
-  const [dailyMetrics, monthlyKeywords, liveReviews, recentReviewCount] = await Promise.all([
+  const [dailyMetrics, monthlyKeywords, liveAgg, recentReviewCount] = await Promise.all([
     prisma.dailyMetric.findMany({
       where: { profileId: profile.id, date: { gte: windowStart } },
       orderBy: { date: "asc" },
@@ -120,9 +120,10 @@ async function main() {
       where: { profileId: profile.id, month: { gte: windowStart } },
       orderBy: [{ month: "desc" }, { impressions: "desc" }],
     }),
-    prisma.review.findMany({
+    prisma.review.aggregate({
       where: { profileId: profile.id, removedAt: null },
-      select: { rating: true },
+      _count: true,
+      _avg: { rating: true },
     }),
     prisma.review.count({
       where: { profileId: profile.id, removedAt: null, reviewDate: { gte: windowStart } },
@@ -135,7 +136,7 @@ async function main() {
   const reviewStats = resolveReviewStats({
     googleReviewCount: profile.googleReviewCount,
     googleAverageRating: profile.googleAverageRating,
-    liveReviews,
+    liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
   });
 
   const buckets: Map<string, Metric> = new Map();

@@ -84,14 +84,15 @@ async function main() {
     }
   );
 
-  const liveReviews = await prisma.review.findMany({
+  const liveAgg = await prisma.review.aggregate({
     where: { profileId, removedAt: null },
-    select: { rating: true },
+    _count: true,
+    _avg: { rating: true },
   });
   const reviewStats = resolveReviewStats({
     googleReviewCount: profile.googleReviewCount,
     googleAverageRating: profile.googleAverageRating,
-    liveReviews,
+    liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
   });
 
   const out = {

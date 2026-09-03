@@ -35,13 +35,14 @@ export default async function ProfileDetailPage({
 
   const startOfMonth = getMonthStart();
 
-  const [totalPosts, draftPosts, liveReviews, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
+  const [totalPosts, draftPosts, liveAgg, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
     await Promise.all([
       prisma.post.count({ where: { profileId: id } }),
       prisma.post.count({ where: { profileId: id, status: "DRAFT" } }),
-      prisma.review.findMany({
+      prisma.review.aggregate({
         where: { profileId: id, removedAt: null },
-        select: { rating: true },
+        _count: true,
+        _avg: { rating: true },
       }),
       prisma.post.findMany({
         where: { profileId: id },
@@ -77,7 +78,7 @@ export default async function ProfileDetailPage({
   const reviewStats = resolveReviewStats({
     googleReviewCount: profile.googleReviewCount,
     googleAverageRating: profile.googleAverageRating,
-    liveReviews,
+    liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
   });
   const avgRating =
     reviewStats.averageRating === null ? "N/A" : reviewStats.averageRating.toFixed(1);

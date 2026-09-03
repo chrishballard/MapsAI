@@ -26,12 +26,13 @@ async function plan() {
       groupsWithTwoResponses: bigint;
       groupsWithTwoPublished: bigint;
       deletedRowsWithPublished: bigint;
+      survivorsGainingRepliedExternally: bigint;
     }[]
   >`
     WITH keyed AS (
       SELECT r.id, r."profileId",
         regexp_replace(r."googleReviewId", '^accounts/[^/]+/', '') AS key,
-        rr.status, rr."publishedAt"
+        r."repliedExternally", rr.status, rr."publishedAt"
       FROM "Review" r LEFT JOIN "ReviewResponse" rr ON rr."reviewId" = r.id
     ),
     grp AS (
@@ -56,7 +57,14 @@ async function plan() {
       (SELECT COALESCE(SUM(n - 1), 0) FROM grp) AS "rowsToDelete",
       (SELECT COUNT(*) FROM grp WHERE with_resp > 1) AS "groupsWithTwoResponses",
       (SELECT COUNT(*) FROM grp WHERE published > 1) AS "groupsWithTwoPublished",
-      (SELECT COUNT(*) FROM ranked WHERE rn > 1 AND status = 'PUBLISHED') AS "deletedRowsWithPublished"
+      (SELECT COUNT(*) FROM ranked WHERE rn > 1 AND status = 'PUBLISHED') AS "deletedRowsWithPublished",
+      (SELECT COUNT(*) FROM ranked keep
+         WHERE keep.rn = 1
+           AND keep."repliedExternally" = false
+           AND keep.status IS DISTINCT FROM 'PUBLISHED'
+           AND EXISTS (SELECT 1 FROM ranked t WHERE t."profileId" = keep."profileId"
+                       AND t.key = keep.key AND t.rn > 1 AND t."repliedExternally" = true)
+      ) AS "survivorsGainingRepliedExternally"
   `;
   const r = rows[0];
   console.log(
@@ -67,6 +75,7 @@ async function plan() {
         groupsWhereBothTwinsHaveAResponse: Number(r.groupsWithTwoResponses),
         groupsWhereBothTwinsPublished: Number(r.groupsWithTwoPublished),
         deletedRowsCarryingAPublishedReply: Number(r.deletedRowsWithPublished),
+        survivorsGainingRepliedExternally: Number(r.survivorsGainingRepliedExternally),
       },
       null,
       2

@@ -11,8 +11,10 @@
 export interface ReviewStatsInput {
   googleReviewCount: number | null | undefined;
   googleAverageRating: number | null | undefined;
-  /** Stored reviews that Google still returns (removedAt is null). */
-  liveReviews: ReadonlyArray<{ rating: number }>;
+  /** Stored reviews that Google still returns (removedAt is null)... */
+  liveReviews?: ReadonlyArray<{ rating: number }>;
+  /** ...or their count + average, when the caller already aggregated. */
+  liveSummary?: { count: number; averageRating: number | null };
 }
 
 export interface ReviewStats {
@@ -32,10 +34,12 @@ export function resolveReviewStats(input: ReviewStatsInput): ReviewStats {
       source: "google",
     };
   }
-  const count = input.liveReviews.length;
+  if (input.liveSummary) {
+    return { ...input.liveSummary, source: "rankmaps" };
+  }
+  const live = input.liveReviews ?? [];
+  const count = live.length;
   const averageRating =
-    count > 0
-      ? input.liveReviews.reduce((sum, r) => sum + r.rating, 0) / count
-      : null;
+    count > 0 ? live.reduce((sum, r) => sum + r.rating, 0) / count : null;
   return { count, averageRating, source: "rankmaps" };
 }
