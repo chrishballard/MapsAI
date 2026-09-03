@@ -42,6 +42,13 @@ export async function POST(
     );
   }
 
+  if (review.removedAt) {
+    return NextResponse.json(
+      { error: "This review was removed on Google and cannot be responded to" },
+      { status: 400 }
+    );
+  }
+
   if (!review.response) {
     return NextResponse.json(
       { error: "No response exists for this review" },

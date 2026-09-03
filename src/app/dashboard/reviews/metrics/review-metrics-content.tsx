@@ -28,21 +28,21 @@ export async function ReviewMetricsContent() {
 
   const [recentReviews, allReviews, latestReview, totalCount] = await Promise.all([
     prisma.review.findMany({
-      where: { ...profileFilter, reviewDate: { gte: sixtyTwoDaysAgo } },
+      where: { ...profileFilter, removedAt: null, reviewDate: { gte: sixtyTwoDaysAgo } },
       select: { rating: true, reviewDate: true },
       orderBy: { reviewDate: "desc" },
     }),
     prisma.review.findMany({
-      where: profileFilter,
+      where: { ...profileFilter, removedAt: null },
       select: { rating: true, reviewDate: true },
       orderBy: { reviewDate: "desc" },
     }),
     prisma.review.findFirst({
-      where: profileFilter,
+      where: { ...profileFilter, removedAt: null },
       orderBy: { reviewDate: "desc" },
       select: { reviewDate: true },
     }),
-    prisma.review.count({ where: profileFilter }),
+    prisma.review.count({ where: { ...profileFilter, removedAt: null } }),
   ]);
 
   // Empty state — no review data yet

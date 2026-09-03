@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Job } from 'bullmq';
 
-// A publish job queued before reviews were turned off must not publish. It
-// drops back to DRAFTED so the reply simply waits for approval again when
-// review management is turned back on.
+// A review Google has removed (spam filter, reviewer deleted it) must never
+// be replied to. And the resource name used for Google calls is rebuilt from
+// the profile's *current* account plus the review's normalized key, so a
+// review stored under a stale or wildcard account segment still resolves.
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -44,20 +45,28 @@ function job(): Job<{ reviewResponseId: string }> {
   }>;
 }
 
-function approvedResponse(reviewsEnabled: boolean) {
+function approvedResponse(review: { removedAt: Date | null }) {
   return {
     id: 'resp1',
     status: 'APPROVED',
     content: 'Thanks Dana!',
+    autoApproved: false,
     review: {
       id: 'rev1',
-      googleReviewId: 'accounts/1/locations/1/reviews/r1',
+      rating: 5,
+      googleReviewId: 'accounts/-/locations/1/reviews/r1',
       googleReviewKey: 'locations/1/reviews/r1',
+      removedAt: review.removedAt,
       profile: {
-        name: 'Ben Plumbing',
+        name: 'Rice Dentistry',
         googleAccountId: 'ga1',
-        accountResourceName: 'accounts/1',
-        reviewsEnabled,
+        accountResourceName: 'accounts/103088058873659208402',
+        reviewsEnabled: true,
+        reviewReplyMode1: 'DRAFT',
+        reviewReplyMode2: 'DRAFT',
+        reviewReplyMode3: 'DRAFT',
+        reviewReplyMode4: 'DRAFT',
+        reviewReplyMode5: 'DRAFT',
         googleAccount: { id: 'ga1' },
       },
     },
@@ -67,12 +76,16 @@ function approvedResponse(reviewsEnabled: boolean) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  mocks.prisma.reviewResponse.update.mockResolvedValue({});
+  mocks.fetchSingleReview.mockResolvedValue({ reviewReply: undefined });
+  mocks.publishReviewReply.mockResolvedValue(undefined);
 });
 
-describe('review publish worker with review management off', () => {
-  it('reverts the response to DRAFTED instead of publishing', async () => {
+describe('review publish worker and removed reviews', () => {
+  it('skips a response whose review Google has removed', async () => {
     mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
-      approvedResponse(false)
+      approvedResponse({ removedAt: new Date('2026-08-20T00:00:00Z') })
     );
 
     await mocks.processor!(job());
@@ -81,25 +94,23 @@ describe('review publish worker with review management off', () => {
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
+      data: expect.objectContaining({ status: 'SKIPPED' }),
     });
   });
 
-  it('publishes normally when review management is on', async () => {
+  it("addresses Google with the profile's current account and the normalized key", async () => {
     mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
-      approvedResponse(true)
+      approvedResponse({ removedAt: null })
     );
-    mocks.fetchSingleReview.mockResolvedValue({ reviewReply: null });
 
     await mocks.processor!(job());
 
-    expect(mocks.publishReviewReply).toHaveBeenCalledWith(
-      'ga1',
-      'accounts/1/locations/1/reviews/r1',
-      'Thanks Dana!'
-    );
-    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'PUBLISHED' }) })
-    );
+    const expected = 'accounts/103088058873659208402/locations/1/reviews/r1';
+    expect(mocks.fetchSingleReview).toHaveBeenCalledWith('ga1', expected);
+    expect(mocks.publishReviewReply).toHaveBeenCalledWith('ga1', expected, 'Thanks Dana!');
+    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
+      where: { id: 'resp1' },
+      data: expect.objectContaining({ status: 'PUBLISHED' }),
+    });
   });
 });

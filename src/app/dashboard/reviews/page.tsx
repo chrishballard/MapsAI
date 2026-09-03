@@ -90,7 +90,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
       ? (responseStatus as ReviewResponseStatus)
       : undefined;
 
-  const where: Prisma.ReviewWhereInput = {};
+  const where: Prisma.ReviewWhereInput = { removedAt: null };
   if (profileId) where.profileId = profileId;
   if (validRating !== undefined) where.rating = validRating;
   if (validResponseStatus) {

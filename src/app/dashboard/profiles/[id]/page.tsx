@@ -13,6 +13,7 @@ import {
   Settings,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { resolveReviewStats } from "@/lib/review-stats";
 import { ReoptimizeSection } from "./reoptimize-section";
 import { OffboardButton } from "./offboard-button";
 import { getMonthStart } from "@/lib/dates";
@@ -34,13 +35,12 @@ export default async function ProfileDetailPage({
 
   const startOfMonth = getMonthStart();
 
-  const [totalPosts, draftPosts, reviewCount, reviews, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
+  const [totalPosts, draftPosts, liveReviews, recentPosts, recentReviews, metricsAgg, onboardingProgress] =
     await Promise.all([
       prisma.post.count({ where: { profileId: id } }),
       prisma.post.count({ where: { profileId: id, status: "DRAFT" } }),
-      prisma.review.count({ where: { profileId: id } }),
       prisma.review.findMany({
-        where: { profileId: id },
+        where: { profileId: id, removedAt: null },
         select: { rating: true },
       }),
       prisma.post.findMany({
@@ -49,7 +49,7 @@ export default async function ProfileDetailPage({
         orderBy: { createdAt: "desc" },
       }),
       prisma.review.findMany({
-        where: { profileId: id },
+        where: { profileId: id, removedAt: null },
         take: 10,
         orderBy: { createdAt: "desc" },
         include: { response: true },
@@ -72,10 +72,15 @@ export default async function ProfileDetailPage({
       }),
     ]);
 
+  // Google's own count/rating for the location (what the public sees);
+  // stored rows only until the first sync lands a Google figure.
+  const reviewStats = resolveReviewStats({
+    googleReviewCount: profile.googleReviewCount,
+    googleAverageRating: profile.googleAverageRating,
+    liveReviews,
+  });
   const avgRating =
-    reviews.length > 0
-      ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
-      : "N/A";
+    reviewStats.averageRating === null ? "N/A" : reviewStats.averageRating.toFixed(1);
 
   const totalImpressions =
     (metricsAgg._sum.impressionsSearchDesktop ?? 0) +
@@ -90,7 +95,7 @@ export default async function ProfileDetailPage({
   const stats = [
     { label: "Total Posts", value: totalPosts.toString(), icon: FileText },
     { label: "Draft Posts", value: draftPosts.toString(), icon: FileText },
-    { label: "Reviews", value: reviewCount.toString(), icon: MessageSquare },
+    { label: "Reviews", value: reviewStats.count.toString(), icon: MessageSquare },
     { label: "Avg Rating", value: avgRating, icon: Star },
   ];
 

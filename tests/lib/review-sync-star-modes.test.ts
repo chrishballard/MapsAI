@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    review: { findUnique: vi.fn(), create: vi.fn() },
+    review: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     reviewResponse: { create: vi.fn() },
+    profile: { update: vi.fn() },
   },
   fetchReviews: vi.fn(),
   generateReviewResponse: vi.fn(),
@@ -59,6 +60,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.review.findUnique.mockResolvedValue(null);
+  mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
   mocks.prisma.review.create.mockResolvedValue({
     id: 'rev1',
     reviewerName: 'Dana',

@@ -3,6 +3,7 @@ import { redisConnection } from "../src/lib/queue/connection";
 import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
 import { replyModeForRating } from "../src/lib/review-reply-mode";
+import { reviewResourceName } from "../src/lib/review-key";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -83,11 +84,35 @@ export const worker = new Worker<ReviewPublishJobData>(
       return;
     }
 
+    // A review Google has removed (spam filter, reviewer deleted it) has
+    // nothing to reply to. Skip rather than retry into a 404.
+    if (review.removedAt) {
+      console.warn(
+        `Review ${review.id} was removed on Google, skipping publish for response ${reviewResponseId}`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: {
+          status: "SKIPPED",
+          errorMessage: "Review no longer exists on Google — skipped",
+        },
+      });
+      return;
+    }
+
+    // Address Google with the profile's *current* account and the review's
+    // stable key — the stored googleReviewId may carry a stale account
+    // segment or the `accounts/-` wildcard.
+    const resourceName = reviewResourceName(
+      review.profile.accountResourceName,
+      review.googleReviewKey
+    );
+
     // Safety check: fetch the live review from Google before publishing.
     // If this fetch fails we throw (BullMQ retries) — never publish blind.
     const liveReview = await fetchSingleReview(
       review.profile.googleAccountId,
-      review.googleReviewId
+      resourceName
     );
 
     if (liveReview.reviewReply) {
@@ -124,7 +149,7 @@ export const worker = new Worker<ReviewPublishJobData>(
 
     await publishReviewReply(
       review.profile.googleAccountId,
-      review.googleReviewId,
+      resourceName,
       reviewResponse.content
     );
 

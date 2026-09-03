@@ -69,6 +69,7 @@ export async function TasksSection() {
         // Ignore aren't pending work either, so their drafts stay off the
         // list too.
         profile: { reviewsEnabled: true },
+        removedAt: null,
         response: { status: "DRAFTED" },
         ...ratingNotIgnoredFilter(),
       },

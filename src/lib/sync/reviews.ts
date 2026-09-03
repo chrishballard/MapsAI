@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { fetchReviews, STAR_RATING_MAP } from "../google-reviews";
 import { generateReviewResponse } from "../review-responder";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
+import { normalizeReviewKey } from "../review-key";
 import {
   replyModeForRating,
   type StarReplyModes,
@@ -30,6 +31,14 @@ export interface SyncProfileReviewsOptions {
  * outside RankMaps — they're stored so the dashboard shows them, but never
  * get a generated or published response.
  *
+ * Reviews are matched on their normalized key (see review-key.ts), so the
+ * same review coming back under a different account segment is never
+ * stored twice. Google's own totalReviewCount / averageRating for the
+ * location are persisted on the profile each sync — that is the count the
+ * public sees and the one to cite. After a complete pass, stored reviews
+ * Google no longer returns are stamped removedAt (and un-stamped if they
+ * reappear).
+ *
  * Profiles with review management turned off are skipped entirely: no
  * fetching, no storing, no drafting.
  *
@@ -52,6 +61,11 @@ export async function syncProfileReviews(
 
   let pageToken: string | undefined;
   let totalSynced = 0;
+  let statsPersisted = false;
+  // Every key Google returned this pass. Only trustworthy for the removal
+  // sweep if pagination ran to completion.
+  const seenKeys: string[] = [];
+  let pagesComplete = false;
 
   do {
     const result = await fetchReviews(
@@ -61,11 +75,43 @@ export async function syncProfileReviews(
       pageToken
     );
 
-    for (const gbpReview of result.reviews) {
-      const existing = await prisma.review.findUnique({
-        where: { googleReviewId: gbpReview.name },
+    if (!statsPersisted && typeof result.totalReviewCount === "number") {
+      await prisma.profile.update({
+        where: { id: profile.id },
+        data: {
+          googleReviewCount: result.totalReviewCount,
+          googleAverageRating:
+            typeof result.averageRating === "number"
+              ? result.averageRating
+              : null,
+          reviewStatsSyncedAt: new Date(),
+        },
       });
-      if (existing) continue;
+      statsPersisted = true;
+    }
+
+    for (const gbpReview of result.reviews) {
+      const googleReviewKey = normalizeReviewKey(gbpReview.name);
+      seenKeys.push(googleReviewKey);
+
+      const existing = await prisma.review.findUnique({
+        where: {
+          profileId_googleReviewKey: {
+            profileId: profile.id,
+            googleReviewKey,
+          },
+        },
+      });
+      if (existing) {
+        if (existing.removedAt) {
+          // Google is returning it again — it was never really gone.
+          await prisma.review.update({
+            where: { id: existing.id },
+            data: { removedAt: null },
+          });
+        }
+        continue;
+      }
 
       const rating = STAR_RATING_MAP[gbpReview.starRating] ?? 3;
       const repliedExternally = Boolean(gbpReview.reviewReply);
@@ -74,6 +120,7 @@ export async function syncProfileReviews(
         data: {
           profileId: profile.id,
           googleReviewId: gbpReview.name,
+          googleReviewKey,
           reviewerName: gbpReview.reviewer.isAnonymous
             ? null
             : gbpReview.reviewer.displayName,
@@ -149,7 +196,29 @@ export async function syncProfileReviews(
     }
 
     pageToken = result.nextPageToken;
+    if (!pageToken) pagesComplete = true;
   } while (pageToken);
+
+  // Removal sweep: anything we hold that Google didn't return this pass is
+  // no longer public (spam filter, reviewer deleted it). Only after a
+  // complete pass — a failed or truncated page throws/breaks above — and
+  // never on an empty list, which is indistinguishable from an API hiccup
+  // and must not wipe a whole profile.
+  if (pagesComplete && seenKeys.length > 0) {
+    const removed = await prisma.review.updateMany({
+      where: {
+        profileId: profile.id,
+        removedAt: null,
+        googleReviewKey: { notIn: seenKeys },
+      },
+      data: { removedAt: new Date() },
+    });
+    if (removed.count > 0) {
+      console.log(
+        `${logPrefix} Marked ${removed.count} review(s) removed on Google for ${profile.name}`
+      );
+    }
+  }
 
   console.log(
     `${logPrefix} Synced ${totalSynced} new reviews for ${profile.name}`

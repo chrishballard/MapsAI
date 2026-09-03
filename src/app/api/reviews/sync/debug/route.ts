@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchReviews } from "@/lib/google-reviews";
+import { normalizeReviewKey } from "@/lib/review-key";
 
 export async function GET() {
   const unauthorized = await requireSession();
@@ -67,15 +68,15 @@ export async function GET() {
       // Count how many would be skipped
       const existingIds = await prisma.review.findMany({
         where: { profileId: profile.id },
-        select: { googleReviewId: true },
+        select: { googleReviewKey: true },
       });
-      const existingSet = new Set(existingIds.map(r => r.googleReviewId));
+      const existingSet = new Set(existingIds.map(r => r.googleReviewKey));
 
       let alreadyExists = 0;
       let hasReply = 0;
       let wouldSync = 0;
       for (const r of reviewResult.reviews) {
-        if (existingSet.has(r.name)) { alreadyExists++; continue; }
+        if (existingSet.has(normalizeReviewKey(r.name))) { alreadyExists++; continue; }
         if (r.reviewReply) { hasReply++; continue; }
         wouldSync++;
       }

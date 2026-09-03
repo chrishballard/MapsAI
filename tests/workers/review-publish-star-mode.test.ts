@@ -60,9 +60,11 @@ function approvedResponse(options: {
       id: 'rev1',
       rating: options.rating,
       googleReviewId: 'accounts/1/locations/1/reviews/r1',
+      googleReviewKey: 'locations/1/reviews/r1',
       profile: {
         name: 'Ben Plumbing',
         googleAccountId: 'ga1',
+        accountResourceName: 'accounts/1',
         reviewsEnabled: true,
         reviewReplyMode1: 'DRAFT',
         reviewReplyMode2: 'DRAFT',

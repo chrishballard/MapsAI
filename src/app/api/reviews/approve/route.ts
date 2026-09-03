@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     where: {
       profileId,
       repliedExternally: false,
+      removedAt: null,
       response: { status: "DRAFTED" },
       ...ratingNotIgnoredFilter(),
     },
