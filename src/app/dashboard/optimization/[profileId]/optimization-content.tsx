@@ -37,7 +37,7 @@ export async function OptimizationContent({ profileId }: OptimizationContentProp
     select: {
       id: true,
       name: true,
-      reviews: { select: { rating: true, reviewDate: true } },
+      reviews: { where: { removedAt: null }, select: { rating: true, reviewDate: true } },
       posts: { select: { publishedAt: true, status: true } },
       descriptions: {
         select: {

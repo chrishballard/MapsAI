@@ -19,6 +19,7 @@
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
+import { resolveReviewStats } from "../src/lib/review-stats";
 
 type Metric = {
   month: string;
@@ -110,7 +111,7 @@ async function main() {
   const currentMonthStart = startOfMonth(now);
   const windowStart = addMonths(currentMonthStart, -5);
 
-  const [dailyMetrics, monthlyKeywords, reviewCount, avgRating, recentReviewCount] = await Promise.all([
+  const [dailyMetrics, monthlyKeywords, liveAgg, recentReviewCount] = await Promise.all([
     prisma.dailyMetric.findMany({
       where: { profileId: profile.id, date: { gte: windowStart } },
       orderBy: { date: "asc" },
@@ -119,15 +120,24 @@ async function main() {
       where: { profileId: profile.id, month: { gte: windowStart } },
       orderBy: [{ month: "desc" }, { impressions: "desc" }],
     }),
-    prisma.review.count({ where: { profileId: profile.id } }),
     prisma.review.aggregate({
-      where: { profileId: profile.id },
+      where: { profileId: profile.id, removedAt: null },
+      _count: true,
       _avg: { rating: true },
     }),
     prisma.review.count({
-      where: { profileId: profile.id, reviewDate: { gte: windowStart } },
+      where: { profileId: profile.id, removedAt: null, reviewDate: { gte: windowStart } },
     }),
   ]);
+
+  // Google's own count/rating for the location — what Maps and Search show
+  // and what clients recognise. Stored rows are only the fallback before
+  // the first sync lands a Google figure.
+  const reviewStats = resolveReviewStats({
+    googleReviewCount: profile.googleReviewCount,
+    googleAverageRating: profile.googleAverageRating,
+    liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
+  });
 
   const buckets: Map<string, Metric> = new Map();
   for (let i = 0; i < 6; i++) {
@@ -235,9 +245,9 @@ async function main() {
       );
     }
   }
-  if (recentReviewCount > 0 && avgRating._avg.rating) {
+  if (recentReviewCount > 0 && reviewStats.averageRating !== null) {
     highlights.push(
-      `${recentReviewCount} new review${recentReviewCount === 1 ? "" : "s"} in the last 6 months. All-time avg rating: ${Number(avgRating._avg.rating).toFixed(2)}.`
+      `${recentReviewCount} new review${recentReviewCount === 1 ? "" : "s"} in the last 6 months. All-time avg rating: ${reviewStats.averageRating.toFixed(2)}.`
     );
   }
 
@@ -260,9 +270,14 @@ async function main() {
     trend,
     topKeywords,
     reviews: {
-      totalAllTime: reviewCount,
-      avgRatingAllTime: avgRating._avg.rating ? Number(Number(avgRating._avg.rating).toFixed(2)) : null,
+      totalAllTime: reviewStats.count,
+      avgRatingAllTime:
+        reviewStats.averageRating === null ? null : Number(reviewStats.averageRating.toFixed(2)),
       newInWindow: recentReviewCount,
+      // "google" = Google's own count for the location (matches Maps/Search).
+      // "rankmaps" = fallback count of stored reviews, only before the first sync.
+      source: reviewStats.source,
+      googleSyncedAt: profile.reviewStatsSyncedAt?.toISOString() ?? null,
     },
     highlights,
     generatedAt: new Date().toISOString(),

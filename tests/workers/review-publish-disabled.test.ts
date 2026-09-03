@@ -52,9 +52,11 @@ function approvedResponse(reviewsEnabled: boolean) {
     review: {
       id: 'rev1',
       googleReviewId: 'accounts/1/locations/1/reviews/r1',
+      googleReviewKey: 'locations/1/reviews/r1',
       profile: {
         name: 'Ben Plumbing',
         googleAccountId: 'ga1',
+        accountResourceName: 'accounts/1',
         reviewsEnabled,
         googleAccount: { id: 'ga1' },
       },

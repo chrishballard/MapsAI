@@ -111,6 +111,7 @@ export async function generateReport(
   const reviews = await prisma.review.findMany({
     where: {
       profileId,
+      removedAt: null,
       reviewDate: { gte: curStart, lte: curEnd },
     },
     include: { response: true },

@@ -9,6 +9,7 @@
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
+import { resolveReviewStats } from "../src/lib/review-stats";
 
 async function main() {
   const profileId = process.argv[2];
@@ -48,7 +49,7 @@ async function main() {
       orderBy: [{ month: "desc" }, { impressions: "desc" }],
     }),
     prisma.review.findMany({
-      where: { profileId },
+      where: { profileId, removedAt: null },
       include: { response: true },
       orderBy: { reviewDate: "desc" },
       take: 20,
@@ -83,10 +84,15 @@ async function main() {
     }
   );
 
-  const reviewCount = await prisma.review.count({ where: { profileId } });
-  const avg = await prisma.review.aggregate({
-    where: { profileId },
+  const liveAgg = await prisma.review.aggregate({
+    where: { profileId, removedAt: null },
+    _count: true,
     _avg: { rating: true },
+  });
+  const reviewStats = resolveReviewStats({
+    googleReviewCount: profile.googleReviewCount,
+    googleAverageRating: profile.googleAverageRating,
+    liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
   });
 
   const out = {
@@ -119,8 +125,10 @@ async function main() {
       impressions: m.impressions,
     })),
     reviewsSummary: {
-      count: reviewCount,
-      avgRating: avg._avg.rating ? Number(avg._avg.rating.toFixed(2)) : null,
+      count: reviewStats.count,
+      avgRating:
+        reviewStats.averageRating === null ? null : Number(reviewStats.averageRating.toFixed(2)),
+      source: reviewStats.source,
     },
     reviews: reviews.map((r) => ({
       rating: r.rating,

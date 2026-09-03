@@ -80,6 +80,13 @@ model Profile {
   // Last time the image library was refreshed from GBP media — throttles
   // the automatic sync that runs during post generation.
   mediaSyncedAt      DateTime?
+  // Google's own review totals for this location, taken from the reviews
+  // list response on every sync. This is the count Maps and Search show the
+  // public and the one to cite to clients; our Review rows are a history
+  // (they lag Google's removals), not a count.
+  googleReviewCount   Int?
+  googleAverageRating Float?
+  reviewStatsSyncedAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   posts           Post[]
@@ -233,17 +240,30 @@ model Review {
   id             String          @id @default(cuid())
   profileId      String
   profile        Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  googleReviewId String          @unique
+  // Raw resource name as Google last returned it. Its account segment is
+  // mutable (real id vs the `accounts/-` wildcard), so it is NOT identity
+  // and NOT unique: the same location connected under two Google accounts
+  // is two profiles that may both see the same string.
+  googleReviewId String
+  // Stable identity: the `locations/{loc}/reviews/{id}` suffix. Matched on
+  // during sync so the same review never gets a second row.
+  googleReviewKey String
   reviewerName   String?
   rating         Int
   comment        String?
   reviewDate     DateTime
   repliedExternally Boolean      @default(false)
+  // Set when a full sync pass no longer sees this review on Google (spam
+  // filter, reviewer deleted it). Cleared if it comes back. Removed reviews
+  // stay for history but are excluded from counts and the reply queue.
+  removedAt      DateTime?
   response       ReviewResponse?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
+  @@unique([profileId, googleReviewKey])
   @@index([profileId, repliedExternally])
+  @@index([profileId, removedAt])
 }
 
 model ReviewResponse {

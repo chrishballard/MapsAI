@@ -10,6 +10,7 @@ import { MotionDiv } from '@/components/motion-wrapper';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@/lib/utils';
 import { computeOptimizationScore, type ProfileInput } from '@/lib/optimization-score';
+import { resolveReviewStats } from '@/lib/review-stats';
 import { filterProfiles, GRADE_CLASSES } from './score-utils';
 import { AddBusinessButton } from './add-business-button';
 
@@ -17,6 +18,9 @@ interface ProfileData {
   id: string;
   name: string;
   address: string | null;
+  googleReviewCount: number | null;
+  googleAverageRating: number | null;
+  /** Stored reviews Google still returns (removedAt is null). */
   reviews: Array<{ rating: number; reviewDate: Date | string }>;
   posts: Array<{ publishedAt: Date | string | null; status: string }>;
   descriptions: Array<{ isApproved: boolean; isPushed: boolean }>;
@@ -105,14 +109,18 @@ export function ProfilesGrid({ profiles, availableCount }: ProfilesGridProps) {
             };
             const score = computeOptimizationScore(profileInput);
 
-            const reviewCount = profile.reviews.length;
+            // Google's own count/rating for the location — the number the
+            // public sees. Stored rows only until the first sync.
+            const reviewStats = resolveReviewStats({
+              googleReviewCount: profile.googleReviewCount,
+              googleAverageRating: profile.googleAverageRating,
+              liveReviews: profile.reviews,
+            });
+            const reviewCount = reviewStats.count;
             const avgRating =
-              reviewCount > 0
-                ? (
-                    profile.reviews.reduce((sum, r) => sum + r.rating, 0) /
-                    reviewCount
-                  ).toFixed(1)
-                : null;
+              reviewStats.averageRating === null
+                ? null
+                : reviewStats.averageRating.toFixed(1);
 
             return (
               <MotionDiv

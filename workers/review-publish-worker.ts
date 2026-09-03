@@ -3,6 +3,11 @@ import { redisConnection } from "../src/lib/queue/connection";
 import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
 import { replyModeForRating } from "../src/lib/review-reply-mode";
+import { reviewResourceName } from "../src/lib/review-key";
+import {
+  REVIEW_REMOVED_SKIP_MESSAGE,
+  isReviewNotFound,
+} from "../src/lib/review-removal";
 
 interface ReviewPublishJobData {
   reviewResponseId: string;
@@ -83,12 +88,52 @@ export const worker = new Worker<ReviewPublishJobData>(
       return;
     }
 
+    // Address Google with the profile's *current* account and the review's
+    // stable key — the stored googleReviewId may carry a stale account
+    // segment or the `accounts/-` wildcard.
+    const resourceName = reviewResourceName(
+      review.profile.accountResourceName,
+      review.googleReviewKey
+    );
+
     // Safety check: fetch the live review from Google before publishing.
     // If this fetch fails we throw (BullMQ retries) — never publish blind.
-    const liveReview = await fetchSingleReview(
-      review.profile.googleAccountId,
-      review.googleReviewId
-    );
+    //
+    // The sync's removedAt flag is a hint, not the authority: a review can
+    // slip between pages of a long sync pass and look removed for half an
+    // hour. Google's answer for this one review decides. Gone (404): skip,
+    // with the marker the sync uses to re-queue if it ever reappears.
+    // Still there: clear the flag and carry on. "Gone" means every endpoint
+    // fetchSingleReview tried said 404 (a typed error), not just the last.
+    let liveReview;
+    try {
+      liveReview = await fetchSingleReview(
+        review.profile.googleAccountId,
+        resourceName
+      );
+    } catch (err) {
+      if (review.removedAt && isReviewNotFound(err)) {
+        console.warn(
+          `Review ${review.id} is gone on Google, skipping publish for response ${reviewResponseId}`
+        );
+        await prisma.reviewResponse.update({
+          where: { id: reviewResponseId },
+          data: {
+            status: "SKIPPED",
+            errorMessage: REVIEW_REMOVED_SKIP_MESSAGE,
+          },
+        });
+        return;
+      }
+      throw err;
+    }
+
+    if (review.removedAt) {
+      await prisma.review.update({
+        where: { id: review.id },
+        data: { removedAt: null },
+      });
+    }
 
     if (liveReview.reviewReply) {
       if (liveReview.reviewReply.comment === reviewResponse.content) {
@@ -124,7 +169,7 @@ export const worker = new Worker<ReviewPublishJobData>(
 
     await publishReviewReply(
       review.profile.googleAccountId,
-      review.googleReviewId,
+      resourceName,
       reviewResponse.content
     );
 

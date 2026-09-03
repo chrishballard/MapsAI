@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const rating = searchParams.get("rating");
   const responseStatus = searchParams.get("responseStatus");
 
-  const where: Prisma.ReviewWhereInput = {};
+  const where: Prisma.ReviewWhereInput = { removedAt: null };
   if (profileId) where.profileId = profileId;
   if (rating) where.rating = parseInt(rating, 10);
   if (responseStatus) {

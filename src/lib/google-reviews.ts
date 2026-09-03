@@ -1,4 +1,5 @@
 import { createGoogleClient } from "./google";
+import { ReviewNotFoundError } from "./review-removal";
 
 export const STAR_RATING_MAP: Record<string, number> = {
   ONE: 1,
@@ -99,6 +100,7 @@ export async function fetchSingleReview(
   ];
 
   let lastError: unknown;
+  const statuses: (number | undefined)[] = [];
 
   for (const url of endpoints) {
     try {
@@ -110,8 +112,16 @@ export async function fetchSingleReview(
     } catch (err) {
       lastError = err;
       const status = (err as { response?: { status?: number } }).response?.status;
+      statuses.push(status);
       console.warn(`[google-reviews] fetchSingleReview failed with ${url} (status: ${status}), trying next...`);
     }
+  }
+
+  // Only when every endpoint says 404 is the review really gone. A 404 from
+  // one and a 403/5xx from the other proves nothing, so that surfaces as a
+  // plain error and the caller retries.
+  if (statuses.length > 0 && statuses.every((s) => s === 404)) {
+    throw new ReviewNotFoundError(reviewResourceName);
   }
 
   throw lastError;
@@ -124,9 +134,15 @@ export async function publishReviewReply(
 ): Promise<void> {
   const oauth2Client = await createGoogleClient(googleAccountId);
 
-  // Try both endpoints
+  // Exact resource name first, then the wildcard-account form (matching
+  // fetchReviews / fetchSingleReview — prod has replies that only ever
+  // succeeded under `accounts/-`), then the v1 host as a last resort.
+  const wildcard = reviewResourceName.replace(/^accounts\/[^/]+\//, "accounts/-/");
   const endpoints = [
     `https://mybusiness.googleapis.com/v4/${reviewResourceName}/reply`,
+    ...(wildcard !== reviewResourceName
+      ? [`https://mybusiness.googleapis.com/v4/${wildcard}/reply`]
+      : []),
     `https://mybusinessreviews.googleapis.com/v1/${reviewResourceName}/reply`,
   ];
 

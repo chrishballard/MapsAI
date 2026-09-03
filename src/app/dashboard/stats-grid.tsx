@@ -26,6 +26,7 @@ export async function StatsGrid() {
         review: {
           ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
           profile: { reviewsEnabled: true },
+          removedAt: null,
           ...ratingNotIgnoredFilter(),
         },
       },
@@ -86,6 +87,7 @@ export async function AIInsightsPanel() {
         review: {
           ...(selectedProfileId ? { profileId: selectedProfileId } : {}),
           profile: { reviewsEnabled: true },
+          removedAt: null,
           ...ratingNotIgnoredFilter(),
         },
       },
