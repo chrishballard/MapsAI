@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { createGoogleClient } from "./google";
+import { fetchGoogleProfileState } from "./google-business-info";
 import { prisma } from "./prisma";
 
 interface GoogleLocation {
@@ -26,6 +27,44 @@ function formatAddress(address: GoogleLocation["storefrontAddress"]): string | n
     address.postalCode,
   ].filter(Boolean);
   return parts.join(", ") || null;
+}
+
+/**
+ * Read back Google's own description and service items for a location and
+ * store them on the profile.
+ *
+ * `locations.list` will not return `profile` or `serviceItems`, so this is a
+ * separate `locations.get` per location. It is best-effort: a location we
+ * cannot read (permissions, a transient 5xx) leaves the stored values alone
+ * rather than overwriting them with a false blank, and never fails the sync
+ * that was really about the location list.
+ */
+async function syncGoogleProfileState(params: {
+  googleAccountId: string;
+  profileId: string;
+  locationName: string;
+}): Promise<boolean> {
+  try {
+    const state = await fetchGoogleProfileState({
+      googleAccountId: params.googleAccountId,
+      locationName: params.locationName,
+    });
+    await prisma.profile.update({
+      where: { id: params.profileId },
+      data: {
+        googleDescription: state.description,
+        googleServiceItems: state.serviceItems as never,
+        googleProfileSyncedAt: new Date(),
+      },
+    });
+    return true;
+  } catch (err) {
+    console.warn(
+      `[location-sync] Could not read Google profile state for ${params.locationName}:`,
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
 }
 
 export async function syncLocationsForAccount(googleAccountId: string) {
@@ -95,6 +134,15 @@ export async function syncLocationsForAccount(googleAccountId: string) {
             placeId: location.metadata?.placeId || null,
             isConnected: true,
           },
+        });
+
+        // What Google itself shows for this location. Kept apart from the
+        // RankMaps drafts in ProfileDescription / ProfileService so the vault
+        // export can say which of the two it is quoting.
+        await syncGoogleProfileState({
+          googleAccountId,
+          profileId: profile.id,
+          locationName: location.name,
         });
 
         syncedProfiles.push(profile);

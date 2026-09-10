@@ -6,7 +6,13 @@
  * Usage:
  *   pnpm tsx scripts/client-perf.ts "<client name>"
  *   pnpm tsx scripts/client-perf.ts --id <profileId>
+ *   pnpm tsx scripts/client-perf.ts "<client name>" --id <profileId>
  *   pnpm tsx scripts/client-perf.ts --list           # list all profiles
+ *
+ * --id and --list are recognised anywhere in argv, not just as the first
+ * argument: the disambiguation message tells you to "re-run with --id", and
+ * the natural way to do that is to append it to the command you just typed.
+ * When both a name and --id are given the id wins and the name is ignored.
  *
  * Emits one JSON object to stdout with:
  *   - profile basics
@@ -73,10 +79,44 @@ async function resolveProfile(arg: string, isId: boolean) {
   return matches[0];
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+/**
+ * Positional name plus --id/--list in any order. --id consumes the following
+ * argument; anything else that is not a flag is the (optional) name.
+ */
+function parseArgs(argv: string[]): { list: boolean; id: string | null; name: string | null } {
+  let list = false;
+  let id: string | null = null;
+  let name: string | null = null;
 
-  if (args[0] === "--list") {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--list") {
+      list = true;
+    } else if (arg === "--id") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("--")) {
+        console.error("--id requires a profileId");
+        process.exit(1);
+      }
+      id = value;
+      i++;
+    } else if (arg.startsWith("--id=")) {
+      id = arg.slice("--id=".length);
+    } else if (arg.startsWith("--")) {
+      console.error(`unknown flag: ${arg}`);
+      process.exit(1);
+    } else if (name === null) {
+      name = arg;
+    }
+  }
+
+  return { list, id, name };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.list) {
     const profiles = await prisma.profile.findMany({
       where: { isConnected: true },
       select: { id: true, name: true, address: true },
@@ -87,17 +127,13 @@ async function main() {
     return;
   }
 
-  let profileArg: string | null = null;
-  let isId = false;
-  if (args[0] === "--id" && args[1]) {
-    profileArg = args[1];
-    isId = true;
-  } else if (args[0]) {
-    profileArg = args[0];
-  }
+  // An explicit id always wins: the name is only a lookup key for the id, so
+  // when both are present the caller has already resolved the ambiguity.
+  const isId = args.id !== null;
+  const profileArg = args.id ?? args.name;
 
   if (!profileArg) {
-    console.error('usage: client-perf.ts "<client name>" | --id <profileId> | --list');
+    console.error('usage: client-perf.ts "<client name>" [--id <profileId>] | --id <profileId> | --list');
     process.exit(1);
   }
 
