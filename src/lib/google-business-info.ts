@@ -882,7 +882,16 @@ async function fetchServiceAreaContext(params: {
 
 /**
  * Read the profile back after a write that named storefrontAddress, and say
- * what is wrong if the address did not survive it. Returns null when it did.
+ * what is wrong if the address did not come through untouched. Returns null
+ * when it did.
+ *
+ * Three ways this fails, in descending severity: the address is gone, the
+ * business type was coerced so Google hides it, or the address came back
+ * DIFFERENT from what was sent. The third one is not a loss and it is easy to
+ * wave away, which is exactly why it is checked: the standing rule is that we
+ * echo the address and never edit it, so a reformat is still a change we
+ * caused and a person should see it rather than have this code decide it was
+ * harmless.
  *
  * storefrontRemovalRisk stops the shapes we know are dangerous before they
  * are sent. This is the other half: confirming what Google actually did with
@@ -900,10 +909,13 @@ async function fetchServiceAreaContext(params: {
  * changed nothing to check. Both would just spend quota on an account Google
  * rate-limits after about a dozen calls.
  */
-async function verifyStorefrontSurvived(params: {
-  googleAccountId: string;
-  locationName: string;
-}): Promise<string | null> {
+async function verifyStorefrontSurvived(
+  params: {
+    googleAccountId: string;
+    locationName: string;
+  },
+  before: GBPPostalAddress
+): Promise<string | null> {
   let after: {
     serviceArea: GBPServiceArea | null;
     storefrontAddress: GBPPostalAddress | null;
@@ -940,7 +952,29 @@ async function verifyStorefrontSurvived(params: {
     );
   }
 
+  // Standing instruction from the operator, 2026-09-15: the address may be
+  // named in a write only to send back exactly what Google already has. It is
+  // never ours to edit. So "still present" is not a sufficient check —
+  // anything different from what went in is a change we caused, even when
+  // Google made it and even when it is only a reformat. Report it and let a
+  // person judge it; do not decide for them that a reformat is harmless.
+  if (JSON.stringify(sortedEntries(before)) !== JSON.stringify(sortedEntries(address))) {
+    return (
+      "ADDRESS CHANGED: the service area was written and the storefront " +
+      "address came back different from what was sent. Nothing was lost, but " +
+      "the listing no longer matches what it had. Before: " +
+      `${JSON.stringify(before)} After: ${JSON.stringify(address)}. ` +
+      "Google reformats multi-line addresses on this write path. Check the " +
+      "listing and correct it by hand if the new form is wrong."
+    );
+  }
+
   return null;
+}
+
+/** Key-sorted entries, so a reordered object is not read as a change. */
+function sortedEntries(value: GBPPostalAddress): Array<[string, unknown]> {
+  return Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
 }
 
 /**
@@ -1141,7 +1175,7 @@ export async function pushServiceAreaToGBP(
   // Nothing was sent, or nothing changed: no read-back to do.
   if (!written.success || params.validateOnly) return written;
 
-  const problem = await verifyStorefrontSurvived(params);
+  const problem = await verifyStorefrontSurvived(params, current.storefrontAddress);
   if (problem) return { success: false, wrote: true, error: problem };
 
   return written;

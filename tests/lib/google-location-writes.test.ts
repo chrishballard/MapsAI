@@ -664,6 +664,42 @@ describe('the read-back after a from-zero write', () => {
     expect(result.error).toContain('socket hang up');
   });
 
+  // The standing rule is that we echo the address and never edit it, so a
+  // reformat by Google is still a change we caused. "Still present" is not
+  // the check; "identical to what went in" is.
+  it('reports an address Google reformatted, even though nothing was lost', async () => {
+    const twoLine = { regionCode: 'US', addressLines: ['4108 Park Rd', 'Suite 106'] };
+    const merged = { regionCode: 'US', addressLines: ['4108 Park Road Suite 106'] };
+    withGets(
+      { serviceArea: undefined, storefrontAddress: twoLine },
+      { serviceArea: { businessType: 'CUSTOMER_AND_BUSINESS_LOCATION' }, storefrontAddress: merged }
+    );
+
+    const result = await push();
+
+    expect(result.success).toBe(false);
+    expect(result.wrote).toBe(true);
+    expect(result.error).toContain('ADDRESS CHANGED');
+    expect(result.error).toContain('4108 Park Rd');
+    expect(result.error).toContain('4108 Park Road Suite 106');
+  });
+
+  // Key order is not meaning. A reordered object must not raise a false alarm
+  // that sends someone to the dashboard for nothing.
+  it('does not treat a reordered address object as a change', async () => {
+    withGets(
+      { serviceArea: undefined, storefrontAddress: { locality: 'Charlotte', regionCode: 'US' } },
+      {
+        serviceArea: { businessType: 'CUSTOMER_AND_BUSINESS_LOCATION' },
+        storefrontAddress: { regionCode: 'US', locality: 'Charlotte' },
+      }
+    );
+
+    const result = await push();
+
+    expect(result).toEqual({ success: true });
+  });
+
   it('does not read back on a validateOnly run, which changed nothing', async () => {
     withGets(BEFORE, GOOD);
 
