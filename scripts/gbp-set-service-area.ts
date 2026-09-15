@@ -15,10 +15,13 @@
  * --add appends to what is already there (repeatable). --replace makes the
  * --add list the whole new set instead, which DROPS every place not named.
  *
+ * --add-city 'American Fork, UT' looks the city up through the Geocoding API
+ * and needs GOOGLE_GEOCODING_API_KEY. --add takes a raw id instead, for ids
+ * copied off another profile, which is how this worked before there was a key.
+ *
  * On place ids: Google wants the id of the city itself, which is what the
  * GBP dashboard stores when someone types a city into the service area box.
- * `localdom places` will not give you one, it only resolves businesses. The
- * ids already on a profile are city ids and can be copied between profiles.
+ * `localdom places` will not give you one, it only resolves businesses.
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +32,7 @@ import { config } from "dotenv";
 // dotenv keeps the first value it sees for a key.
 config({
   path: [
+    join(homedir(), ".config/vineyardgrowth/google-geocoding.env"),
     join(homedir(), ".config/vineyardgrowth/rankmaps-prod.env"),
     join(homedir(), "Projects/MapsAI/.env"),
   ],
@@ -64,11 +68,23 @@ function addedPlaces(): Array<{ placeId: string; placeName?: string }> {
   return out;
 }
 
+/** Every --add-city value, in order. */
+function cityQueries(): string[] {
+  const out: string[] = [];
+  process.argv.forEach((token, i) => {
+    if (token !== "--add-city") return;
+    const value = process.argv[i + 1];
+    if (!value) throw new Error("--add-city needs a value");
+    out.push(value);
+  });
+  return out;
+}
+
 async function main() {
   const profileId = arg("profile");
   if (!profileId) {
     console.error(
-      "usage: tsx scripts/gbp-set-service-area.ts --profile <id> [--add 'ChIJ...=City, ST, USA'] [--replace] [--write --yes]"
+      "usage: tsx scripts/gbp-set-service-area.ts --profile <id> [--add-city 'American Fork, UT'] [--add 'ChIJ...=City, ST, USA'] [--replace] [--write --yes]"
     );
     process.exit(1);
   }
@@ -77,6 +93,7 @@ async function main() {
   const { fetchCurrentServiceArea, pushServiceAreaToGBP } = await import(
     "../src/lib/google-business-info"
   );
+  const { resolveAreaPlaceId } = await import("../src/lib/google-geocode");
 
   const profile = await prisma.profile.findUniqueOrThrow({
     where: { id: profileId },
@@ -96,7 +113,24 @@ async function main() {
   console.log(`\nNow (${existing.length}):`);
   for (const p of existing) console.log(`  - ${p.placeName ?? p.placeId}`);
 
+  // Cities are resolved before anything is sent, and one bad lookup stops
+  // the run: half a service area is worse than none, and a --replace with a
+  // city missing would silently drop the rest.
   const added = addedPlaces();
+  for (const query of cityQueries()) {
+    const outcome = await resolveAreaPlaceId(query);
+    if (!outcome.ok) {
+      console.error(`\nCould not resolve "${query}": ${outcome.error}`);
+      await prisma.$disconnect();
+      process.exit(1);
+    }
+    console.log(`Resolved "${query}" to ${outcome.place.placeName}`);
+    added.push({
+      placeId: outcome.place.placeId,
+      placeName: outcome.place.placeName,
+    });
+  }
+
   const replace = has("replace");
   if (added.length === 0 && !replace) {
     console.log("\nNo --add given, so this would send the current list back unchanged.");
