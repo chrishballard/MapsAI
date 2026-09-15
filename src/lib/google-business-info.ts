@@ -111,13 +111,95 @@ async function getLocationFields<T>(
   return response.data;
 }
 
-/** Single PATCH path for every Location field write. Never throws. */
+/**
+ * Refuse any write that would take the client's address off their map pin.
+ *
+ * Losing a storefront address is the one unrecoverable mistake in this file:
+ * the pin stops showing a location, the business turns into a service-area
+ * listing, and getting it back means re-verification by postcard. Google
+ * hands out three separate ways to do it by accident, so this runs on the
+ * mask and body of EVERY Location write, validateOnly included, before
+ * anything leaves the process. Returns the reason to refuse, or null.
+ *
+ * 1. businessType CUSTOMER_LOCATION_ONLY is the pure-service-area conversion.
+ *    It hides the address by definition. Nothing in this codebase has a
+ *    reason to send it: a business that is already service-area-only keeps
+ *    its type through the serviceArea.places mask, which never names one.
+ *
+ * 2. The whole-object `serviceArea` mask WITHOUT storefrontAddress alongside
+ *    it. This is the quiet one. Probed 2026-09-15 on Badger Gutters Park Rd:
+ *    Google answered HTTP 200 to a payload that explicitly said
+ *    CUSTOMER_AND_BUSINESS_LOCATION and echoed back CUSTOMER_LOCATION_ONLY,
+ *    having overridden it. A caller checking only the status code would read
+ *    that as success.
+ *
+ * 3. storefrontAddress named in the mask but empty, null, or simply absent
+ *    from the body. Under a field mask a named-but-missing field means
+ *    "clear this", which is exactly the "Storefront_address must be
+ *    explicitly set to empty" state Google's own error message describes.
+ *
+ * If a genuine pure-service-area client ever needs converting, that is a
+ * deliberate new function with its own probe and its own confirmation step,
+ * not a relaxation of this guard.
+ */
+export function storefrontRemovalRisk(
+  updateMask: string,
+  body: Record<string, unknown>
+): string | null {
+  const fields = updateMask.split(",").map((f) => f.trim());
+  const names = (field: string) =>
+    fields.some((f) => f === field || f.startsWith(`${field}.`));
+
+  const serviceArea = body.serviceArea as { businessType?: unknown } | undefined;
+  if (serviceArea?.businessType === "CUSTOMER_LOCATION_ONLY") {
+    return (
+      "Refused: writing businessType CUSTOMER_LOCATION_ONLY converts the " +
+      "profile to a pure service-area business and takes the address off the " +
+      "map pin."
+    );
+  }
+
+  if (fields.includes("serviceArea") && !names("storefrontAddress")) {
+    return (
+      "Refused: updateMask=serviceArea without storefrontAddress. Google " +
+      "coerces businessType to CUSTOMER_LOCATION_ONLY on this shape and " +
+      "answers 200, so it would hide the address while reporting success."
+    );
+  }
+
+  if (names("storefrontAddress")) {
+    const address = body.storefrontAddress;
+    const empty =
+      address === null ||
+      address === undefined ||
+      (typeof address === "object" && Object.keys(address).length === 0);
+    if (empty) {
+      return (
+        "Refused: storefrontAddress is named in the update mask with no " +
+        "address in the body, which under a field mask clears it."
+      );
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Single PATCH path for every Location field write. Never throws.
+ *
+ * Every write goes through storefrontRemovalRisk first. That check lives here
+ * rather than in each push helper on purpose: this is the one door, so a push
+ * added later is covered without its author having to know to ask.
+ */
 async function patchLocation(
   params: LocationWriteParams,
   updateMask: string,
   body: Record<string, unknown>,
   fallbackError: string
 ): Promise<GBPWriteResult> {
+  const risk = storefrontRemovalRisk(updateMask, body);
+  if (risk) return { success: false, error: risk };
+
   try {
     const oauth2Client = await createGoogleClient(params.googleAccountId);
     const validate = params.validateOnly ? "&validateOnly=true" : "";

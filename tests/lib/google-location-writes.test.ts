@@ -23,6 +23,7 @@ const {
   pushTitleToGBP,
   pushPhoneNumbersToGBP,
   pushServiceAreaToGBP,
+  storefrontRemovalRisk,
 } = await import('@/lib/google-business-info');
 
 const target = { googleAccountId: 'ga1', locationName: 'locations/123' };
@@ -477,5 +478,111 @@ describe('validateOnly reaches the two oldest push paths', () => {
   it('writes for real when validateOnly is not asked for', async () => {
     await pushDescriptionToGBP({ ...target, description: 'x' });
     expect(sentRequest().validateOnly).toBeNull();
+  });
+});
+
+// Losing a storefront address is the one unrecoverable mistake in this file:
+// the map pin stops showing a location and getting it back means
+// re-verification by postcard. storefrontRemovalRisk runs on every Location
+// write, so these are the tests that stand between a future push and a
+// client's pin.
+describe('the storefront address guard', () => {
+  const ADDRESS = { regionCode: 'US', locality: 'Charlotte' };
+
+  describe('refuses', () => {
+    it('businessType CUSTOMER_LOCATION_ONLY, whatever the mask', () => {
+      const risk = storefrontRemovalRisk('serviceArea,storefrontAddress', {
+        serviceArea: { businessType: 'CUSTOMER_LOCATION_ONLY', places: {} },
+        storefrontAddress: ADDRESS,
+      });
+
+      expect(risk).toContain('CUSTOMER_LOCATION_ONLY');
+    });
+
+    // The quiet one: Google answers 200 and silently coerces the type.
+    it('the whole serviceArea mask when storefrontAddress is not alongside it', () => {
+      const risk = storefrontRemovalRisk('serviceArea', {
+        serviceArea: {
+          businessType: 'CUSTOMER_AND_BUSINESS_LOCATION',
+          places: { placeInfos: [{ placeId: 'ChIJ1' }] },
+        },
+      });
+
+      expect(risk).toContain('without storefrontAddress');
+    });
+
+    it('storefrontAddress named in the mask but absent from the body', () => {
+      expect(storefrontRemovalRisk('storefrontAddress', {})).toContain(
+        'no address in the body'
+      );
+    });
+
+    it('storefrontAddress named in the mask but null or empty', () => {
+      expect(
+        storefrontRemovalRisk('storefrontAddress', { storefrontAddress: null })
+      ).toBeTruthy();
+      expect(
+        storefrontRemovalRisk('storefrontAddress', { storefrontAddress: {} })
+      ).toBeTruthy();
+    });
+
+    it('an empty subfield edit of the address', () => {
+      expect(storefrontRemovalRisk('storefrontAddress.addressLines', {})).toBeTruthy();
+    });
+  });
+
+  describe('allows', () => {
+    it('the shape pushServiceAreaToGBP uses from zero', () => {
+      const risk = storefrontRemovalRisk('serviceArea,storefrontAddress', {
+        serviceArea: {
+          businessType: 'CUSTOMER_AND_BUSINESS_LOCATION',
+          places: { placeInfos: [{ placeId: 'ChIJ1' }] },
+        },
+        storefrontAddress: ADDRESS,
+      });
+
+      expect(risk).toBeNull();
+    });
+
+    it('the narrow serviceArea.places mask', () => {
+      const risk = storefrontRemovalRisk('serviceArea.places', {
+        serviceArea: { places: { placeInfos: [{ placeId: 'ChIJ1' }] } },
+      });
+
+      expect(risk).toBeNull();
+    });
+
+    it('writes that have nothing to do with the address', () => {
+      expect(
+        storefrontRemovalRisk('profile.description', {
+          profile: { description: 'hi' },
+        })
+      ).toBeNull();
+      expect(storefrontRemovalRisk('regularHours', { regularHours: {} })).toBeNull();
+    });
+  });
+
+  // Proves the guard is wired into patchLocation, not just exported and
+  // forgotten. The vector is real: pushServiceAreaToGBP only checks that the
+  // address it read is truthy, so a profile whose storefrontAddress comes
+  // back as {} slips past its own check and is stopped here instead.
+  it('stops the request before it reaches Google', async () => {
+    mocks.request.mockImplementation(async (opts: { method: string }) => {
+      if (opts.method === 'GET') {
+        return { data: { serviceArea: undefined, storefrontAddress: {} } };
+      }
+      return { data: {} };
+    });
+
+    const result = await pushServiceAreaToGBP({
+      ...target,
+      places: [{ placeId: 'ChIJ1' }],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Refused');
+    expect(
+      mocks.request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'PATCH')
+    ).toHaveLength(0);
   });
 });
