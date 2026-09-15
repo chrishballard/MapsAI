@@ -75,6 +75,16 @@ export interface GBPPlaceInfo {
   placeName?: string;
 }
 
+/**
+ * Google's PostalAddress, deliberately opaque. The only thing this file ever
+ * does with an address is read one off a profile and echo it straight back in
+ * the same shape (see pushServiceAreaToGBP), so naming the fields here would
+ * risk silently dropping one Google sent — sublocality, sortingCode, revision,
+ * recipients — and rewriting the client's address as a side effect of a
+ * service-area write.
+ */
+export type GBPPostalAddress = Record<string, unknown>;
+
 export interface GBPServiceArea {
   businessType?: string;
   places?: { placeInfos?: GBPPlaceInfo[] };
@@ -756,15 +766,43 @@ export async function fetchCurrentServiceArea(params: {
 }
 
 /**
- * Replace the places a service-area business serves.
+ * The serviceArea and the storefrontAddress in one read.
  *
- * The mask is `serviceArea.places`, NOT `serviceArea`.
+ * A profile with no service area yet can only be given one by naming
+ * storefrontAddress in the same update mask, and the address has to go back
+ * byte-for-byte as Google gave it, so both fields are needed before the write
+ * is shaped. One GET, because this account is rate-limited hard.
+ */
+async function fetchServiceAreaContext(params: {
+  googleAccountId: string;
+  locationName: string;
+}): Promise<{
+  serviceArea: GBPServiceArea | null;
+  storefrontAddress: GBPPostalAddress | null;
+}> {
+  const data = await getLocationFields<{
+    serviceArea?: GBPServiceArea;
+    storefrontAddress?: GBPPostalAddress;
+  }>(params, "serviceArea,storefrontAddress");
+  return {
+    serviceArea: data.serviceArea ?? null,
+    storefrontAddress: data.storefrontAddress ?? null,
+  };
+}
+
+/**
+ * Replace the places a service-area business serves, or give a storefront
+ * profile its first service area.
  *
- * What was observed, probed against one live profile on 2026-09-14 with
- * validateOnly=true (Badger Gutters Harris Blvd, businessType
- * CUSTOMER_AND_BUSINESS_LOCATION, storefrontAddress set, 20 places): every
- * payload under the whole `serviceArea` mask was rejected 400
- * INVALID_ARGUMENT with
+ * Two different writes, chosen on whether the profile already has a service
+ * area, because Google accepts a different mask in each case.
+ *
+ * PROFILE THAT ALREADY HAS PLACES — mask `serviceArea.places`.
+ *
+ * Probed against one live profile on 2026-09-14 with validateOnly=true
+ * (Badger Gutters Harris Blvd, businessType CUSTOMER_AND_BUSINESS_LOCATION,
+ * storefrontAddress set, 20 places): every payload under the whole
+ * `serviceArea` mask was rejected 400 INVALID_ARGUMENT with
  *
  *   field: "service_area"
  *   description: "Storefront_address must be explicitly set to empty for
@@ -773,17 +811,68 @@ export async function fetchCurrentServiceArea(params: {
  * — a full echo of the current value, placeInfos reduced to placeId, and
  * businessType alone all failed that way, and businessType alone also added
  * `service_area.places: "Field is required"`. `updateMask=serviceArea.places`
- * validated clean. That is one profile's result, not a proven law about the
- * API; the likely mechanism is that ServiceAreaBusiness.businessType is a
- * required field, so a whole-object write is evaluated as a business-type
- * transition and Google applies the CUSTOMER_LOCATION_ONLY rule that the
- * storefront address be cleared in the same call. Narrowing the mask leaves
- * businessType alone, which is why this function cannot convert the business
- * type or drop the address whatever it is handed.
+ * validated clean, and again on 2026-09-15 when
+ * scripts/gbp-validate-writes.ts passed nine of nine push paths against the
+ * same profile. Narrowing the mask leaves businessType alone, which is why
+ * that path cannot convert the business type or drop the address whatever it
+ * is handed.
  *
- * Changing businessType itself (storefront <-> pure service area) is
- * deliberately not implemented: it needs `storefrontAddress` in the same
- * update mask and would delete the client's address.
+ * PROFILE WITH NO SERVICE AREA AT ALL — mask `serviceArea,storefrontAddress`.
+ *
+ * The API can do this; the old guard here was ours, not Google's. Probed
+ * 2026-09-15 with validateOnly=true against Badger Gutters Park Rd
+ * (cmrmb5ugt008x1bnqoxkofr2h, storefrontAddress "4108 Park Rd"/"Suite 106"
+ * Charlotte, `serviceArea` absent from the read entirely), sending one place,
+ * Monroe NC. Four shapes, in full:
+ *
+ * 1. `updateMask=serviceArea.places` — 400 INVALID_ARGUMENT. Not the
+ *    businessType complaint the 2026-09-14 run produced, a new one:
+ *      field: "service_area"
+ *      description: "Can't add an incomplete service area. Specify the whole
+ *                    service_area field in the request"
+ *    So the narrow mask is specifically a there-is-already-a-service-area
+ *    path, and Google names the fix in the violation.
+ *
+ * 2. `updateMask=serviceArea` with
+ *    `{businessType: "CUSTOMER_AND_BUSINESS_LOCATION", places: {...}}` —
+ *    HTTP 200, validated. DO NOT USE IT. Google's echo came back
+ *    `"businessType": "CUSTOMER_LOCATION_ONLY"`, overriding the hybrid type
+ *    that was sent: without storefrontAddress in the mask it reads the write
+ *    as "this is a service-area business" and coerces, which is the same
+ *    pure-service-area rule the 2026-09-14 run hit as a hard 400. A real
+ *    write of this shape would take the client's address off the listing and
+ *    report success doing it.
+ *
+ * 3. `updateMask=serviceArea,storefrontAddress`, same serviceArea payload
+ *    plus the storefrontAddress exactly as read back — HTTP 200, validated,
+ *    and the echo kept `"businessType": "CUSTOMER_AND_BUSINESS_LOCATION"`.
+ *    This is the shape used below. One side effect to know about: Google
+ *    renormalised the address in its echo, `["4108 Park Rd", "Suite 106"]`
+ *    coming back as `["4108 Park Road Suite 106"]`. Same address, rewritten
+ *    lines — naming storefrontAddress in a mask is never quite a no-op, and
+ *    there is no mask that adds a service area without naming it (2 is the
+ *    only one that omits it, and 2 is the one that hides the address).
+ *
+ * 4. `updateMask=serviceArea.businessType` alone, as a two-step first half —
+ *    400 INVALID_ARGUMENT, both violations at once:
+ *      field: "service_area.places"  description: "Field is required"
+ *      field: "service_area"         description: "Can't add an incomplete
+ *                                     service area. Specify the whole
+ *                                     service_area field in the request"
+ *    There is no staging the type first; places must arrive in the same call.
+ *
+ * Still refused below: a profile with neither a service area nor a
+ * storefrontAddress. Shape 3 has nothing to echo there, and the only legal
+ * type left would be CUSTOMER_LOCATION_ONLY — unprobed, and not something to
+ * find out on a client's listing. Converting an existing businessType
+ * (storefront <-> pure service area) is likewise still not implemented: it
+ * needs storefrontAddress cleared in the same mask, which deletes the
+ * client's address.
+ *
+ * All of the above is two profiles' behaviour under validateOnly, not a
+ * proven law about the API. Google documents validateOnly as a full
+ * validation pass, and shape 2's silent type coercion is a good reminder to
+ * read what comes back rather than just the status code.
  *
  * On placeName: the PlaceInfo schema marks it Required, and a placeId-only
  * payload validated clean anyway. Do not read that as "placeName is
@@ -814,14 +903,14 @@ export async function pushServiceAreaToGBP(
     };
   }
 
-  // A location that is not a service-area business has no businessType, and
-  // the narrow mask cannot supply one — the write would leave a serviceArea
-  // with places and no required businessType. Only profiles that already had
-  // places were ever probed, so refuse the untested case rather than find out
-  // on a client's listing.
-  let current: GBPServiceArea | null;
+  // Which of the two writes applies depends on what the profile already has,
+  // so the current value is read first either way.
+  let current: {
+    serviceArea: GBPServiceArea | null;
+    storefrontAddress: GBPPostalAddress | null;
+  };
   try {
-    current = await fetchCurrentServiceArea(params);
+    current = await fetchServiceAreaContext(params);
   } catch (error: unknown) {
     return {
       success: false,
@@ -832,31 +921,53 @@ export async function pushServiceAreaToGBP(
     };
   }
 
-  const businessType = current?.businessType;
-  if (!businessType || businessType === "BUSINESS_TYPE_UNSPECIFIED") {
+  const placeInfos = params.places.map((place) =>
+    place.placeName
+      ? { placeId: place.placeId, placeName: place.placeName }
+      : { placeId: place.placeId }
+  );
+
+  const businessType = current.serviceArea?.businessType;
+  const hasServiceArea =
+    Boolean(businessType) && businessType !== "BUSINESS_TYPE_UNSPECIFIED";
+
+  if (hasServiceArea) {
+    return patchLocation(
+      params,
+      "serviceArea.places",
+      { serviceArea: { places: { placeInfos } } },
+      "Unknown error pushing service area to GBP"
+    );
+  }
+
+  // From zero. Without an address to echo there is no validated shape left —
+  // the mask that omits storefrontAddress is the one that hides it.
+  if (!current.storefrontAddress) {
     return {
       success: false,
       error:
-        "This location is not set up as a service-area business, and the " +
-        "serviceArea.places mask cannot set the required businessType. Set " +
-        "the business type in the Google Business Profile UI first.",
+        "This location has neither a service area nor a storefront address, " +
+        "so there is no address to send back alongside the service area. Set " +
+        "the service area in the Google Business Profile UI.",
     };
   }
 
   return patchLocation(
     params,
-    "serviceArea.places",
+    "serviceArea,storefrontAddress",
     {
       serviceArea: {
-        places: {
-          placeInfos: params.places.map((place) =>
-            place.placeName
-              ? { placeId: place.placeId, placeName: place.placeName }
-              : { placeId: place.placeId }
-          ),
-        },
+        // The hybrid type is the whole point: it keeps the storefront on the
+        // listing. Never CUSTOMER_LOCATION_ONLY — that is the conversion this
+        // function refuses to make, and what Google coerces to when
+        // storefrontAddress is left out of the mask.
+        businessType: "CUSTOMER_AND_BUSINESS_LOCATION",
+        places: { placeInfos },
       },
+      // Byte-for-byte what the read returned. Anything reconstructed here
+      // would be an edit to the client's address.
+      storefrontAddress: current.storefrontAddress,
     },
-    "Unknown error pushing service area to GBP"
+    "Unknown error adding a service area to GBP"
   );
 }
