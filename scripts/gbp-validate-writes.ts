@@ -168,10 +168,15 @@ async function main() {
       check("serviceArea.places", () => pushServiceAreaToGBP({ ...target, places }))
     );
   } else {
+    // Not "unsupported": pushServiceAreaToGBP does handle a profile with no
+    // service area, under the serviceArea,storefrontAddress mask. It just
+    // cannot be dry-run the way every other check here is, by echoing the
+    // current value back — there is no current value, and inventing a place
+    // would validate a payload nobody is going to send.
     outcomes.push({
       kind: "skip",
       label: "serviceArea.places",
-      why: "no service-area places on this profile",
+      why: "no service-area places to echo back on this profile",
     });
   }
 
