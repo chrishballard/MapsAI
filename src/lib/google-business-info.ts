@@ -999,12 +999,15 @@ async function verifyStorefrontSurvived(params: {
  * 3. `updateMask=serviceArea,storefrontAddress`, same serviceArea payload
  *    plus the storefrontAddress exactly as read back — HTTP 200, validated,
  *    and the echo kept `"businessType": "CUSTOMER_AND_BUSINESS_LOCATION"`.
- *    This is the shape used below. One side effect to know about: Google
- *    renormalised the address in its echo, `["4108 Park Rd", "Suite 106"]`
- *    coming back as `["4108 Park Road Suite 106"]`. Same address, rewritten
- *    lines — naming storefrontAddress in a mask is never quite a no-op, and
- *    there is no mask that adds a service area without naming it (2 is the
- *    only one that omits it, and 2 is the one that hides the address).
+ *    This is the shape used below. On the address: Google renormalised it in
+ *    that echo, `["4108 Park Rd", "Suite 106"]` coming back as
+ *    `["4108 Park Road Suite 106"]`. Two lines merged into one, same address.
+ *    That looks to be specifically a multi-line merge rather than a rewrite
+ *    of everything it is handed — see the live run below, where a
+ *    single-line address came back untouched. Either way, naming
+ *    storefrontAddress in a mask is not guaranteed to be a no-op, and there
+ *    is no mask that adds a service area without naming it (2 is the only
+ *    one that omits it, and 2 is the one that hides the address).
  *
  * 4. `updateMask=serviceArea.businessType` alone, as a two-step first half —
  *    400 INVALID_ARGUMENT, both violations at once:
@@ -1022,10 +1025,21 @@ async function verifyStorefrontSurvived(params: {
  * needs storefrontAddress cleared in the same mask, which deletes the
  * client's address.
  *
- * All of the above is two profiles' behaviour under validateOnly, not a
- * proven law about the API. Google documents validateOnly as a full
- * validation pass, and shape 2's silent type coercion is a good reminder to
- * read what comes back rather than just the status code.
+ * RUN LIVE 2026-09-15, once, on Nelson Roofing Salt Lake City
+ * (locations/11997305859127494579, a business the operator owns). Its
+ * service area was cleared by hand in the GBP dashboard to produce the
+ * from-zero state — address present, `serviceArea` absent from the read
+ * entirely — and shape 3 then wrote 14 places back. Afterwards:
+ * businessType CUSTOMER_AND_BUSINESS_LOCATION, all 14 places exact, and the
+ * storefrontAddress byte-identical to before, `["26 S Rio Grande St #2072"]`
+ * unchanged. So a single-line address survived a shape-3 write untouched,
+ * where Park Rd's two lines were merged under validateOnly. One live run,
+ * one address shape; do not read it as a guarantee for every address.
+ *
+ * The rest is two profiles' behaviour under validateOnly, not a proven law
+ * about the API. Google documents validateOnly as a full validation pass,
+ * and shape 2's silent type coercion is a good reminder to read what comes
+ * back rather than just the status code.
  *
  * On placeName: the PlaceInfo schema marks it Required, and a placeId-only
  * payload validated clean anyway. Do not read that as "placeName is
