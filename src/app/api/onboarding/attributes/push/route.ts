@@ -11,7 +11,7 @@ const pushAttributesSchema = z.object({
     .array(
       z.object({
         attributeId: z.string().min(1).max(200),
-        valueType: z.string().min(1).max(50),
+        valueType: z.enum(["BOOL", "ENUM", "REPEATED_ENUM", "URL"]),
         values: z.array(z.unknown()).optional(),
         repeatedEnumValue: z
           .object({
