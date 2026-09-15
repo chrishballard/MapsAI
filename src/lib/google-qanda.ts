@@ -23,6 +23,9 @@
  * unavailable.reason === "NOT_ROUTED" — deliberately distinct from
  * SERVICE_DISABLED, so nobody spends another session enabling an API that was
  * never the problem.
+ *
+ * Nothing in this repo calls it yet — the GBP audit is a skill that lives
+ * outside the app.
  */
 import { createGoogleClient } from "./google";
 import { GBPReadResult, readFailure } from "./google-errors";

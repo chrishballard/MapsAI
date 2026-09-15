@@ -131,7 +131,7 @@ describe('fetchVoiceOfMerchantState', () => {
 describe('fetchVerifications', () => {
   it('returns the verification attempts', async () => {
     mocks.request.mockResolvedValue({
-      data: { verifications: [{ method: 'POSTCARD', state: 'COMPLETED' }] },
+      data: { verifications: [{ method: 'ADDRESS', state: 'COMPLETED' }] },
     });
 
     const result = await fetchVerifications(target);

@@ -114,14 +114,29 @@ describe('Location field pushes', () => {
     });
   });
 
-  it('omits additionalCategories entirely when none are given', async () => {
+  // The Categories schema: "During updates, both fields must be set."
+  // Omitting a field is not the same as sending it empty, and clearing the
+  // additional categories has to actually clear them.
+  it('sends an explicit empty additionalCategories rather than omitting it', async () => {
     await pushCategoriesToGBP({
       ...target,
       primaryCategoryId: 'categories/gcid:plumber',
     });
 
-    const categories = sentRequest().body.categories as Record<string, unknown>;
-    expect(categories).not.toHaveProperty('additionalCategories');
+    expect(sentRequest().body.categories).toEqual({
+      primaryCategory: { name: 'categories/gcid:plumber' },
+      additionalCategories: [],
+    });
+  });
+
+  // Same rule on PhoneNumbers: "During updates, both fields must be set."
+  it('sends an explicit empty additionalPhones rather than omitting it', async () => {
+    await pushPhoneNumbersToGBP({ ...target, primaryPhone: '(980) 480-8383' });
+
+    expect(sentRequest().body.phoneNumbers).toEqual({
+      primaryPhone: '(980) 480-8383',
+      additionalPhones: [],
+    });
   });
 
   it('sends title under the title mask', async () => {
@@ -149,7 +164,7 @@ describe('Location field pushes', () => {
     });
   });
 
-  it('adds validateOnly only when asked', async () => {
+  it('adds the validateOnly query param only when asked', async () => {
     await pushTitleToGBP({ ...target, title: 'Badger Gutters' });
     expect(sentRequest().validateOnly).toBeNull();
 
@@ -185,6 +200,32 @@ describe('Location field pushes', () => {
 });
 
 describe('pushServiceAreaToGBP', () => {
+  // The push reads the current service area first, so tests have to answer
+  // the GET as well as the PATCH.
+  function withCurrent(serviceArea: unknown) {
+    mocks.request.mockImplementation(async (opts: { method: string }) => {
+      if (opts.method === 'GET') return { data: { serviceArea } };
+      return { data: {} };
+    });
+  }
+
+  /** The PATCH the push made, ignoring the GET that preceded it. */
+  function sentPatch() {
+    const patches = mocks.request.mock.calls
+      .map((c) => c[0] as { url: string; method: string; data: Record<string, unknown> })
+      .filter((c) => c.method === 'PATCH');
+    expect(patches).toHaveLength(1);
+    const url = new URL(patches[0].url);
+    return {
+      updateMask: url.searchParams.get('updateMask'),
+      body: patches[0].data,
+    };
+  }
+
+  const SAB = { businessType: 'CUSTOMER_AND_BUSINESS_LOCATION' };
+
+  beforeEach(() => withCurrent(SAB));
+
   // The whole-object mask is rejected: sending `serviceArea` drags the
   // required businessType into the write, which Google reads as a business
   // type transition and answers 400 "Storefront_address must be explicitly
@@ -193,21 +234,22 @@ describe('pushServiceAreaToGBP', () => {
   it('uses the serviceArea.places mask, never the whole serviceArea object', async () => {
     await pushServiceAreaToGBP({
       ...target,
-      placeIds: ['ChIJvchYlskwVIgROi4KVlAWC44'],
+      places: [{ placeId: 'ChIJvchYlskwVIgROi4KVlAWC44' }],
     });
 
-    const sent = sentRequest();
-    expect(sent.updateMask).toBe('serviceArea.places');
-    expect(sent.updateMask).not.toBe('serviceArea');
+    expect(sentPatch().updateMask).toBe('serviceArea.places');
   });
 
-  it('sends placeId alone — placeName is not required on write', async () => {
+  it('sends placeId alone when the caller has no place name', async () => {
     await pushServiceAreaToGBP({
       ...target,
-      placeIds: ['ChIJvchYlskwVIgROi4KVlAWC44', 'ChIJBdYlOnaiVogR4c_krwxkfB0'],
+      places: [
+        { placeId: 'ChIJvchYlskwVIgROi4KVlAWC44' },
+        { placeId: 'ChIJBdYlOnaiVogR4c_krwxkfB0' },
+      ],
     });
 
-    expect(sentRequest().body).toEqual({
+    expect(sentPatch().body).toEqual({
       serviceArea: {
         places: {
           placeInfos: [
@@ -219,18 +261,72 @@ describe('pushServiceAreaToGBP', () => {
     });
   });
 
-  it('never sends businessType, which is what the whole-object mask got wrong', async () => {
-    await pushServiceAreaToGBP({ ...target, placeIds: ['ChIJ1'] });
+  // PlaceInfo.placeName is marked Required in the schema. A placeId-only
+  // payload validated clean, but the caller usually has the name (it comes
+  // back from fetchCurrentServiceArea), and it must survive the round trip.
+  it('passes placeName through when the caller has it', async () => {
+    await pushServiceAreaToGBP({
+      ...target,
+      places: [
+        { placeId: 'ChIJvchYlskwVIgROi4KVlAWC44', placeName: 'Monroe, NC, USA' },
+        { placeId: 'ChIJBdYlOnaiVogR4c_krwxkfB0' },
+      ],
+    });
 
-    const serviceArea = sentRequest().body.serviceArea as Record<string, unknown>;
+    expect(sentPatch().body).toEqual({
+      serviceArea: {
+        places: {
+          placeInfos: [
+            { placeId: 'ChIJvchYlskwVIgROi4KVlAWC44', placeName: 'Monroe, NC, USA' },
+            { placeId: 'ChIJBdYlOnaiVogR4c_krwxkfB0' },
+          ],
+        },
+      },
+    });
+  });
+
+  it('never sends businessType, which is what the whole-object mask got wrong', async () => {
+    await pushServiceAreaToGBP({ ...target, places: [{ placeId: 'ChIJ1' }] });
+
+    const serviceArea = sentPatch().body.serviceArea as Record<string, unknown>;
     expect(serviceArea).not.toHaveProperty('businessType');
     expect(serviceArea).not.toHaveProperty('regionCode');
   });
 
-  it('refuses more than 20 places before calling Google', async () => {
+  // The narrow mask cannot supply the required businessType, so writing
+  // places onto a storefront-only location would leave a serviceArea without
+  // one. Only profiles that already had places were ever probed.
+  it('refuses a location that is not a service-area business', async () => {
+    withCurrent(undefined);
+
+    const result = await pushServiceAreaToGBP({ ...target, places: [{ placeId: 'ChIJ1' }] });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not set up as a service-area business');
+    expect(
+      mocks.request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'PATCH')
+    ).toHaveLength(0);
+  });
+
+  it('refuses a BUSINESS_TYPE_UNSPECIFIED location', async () => {
+    withCurrent({ businessType: 'BUSINESS_TYPE_UNSPECIFIED' });
+
+    const result = await pushServiceAreaToGBP({ ...target, places: [{ placeId: 'ChIJ1' }] });
+    expect(result.success).toBe(false);
+  });
+
+  it('reports a failed read instead of throwing', async () => {
+    mocks.request.mockRejectedValue(new Error('socket hang up'));
+
+    const result = await pushServiceAreaToGBP({ ...target, places: [{ placeId: 'ChIJ1' }] });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('socket hang up');
+  });
+
+  it('refuses more than 20 places before calling Google at all', async () => {
     const result = await pushServiceAreaToGBP({
       ...target,
-      placeIds: Array.from({ length: 21 }, (_, i) => `ChIJ${i}`),
+      places: Array.from({ length: 21 }, (_, i) => ({ placeId: `ChIJ${i}` })),
     });
 
     expect(result.success).toBe(false);
@@ -241,15 +337,14 @@ describe('pushServiceAreaToGBP', () => {
   it('accepts exactly 20 places', async () => {
     const result = await pushServiceAreaToGBP({
       ...target,
-      placeIds: Array.from({ length: 20 }, (_, i) => `ChIJ${i}`),
+      places: Array.from({ length: 20 }, (_, i) => ({ placeId: `ChIJ${i}` })),
     });
 
     expect(result).toEqual({ success: true });
-    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an empty list rather than clearing the service area', async () => {
-    const result = await pushServiceAreaToGBP({ ...target, placeIds: [] });
+    const result = await pushServiceAreaToGBP({ ...target, places: [] });
 
     expect(result.success).toBe(false);
     expect(mocks.request).not.toHaveBeenCalled();

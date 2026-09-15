@@ -3,6 +3,7 @@ import {
   describeGoogleError,
   isServiceDisabled,
   isUnroutedHost,
+  looksRateLimited,
   readFailure,
   serviceDisabledActivationUrl,
 } from '@/lib/google-errors';
@@ -110,6 +111,12 @@ describe('API availability classification', () => {
     const missing = gaxios(404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
     expect(isUnroutedHost(missing)).toBe(false);
   });
+
+  // Reporting a JSON 404 as unrouted would tell an operator the console
+  // cannot help them, when the console may well be the fix.
+  it('does not call a JSON 404 with an empty body an unrouted host', () => {
+    expect(isUnroutedHost(gaxios(404, {}))).toBe(false);
+  });
 });
 
 describe('readFailure', () => {
@@ -131,5 +138,25 @@ describe('readFailure', () => {
     expect(result.ok).toBe(false);
     expect(result.unavailable).toBeUndefined();
     expect(result.error).toContain('service_area');
+  });
+});
+
+describe('looksRateLimited', () => {
+  // The script's old guard matched /RESOURCE_EXHAUSTED|rate limit|429/ against
+  // the string describeGoogleError produces — which for a 429 is the ErrorInfo
+  // reason and contains none of those. The guard never fired, so a rate-limited
+  // run kept firing calls into the limit.
+  it('matches what describeGoogleError actually produces for a 429', () => {
+    expect(
+      looksRateLimited('RATE_LIMIT_EXCEEDED (service=x, quota_metric=y)')
+    ).toBe(true);
+    expect(looksRateLimited('RESOURCE_EXHAUSTED (service=x)')).toBe(true);
+    expect(looksRateLimited('Quota exceeded for quota metric')).toBe(true);
+  });
+
+  it('does not fire on an ordinary validation failure', () => {
+    expect(looksRateLimited('INVALID_ARGUMENT — service_area: Field is required')).toBe(false);
+    expect(looksRateLimited('website_uri: Invalid URL')).toBe(false);
+    expect(looksRateLimited(undefined)).toBe(false);
   });
 });

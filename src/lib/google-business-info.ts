@@ -129,16 +129,11 @@ export async function fetchCurrentDescription(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<string | null> {
-  const oauth2Client = await createGoogleClient(params.googleAccountId);
-
-  const response = await oauth2Client.request<{
-    profile?: { description?: string };
-  }>({
-    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=profile`,
-    method: "GET",
-  });
-
-  return response.data.profile?.description ?? null;
+  const data = await getLocationFields<{ profile?: { description?: string } }>(
+    params,
+    "profile"
+  );
+  return data.profile?.description ?? null;
 }
 
 export async function pushDescriptionToGBP(
@@ -170,20 +165,10 @@ export async function fetchCategoryId(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<string | null> {
-  const oauth2Client = await createGoogleClient(params.googleAccountId);
-
-  const response = await oauth2Client.request<{
-    categories?: {
-      primaryCategory?: {
-        name?: string;
-      };
-    };
-  }>({
-    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=categories`,
-    method: "GET",
-  });
-
-  return response.data.categories?.primaryCategory?.name ?? null;
+  const data = await getLocationFields<{
+    categories?: { primaryCategory?: { name?: string } };
+  }>(params, "categories");
+  return data.categories?.primaryCategory?.name ?? null;
 }
 
 export async function fetchStructuredServices(params: {
@@ -281,49 +266,22 @@ export async function fetchCurrentServices(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<{ serviceItems: unknown[] }> {
-  const oauth2Client = await createGoogleClient(params.googleAccountId);
-
-  const response = await oauth2Client.request<{
-    serviceItems?: unknown[];
-  }>({
-    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=serviceItems`,
-    method: "GET",
-  });
-
-  return { serviceItems: response.data.serviceItems || [] };
+  const data = await getLocationFields<{ serviceItems?: unknown[] }>(
+    params,
+    "serviceItems"
+  );
+  return { serviceItems: data.serviceItems || [] };
 }
 
 export async function pushServicesToGBP(
   params: LocationWriteParams & { serviceItems: unknown[] }
 ): Promise<GBPWriteResult> {
-  try {
-    const oauth2Client = await createGoogleClient(params.googleAccountId);
-
-    await oauth2Client.request({
-      url:
-        `${BUSINESS_INFO_BASE}/${params.locationName}?updateMask=serviceItems` +
-        (params.validateOnly ? "&validateOnly=true" : ""),
-      method: "PATCH",
-      data: {
-        serviceItems: params.serviceItems,
-      },
-    });
-
-    return { success: true };
-  } catch (error: unknown) {
-    // Log the full Google API error for debugging
-    const googleError = error as { response?: { data?: unknown; status?: number }; message?: string };
-    console.error("[SERVICE_PUSH_ERROR] Full error:", JSON.stringify({
-      status: googleError.response?.status,
-      data: googleError.response?.data,
-      message: googleError.message,
-    }, null, 2));
-
-    return {
-      success: false,
-      error: describeGoogleError(error, "Unknown error pushing services to GBP"),
-    };
-  }
+  return patchLocation(
+    params,
+    "serviceItems",
+    { serviceItems: params.serviceItems },
+    "Unknown error pushing services to GBP"
+  );
 }
 
 // --- Attribute functions ---
@@ -499,6 +457,10 @@ function readCurrentValue(
       return attr.repeatedEnumValue ?? { setValues: [], unsetValues: [] };
     case "URL":
       return attr.uriValues?.[0]?.uri ?? null;
+    default:
+      // ATTRIBUTE_VALUE_TYPE_UNSPECIFIED, or a type Google adds later. Not
+      // the same as "not set", but there is no value to read either.
+      return null;
   }
 }
 
@@ -687,11 +649,15 @@ export async function fetchCurrentCategories(params: {
 /**
  * Replace the primary and additional categories in one write.
  *
- * Google prohibits updating the primary or additional categories
- * individually through the update mask, so the whole `categories` object goes
- * every time: whatever is left out of `additionalCategoryIds` is removed.
- * Only `name` is sent — `displayName`, `serviceTypes` and `moreHoursTypes`
- * are output-only on Category and are ignored on write.
+ * The Categories schema says: "During updates, both fields must be set.
+ * Clients are prohibited from individually updating the primary or additional
+ * categories using the update mask." So both fields always go, and
+ * additionalCategories is sent as an explicit [] rather than omitted when
+ * there are none — omitting a field is not the same as sending it empty, and
+ * clearing the additional categories has to actually clear them.
+ *
+ * Only `name` is sent: `displayName`, `serviceTypes` and `moreHoursTypes` are
+ * output-only on Category and are ignored on write.
  */
 export async function pushCategoriesToGBP(
   params: LocationWriteParams & {
@@ -701,12 +667,10 @@ export async function pushCategoriesToGBP(
 ): Promise<GBPWriteResult> {
   const categories: GBPCategories = {
     primaryCategory: { name: params.primaryCategoryId },
-  };
-  if (params.additionalCategoryIds && params.additionalCategoryIds.length > 0) {
-    categories.additionalCategories = params.additionalCategoryIds.map((name) => ({
+    additionalCategories: (params.additionalCategoryIds ?? []).map((name) => ({
       name,
-    }));
-  }
+    })),
+  };
 
   return patchLocation(
     params,
@@ -751,8 +715,13 @@ export async function fetchCurrentPhoneNumbers(params: {
 }
 
 /**
- * Replace the phone numbers. `additionalPhones` is part of the same object,
- * so omitting it clears any secondary numbers already on the profile.
+ * Replace the phone numbers.
+ *
+ * The PhoneNumbers schema says: "During updates, both fields must be set.
+ * Clients may not update just the primary or additional phone numbers using
+ * the update mask." So additionalPhones is sent as an explicit [] rather than
+ * omitted when there are none, which is what actually clears the secondary
+ * numbers on the profile.
  */
 export async function pushPhoneNumbersToGBP(
   params: LocationWriteParams & {
@@ -760,10 +729,10 @@ export async function pushPhoneNumbersToGBP(
     additionalPhones?: string[];
   }
 ): Promise<GBPWriteResult> {
-  const phoneNumbers: GBPPhoneNumbers = { primaryPhone: params.primaryPhone };
-  if (params.additionalPhones && params.additionalPhones.length > 0) {
-    phoneNumbers.additionalPhones = params.additionalPhones;
-  }
+  const phoneNumbers: GBPPhoneNumbers = {
+    primaryPhone: params.primaryPhone,
+    additionalPhones: params.additionalPhones ?? [],
+  };
 
   return patchLocation(
     params,
@@ -789,46 +758,88 @@ export async function fetchCurrentServiceArea(params: {
 /**
  * Replace the places a service-area business serves.
  *
- * The mask is `serviceArea.places`, NOT `serviceArea`. Probed against a live
- * profile on 2026-09-14 with validateOnly=true: every payload under the whole
- * `serviceArea` mask is rejected 400 INVALID_ARGUMENT with
+ * The mask is `serviceArea.places`, NOT `serviceArea`.
+ *
+ * What was observed, probed against one live profile on 2026-09-14 with
+ * validateOnly=true (Badger Gutters Harris Blvd, businessType
+ * CUSTOMER_AND_BUSINESS_LOCATION, storefrontAddress set, 20 places): every
+ * payload under the whole `serviceArea` mask was rejected 400
+ * INVALID_ARGUMENT with
  *
  *   field: "service_area"
  *   description: "Storefront_address must be explicitly set to empty for
  *                 pure service area business."
  *
  * — a full echo of the current value, placeInfos reduced to placeId, and
- * businessType alone all fail that way, and businessType alone also adds
- * `service_area.places: "Field is required"`. The cause is that
- * ServiceAreaBusiness.businessType is a required field, so a whole-object
- * write reads as a business-type transition, and Google requires a
- * CUSTOMER_LOCATION_ONLY business to clear storefrontAddress in the same
- * call. Narrowing the mask to `serviceArea.places` leaves businessType alone
- * and validates clean, which is what this function does — so it edits the
- * served areas and can never convert the business type or drop the address.
+ * businessType alone all failed that way, and businessType alone also added
+ * `service_area.places: "Field is required"`. `updateMask=serviceArea.places`
+ * validated clean. That is one profile's result, not a proven law about the
+ * API; the likely mechanism is that ServiceAreaBusiness.businessType is a
+ * required field, so a whole-object write is evaluated as a business-type
+ * transition and Google applies the CUSTOMER_LOCATION_ONLY rule that the
+ * storefront address be cleared in the same call. Narrowing the mask leaves
+ * businessType alone, which is why this function cannot convert the business
+ * type or drop the address whatever it is handed.
  *
  * Changing businessType itself (storefront <-> pure service area) is
  * deliberately not implemented: it needs `storefrontAddress` in the same
  * update mask and would delete the client's address.
  *
- * placeId alone is accepted — placeName is marked required in the schema but
- * the server does not enforce it on write (verified, validateOnly). Google
- * caps the list at 20 (TOO_MANY_ENTRIES, max_count: 20); that is checked here
- * first so the caller gets a readable error.
+ * On placeName: the PlaceInfo schema marks it Required, and a placeId-only
+ * payload validated clean anyway. Do not read that as "placeName is
+ * optional" — validateOnly does enforce required fields here (the same probe
+ * run returned `service_area.places: "Field is required"`), but it is one
+ * observation and a real write may differ. So placeName is accepted and
+ * passed through whenever the caller has it, which it does when the places
+ * came from fetchCurrentServiceArea.
+ *
+ * Google caps the list at 20 (TOO_MANY_ENTRIES, max_count: 20); that is
+ * checked here first so the caller gets a readable error.
  */
 export async function pushServiceAreaToGBP(
-  params: LocationWriteParams & { placeIds: string[] }
+  params: LocationWriteParams & {
+    places: Array<{ placeId: string; placeName?: string }>;
+  }
 ): Promise<GBPWriteResult> {
-  if (params.placeIds.length === 0) {
+  if (params.places.length === 0) {
     return {
       success: false,
       error: "At least one place is required to set a service area",
     };
   }
-  if (params.placeIds.length > MAX_SERVICE_AREA_PLACES) {
+  if (params.places.length > MAX_SERVICE_AREA_PLACES) {
     return {
       success: false,
-      error: `Google allows at most ${MAX_SERVICE_AREA_PLACES} service-area places (got ${params.placeIds.length})`,
+      error: `Google allows at most ${MAX_SERVICE_AREA_PLACES} service-area places (got ${params.places.length})`,
+    };
+  }
+
+  // A location that is not a service-area business has no businessType, and
+  // the narrow mask cannot supply one — the write would leave a serviceArea
+  // with places and no required businessType. Only profiles that already had
+  // places were ever probed, so refuse the untested case rather than find out
+  // on a client's listing.
+  let current: GBPServiceArea | null;
+  try {
+    current = await fetchCurrentServiceArea(params);
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: describeGoogleError(
+        error,
+        "Could not read the current service area before writing"
+      ),
+    };
+  }
+
+  const businessType = current?.businessType;
+  if (!businessType || businessType === "BUSINESS_TYPE_UNSPECIFIED") {
+    return {
+      success: false,
+      error:
+        "This location is not set up as a service-area business, and the " +
+        "serviceArea.places mask cannot set the required businessType. Set " +
+        "the business type in the Google Business Profile UI first.",
     };
   }
 
@@ -837,7 +848,13 @@ export async function pushServiceAreaToGBP(
     "serviceArea.places",
     {
       serviceArea: {
-        places: { placeInfos: params.placeIds.map((placeId) => ({ placeId })) },
+        places: {
+          placeInfos: params.places.map((place) =>
+            place.placeName
+              ? { placeId: place.placeId, placeName: place.placeName }
+              : { placeId: place.placeId }
+          ),
+        },
       },
     },
     "Unknown error pushing service area to GBP"

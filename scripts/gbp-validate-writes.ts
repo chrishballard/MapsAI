@@ -24,6 +24,7 @@
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
+import { looksRateLimited } from "../src/lib/google-errors";
 import {
   fetchCurrentHours,
   fetchCurrentSpecialHours,
@@ -66,7 +67,7 @@ async function check(
 ): Promise<Outcome> {
   const result = await run();
   if (result.success) return { kind: "pass", label };
-  if (/RESOURCE_EXHAUSTED|rate limit|Quota exceeded|429/i.test(result.error ?? "")) {
+  if (looksRateLimited(result.error)) {
     throw new RateLimited(`${label}: ${result.error}`);
   }
   return { kind: "fail", label, error: result.error ?? "unknown error" };
@@ -103,27 +104,17 @@ async function main() {
   const outcomes: Outcome[] = [];
   const queue: Array<() => Promise<Outcome>> = [];
 
-  const [
-    hours,
-    specialHours,
-    websiteUri,
-    categories,
-    title,
-    phoneNumbers,
-    serviceArea,
-    description,
-    services,
-  ] = await Promise.all([
-    fetchCurrentHours(profile),
-    fetchCurrentSpecialHours(profile),
-    fetchCurrentWebsiteUri(profile),
-    fetchCurrentCategories(profile),
-    fetchCurrentTitle(profile),
-    fetchCurrentPhoneNumbers(profile),
-    fetchCurrentServiceArea(profile),
-    fetchCurrentDescription(profile),
-    fetchCurrentServices(profile),
-  ]);
+  // Sequential, not Promise.all: nine reads fired at once would blow through
+  // the same limit the writes below are spaced out to respect.
+  const hours = await fetchCurrentHours(profile);
+  const specialHours = await fetchCurrentSpecialHours(profile);
+  const websiteUri = await fetchCurrentWebsiteUri(profile);
+  const categories = await fetchCurrentCategories(profile);
+  const title = await fetchCurrentTitle(profile);
+  const phoneNumbers = await fetchCurrentPhoneNumbers(profile);
+  const serviceArea = await fetchCurrentServiceArea(profile);
+  const description = await fetchCurrentDescription(profile);
+  const services = await fetchCurrentServices(profile);
 
   if (hours) {
     queue.push(() => check("regularHours", () => pushHoursToGBP({ ...target, regularHours: hours })));
@@ -167,12 +158,14 @@ async function main() {
     );
   } else outcomes.push({ kind: "skip", label: "phoneNumbers", why: "no primary phone" });
 
-  const placeIds = (serviceArea?.places?.placeInfos ?? [])
-    .map((p) => p.placeId)
-    .filter((id): id is string => Boolean(id));
-  if (placeIds.length > 0) {
+  // Names travel back with the ids — PlaceInfo.placeName is marked Required
+  // in the schema, so the echo has to be a real echo.
+  const places = (serviceArea?.places?.placeInfos ?? []).filter(
+    (p): p is { placeId: string; placeName?: string } => Boolean(p.placeId)
+  );
+  if (places.length > 0) {
     queue.push(() =>
-      check("serviceArea.places", () => pushServiceAreaToGBP({ ...target, placeIds }))
+      check("serviceArea.places", () => pushServiceAreaToGBP({ ...target, places }))
     );
   } else {
     outcomes.push({
@@ -241,7 +234,12 @@ async function main() {
   }
 
   await prisma.$disconnect();
-  process.exit(fail > 0 ? 1 : 0);
+  process.exit(fail > 0 || rateLimited ? 1 : 0);
 }
 
-main();
+// Every other script in this directory catches here; the fetches above throw.
+main().catch(async (error) => {
+  console.error(error);
+  await prisma.$disconnect().catch(() => {});
+  process.exit(1);
+});

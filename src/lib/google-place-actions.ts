@@ -5,10 +5,13 @@
  * Status on the Cloud project as of 2026-09-14: DISABLED. Every call comes
  * back 403 SERVICE_DISABLED for project 25337394982; the host itself routes
  * fine (an unauthenticated request answers 401), so enabling the API in the
- * console is the only thing standing in the way. Until then these functions
- * return ok:false with unavailable.reason === "SERVICE_DISABLED" and the
- * activation URL Google supplies, so the audit can say "cannot check" instead
- * of "none set".
+ * console is the only thing standing in the way. Until then this returns ok:false
+ * with unavailable.reason === "SERVICE_DISABLED" and the activation URL
+ * Google supplies, so a caller can distinguish "cannot check" from "none set"
+ * rather than reporting an outage as an empty result.
+ *
+ * Nothing in this repo calls it yet — the GBP audit is a skill that lives
+ * outside the app.
  */
 import { createGoogleClient } from "./google";
 import { GBPReadResult, readFailure } from "./google-errors";

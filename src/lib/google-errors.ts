@@ -80,11 +80,13 @@ export function serviceDisabledActivationUrl(error: unknown): string | null {
 export function isUnroutedHost(error: unknown): boolean {
   const e = error as GaxiosLikeError;
   if (e?.response?.status !== 404) return false;
+  // Gaxios parses JSON and leaves anything else a string, so Google's HTML
+  // error shell arrives as a string starting with "<" (verified against
+  // gaxios 7.1.3). A JSON 404 is an ordinary missing resource, whatever its
+  // body looks like — reporting that as an unrouted host would steer someone
+  // away from the console when the console may well be the fix.
   const data = e.response?.data;
-  if (typeof data === "string") return data.trimStart().startsWith("<");
-  // Gaxios only parses JSON; an HTML body arrives as a string, and a JSON 404
-  // (a genuinely missing resource) has an `error` object instead.
-  return data != null && typeof data === "object" && !("error" in data);
+  return typeof data === "string" && data.trimStart().startsWith("<");
 }
 
 /**
@@ -161,4 +163,19 @@ export function readFailure<T>(
     };
   }
   return { ok: false, error: describeGoogleError(error, fallback) };
+}
+
+/**
+ * Whether a described error is Google refusing further calls for now.
+ *
+ * Matches the text describeGoogleError produces, which for a 429 is the
+ * ErrorInfo reason — "RATE_LIMIT_EXCEEDED (...)" — and never contains the
+ * HTTP status or a space-separated "rate limit". Anything polling this API in
+ * a loop should back off on a true here rather than keep going.
+ */
+export function looksRateLimited(described: string | undefined): boolean {
+  if (!described) return false;
+  return /RATE[_ ]LIMIT|RESOURCE_EXHAUSTED|QUOTA[_ ]EXCEEDED|\b429\b/i.test(
+    described
+  );
 }
