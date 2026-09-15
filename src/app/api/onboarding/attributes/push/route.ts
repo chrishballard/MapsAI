@@ -22,8 +22,10 @@ const pushAttributesSchema = z.object({
         uriValues: z.array(z.object({ uri: z.string().max(2048) })).optional(),
       })
     )
-    .min(1)
     .max(200),
+  // Attributes the person cleared. They go into Google's attributeMask with
+  // no matching entry in the attributes list, which is how a delete is done.
+  removeAttributeIds: z.array(z.string().min(1).max(200)).max(200).optional(),
 });
 
 export async function POST(request: Request) {
@@ -50,6 +52,7 @@ export async function POST(request: Request) {
     googleAccountId: profile.googleAccountId,
     locationName: profile.locationName,
     attributes: body.attributes,
+    removeAttributeIds: body.removeAttributeIds,
   });
 
   if (!result.success) {
