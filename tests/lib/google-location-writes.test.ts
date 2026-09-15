@@ -586,3 +586,125 @@ describe('the storefront address guard', () => {
     ).toHaveLength(0);
   });
 });
+
+// Google answering 200 is not proof it did what the payload said: shape 2 in
+// the probe notes came back with the businessType silently overridden. So a
+// real from-zero write reads the profile back and checks the address is still
+// there. It cannot undo anything; it makes a silent loss loud.
+describe('the read-back after a from-zero write', () => {
+  const ADDRESS = { regionCode: 'US', locality: 'Charlotte' };
+  const GOOD = {
+    serviceArea: { businessType: 'CUSTOMER_AND_BUSINESS_LOCATION' },
+    storefrontAddress: ADDRESS,
+  };
+  /** The profile as it was before: storefront, no service area. */
+  const BEFORE = { serviceArea: undefined, storefrontAddress: ADDRESS };
+
+  /** Answer each GET from the queue in order; an Error entry is thrown. */
+  function withGets(...responses: unknown[]) {
+    let i = 0;
+    mocks.request.mockImplementation(async (opts: { method: string }) => {
+      if (opts.method !== 'GET') return { data: {} };
+      const next = responses[Math.min(i, responses.length - 1)];
+      i += 1;
+      if (next instanceof Error) throw next;
+      return { data: next };
+    });
+  }
+
+  const getCount = () =>
+    mocks.request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'GET')
+      .length;
+
+  const push = () =>
+    pushServiceAreaToGBP({ ...target, places: [{ placeId: 'ChIJ1' }] });
+
+  it('reads the profile back and passes when the address survived', async () => {
+    withGets(BEFORE, GOOD);
+
+    const result = await push();
+
+    expect(result).toEqual({ success: true });
+    expect(getCount()).toBe(2);
+  });
+
+  it('reports an address that vanished, and says the write already landed', async () => {
+    withGets(BEFORE, { serviceArea: { businessType: 'CUSTOMER_LOCATION_ONLY' } });
+
+    const result = await push();
+
+    expect(result.success).toBe(false);
+    expect(result.wrote).toBe(true);
+    expect(result.error).toContain('ADDRESS GONE');
+  });
+
+  // The exact failure the probe caught Google doing under a neighbouring mask.
+  it('reports a businessType that came back coerced', async () => {
+    withGets(BEFORE, {
+      serviceArea: { businessType: 'CUSTOMER_LOCATION_ONLY' },
+      storefrontAddress: ADDRESS,
+    });
+
+    const result = await push();
+
+    expect(result.success).toBe(false);
+    expect(result.wrote).toBe(true);
+    expect(result.error).toContain('BUSINESS TYPE CHANGED');
+  });
+
+  // Unverified must read as neither "fine" nor "the write failed".
+  it('reports an unverifiable result when the read-back itself fails', async () => {
+    withGets(BEFORE, new Error('socket hang up'));
+
+    const result = await push();
+
+    expect(result.success).toBe(false);
+    expect(result.wrote).toBe(true);
+    expect(result.error).toContain('unverified');
+    expect(result.error).toContain('socket hang up');
+  });
+
+  it('does not read back on a validateOnly run, which changed nothing', async () => {
+    withGets(BEFORE, GOOD);
+
+    const result = await pushServiceAreaToGBP({
+      ...target,
+      places: [{ placeId: 'ChIJ1' }],
+      validateOnly: true,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(getCount()).toBe(1);
+  });
+
+  // That path names neither storefrontAddress nor businessType, so there is
+  // nothing for a read-back to catch and the quota is better spent elsewhere.
+  it('does not read back on the narrow serviceArea.places path', async () => {
+    withGets({
+      serviceArea: { businessType: 'CUSTOMER_AND_BUSINESS_LOCATION' },
+      storefrontAddress: ADDRESS,
+    });
+
+    const result = await push();
+
+    expect(result).toEqual({ success: true });
+    expect(getCount()).toBe(1);
+  });
+
+  it('does not read back when Google rejected the write', async () => {
+    let gets = 0;
+    mocks.request.mockImplementation(async (opts: { method: string }) => {
+      if (opts.method === 'GET') {
+        gets += 1;
+        return { data: BEFORE };
+      }
+      throw { response: { status: 400, data: { error: { message: 'nope' } } } };
+    });
+
+    const result = await push();
+
+    expect(result.success).toBe(false);
+    expect(result.wrote).toBeUndefined();
+    expect(gets).toBe(1);
+  });
+});

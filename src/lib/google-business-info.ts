@@ -5,6 +5,14 @@ import { MAX_SERVICE_AREA_PLACES } from "./gbp-limits";
 export interface GBPWriteResult {
   success: boolean;
   error?: string;
+  /**
+   * True when Google accepted the write but something afterwards went wrong,
+   * so the profile HAS changed even though success is false. Only the
+   * storefront read-back sets it (see verifyStorefrontSurvived). A caller
+   * seeing this must not retry: the edit already landed, and what is needed
+   * is a person looking at the listing.
+   */
+  wrote?: boolean;
 }
 
 interface LocationWriteParams {
@@ -873,6 +881,69 @@ async function fetchServiceAreaContext(params: {
 }
 
 /**
+ * Read the profile back after a write that named storefrontAddress, and say
+ * what is wrong if the address did not survive it. Returns null when it did.
+ *
+ * storefrontRemovalRisk stops the shapes we know are dangerous before they
+ * are sent. This is the other half: confirming what Google actually did with
+ * a shape we believe is safe. The reason for both is shape 2 in
+ * pushServiceAreaToGBP's notes — Google answered 200 to a payload while
+ * silently overriding the businessType in it, so "Google accepted the write"
+ * and "the write did what it said" are not the same claim.
+ *
+ * It cannot undo anything. What it buys is finding out in the same second
+ * rather than whenever someone next looks at the listing.
+ *
+ * Only the from-zero path calls this, and only on a real write. The
+ * serviceArea.places path names neither storefrontAddress nor businessType,
+ * so there is nothing there for a read-back to catch, and a validateOnly call
+ * changed nothing to check. Both would just spend quota on an account Google
+ * rate-limits after about a dozen calls.
+ */
+async function verifyStorefrontSurvived(params: {
+  googleAccountId: string;
+  locationName: string;
+}): Promise<string | null> {
+  let after: {
+    serviceArea: GBPServiceArea | null;
+    storefrontAddress: GBPPostalAddress | null;
+  };
+  try {
+    after = await fetchServiceAreaContext(params);
+  } catch (error: unknown) {
+    // Unverified is not the same as broken, and must not read as either
+    // "fine" or "the write failed".
+    return (
+      "The service area was written, but reading the profile back to confirm " +
+      "the address survived FAILED, so the result is unverified. Check the " +
+      "listing by hand. Read error: " +
+      describeGoogleError(error, "unknown error")
+    );
+  }
+
+  const address = after.storefrontAddress;
+  if (!address || Object.keys(address).length === 0) {
+    return (
+      "ADDRESS GONE: the service area was written and the profile now has no " +
+      "storefront address. The map pin has lost its location. Restore the " +
+      "address in the Google Business Profile UI now."
+    );
+  }
+
+  if (after.serviceArea?.businessType === "CUSTOMER_LOCATION_ONLY") {
+    return (
+      "BUSINESS TYPE CHANGED: the service area was written and the profile " +
+      "came back as CUSTOMER_LOCATION_ONLY (pure service area) rather than " +
+      "CUSTOMER_AND_BUSINESS_LOCATION. The address is still on the record " +
+      "but Google hides it at this type. Fix it in the Google Business " +
+      "Profile UI now."
+    );
+  }
+
+  return null;
+}
+
+/**
  * Replace the places a service-area business serves, or give a storefront
  * profile its first service area.
  *
@@ -1034,7 +1105,7 @@ export async function pushServiceAreaToGBP(
     };
   }
 
-  return patchLocation(
+  const written = await patchLocation(
     params,
     "serviceArea,storefrontAddress",
     {
@@ -1052,4 +1123,12 @@ export async function pushServiceAreaToGBP(
     },
     "Unknown error adding a service area to GBP"
   );
+
+  // Nothing was sent, or nothing changed: no read-back to do.
+  if (!written.success || params.validateOnly) return written;
+
+  const problem = await verifyStorefrontSurvived(params);
+  if (problem) return { success: false, wrote: true, error: problem };
+
+  return written;
 }
