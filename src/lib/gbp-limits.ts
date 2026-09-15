@@ -16,3 +16,10 @@ export const MAX_SERVICE_NAME_LENGTH = 120;
  * types and the UI pre-checks all of them.
  */
 export const MAX_SERVICES_PER_GENERATE = 100;
+
+/**
+ * Google's cap on service-area places, enforced server-side as
+ * TOO_MANY_ENTRIES (`max_count: 20`). Checked before the PATCH so the caller
+ * gets a readable message instead of Google's opaque one.
+ */
+export const MAX_SERVICE_AREA_PLACES = 20;

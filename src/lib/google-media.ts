@@ -3,6 +3,11 @@ import { prisma } from "./prisma";
 import { newImageToken } from "./image-tokens";
 import { IMAGE_MIN_WIDTH, IMAGE_MIN_HEIGHT } from "./image-validation";
 import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
+import { describeGoogleError } from "./google-errors";
+import {
+  isPubliclyReachable,
+  resolvePostImageSourceUrl,
+} from "./image-urls";
 
 export interface GBPMediaItem {
   name: string; // "accounts/{a}/locations/{l}/media/{id}"
@@ -219,4 +224,178 @@ export async function syncProfileMediaToLibrary(
     removed: staleIds.length,
     total: photos.length,
   };
+}
+
+// --- Media writes ----------------------------------------------------------
+
+/**
+ * locationAssociation.category values seen on live profiles. PROFILE is the
+ * profile photo Maps shows as the business avatar (what a client means by
+ * "the logo"); LOGO is a separate, legacy category that Google still returns
+ * on a few older listings but is not what the profile picture uses.
+ */
+export type GBPMediaCategory =
+  | "COVER"
+  | "PROFILE"
+  | "LOGO"
+  | "EXTERIOR"
+  | "INTERIOR"
+  | "PRODUCT"
+  | "AT_WORK"
+  | "FOOD_AND_DRINK"
+  | "MENU"
+  | "COMMON_AREA"
+  | "ROOMS"
+  | "TEAMS"
+  | "ADDITIONAL";
+
+export interface GBPMediaWriteResult {
+  success: boolean;
+  /** Resource name of the created item, e.g. "accounts/1/locations/2/media/3". */
+  mediaName?: string;
+  error?: string;
+}
+
+interface CreateGBPMediaParams {
+  googleAccountId: string;
+  accountResourceName: string; // e.g. "accounts/123"
+  locationName: string; // e.g. "locations/456"
+  /**
+   * Publicly reachable https URL. Google fetches the bytes server-side at
+   * create time, exactly as it does for post media — build it with
+   * resolvePostImageSourceUrl so library uploads and GBP-hosted photos both
+   * work.
+   */
+  sourceUrl: string;
+  category: GBPMediaCategory;
+}
+
+/**
+ * Add a photo to a location through v4 media:create.
+ *
+ * Photos and the logo have no v1 equivalent — the Business Information API
+ * has no media surface at all — so this stays on v4, like listGBPMedia and
+ * createGBPPost.
+ *
+ * Two things to know before calling it:
+ *  - there is no validateOnly on this method, so there is no way to rehearse
+ *    an upload; the first call is a real photo on a real profile.
+ *  - PROFILE and COVER hold one image each, so uploading either REPLACES the
+ *    profile picture or cover photo that is on the listing now. ADDITIONAL
+ *    appends.
+ */
+export async function createGBPMedia(
+  params: CreateGBPMediaParams
+): Promise<GBPMediaWriteResult> {
+  if (!isPubliclyReachable(params.sourceUrl)) {
+    return {
+      success: false,
+      error: `sourceUrl must be a public https URL Google can fetch (got ${params.sourceUrl})`,
+    };
+  }
+
+  try {
+    const oauth2Client = await createGoogleClient(params.googleAccountId);
+    const parent = `${params.accountResourceName}/${params.locationName}`;
+
+    const response = await oauth2Client.request<{ name?: string }>({
+      url: `https://mybusiness.googleapis.com/v4/${parent}/media`,
+      method: "POST",
+      data: {
+        mediaFormat: "PHOTO",
+        locationAssociation: { category: params.category },
+        sourceUrl: params.sourceUrl,
+      },
+    });
+
+    return { success: true, mediaName: response.data.name };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: describeGoogleError(error, "Unknown error creating GBP media"),
+    };
+  }
+}
+
+type MediaTarget = Omit<CreateGBPMediaParams, "category">;
+
+/** Set the profile picture (the "logo"). Replaces the current one. */
+export async function pushLogoToGBP(
+  params: MediaTarget
+): Promise<GBPMediaWriteResult> {
+  return createGBPMedia({ ...params, category: "PROFILE" });
+}
+
+/** Set the cover photo. Replaces the current one. */
+export async function pushCoverPhotoToGBP(
+  params: MediaTarget
+): Promise<GBPMediaWriteResult> {
+  return createGBPMedia({ ...params, category: "COVER" });
+}
+
+/** Add a photo to the listing. Defaults to ADDITIONAL (job photos). */
+export async function pushPhotoToGBP(
+  params: MediaTarget & { category?: GBPMediaCategory }
+): Promise<GBPMediaWriteResult> {
+  return createGBPMedia({ ...params, category: params.category ?? "ADDITIONAL" });
+}
+
+/**
+ * Upload an image the library already holds. Resolves the profile's v4 parent
+ * and the image's public URL, so a caller only needs the two ids.
+ *
+ * The new photo is not written into the library here — the next
+ * syncProfileMediaToLibrary picks it up from Google with its real media name
+ * and dimensions, which keeps one writer for ProfileImage rows.
+ */
+export async function pushLibraryImageToGBP(params: {
+  profileId: string;
+  imageId: string;
+  category: GBPMediaCategory;
+}): Promise<GBPMediaWriteResult> {
+  const profile = await prisma.profile.findUnique({
+    where: { id: params.profileId },
+    select: {
+      googleAccountId: true,
+      accountResourceName: true,
+      locationName: true,
+    },
+  });
+  if (!profile) {
+    return { success: false, error: `Profile ${params.profileId} not found` };
+  }
+  if (!profile.accountResourceName) {
+    return {
+      success: false,
+      error: `Profile ${params.profileId} is missing accountResourceName`,
+    };
+  }
+
+  const image = await prisma.profileImage.findFirst({
+    where: { id: params.imageId, profileId: params.profileId },
+    select: { publicToken: true, googleUrl: true, thumbnailUrl: true },
+  });
+  if (!image) {
+    return {
+      success: false,
+      error: `Image ${params.imageId} not found on profile ${params.profileId}`,
+    };
+  }
+
+  const sourceUrl = resolvePostImageSourceUrl(image);
+  if (!sourceUrl) {
+    return {
+      success: false,
+      error:
+        "Image has no publicly reachable URL (NEXTAUTH_URL must be a public https origin)",
+    };
+  }
+
+  return createGBPMedia({
+    googleAccountId: profile.googleAccountId,
+    accountResourceName: profile.accountResourceName,
+    locationName: profile.locationName,
+    sourceUrl,
+    category: params.category,
+  });
 }

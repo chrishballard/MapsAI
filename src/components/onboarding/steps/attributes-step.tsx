@@ -10,27 +10,12 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { fetchJson, sendJson } from "@/lib/fetch-json";
-
-interface GBPAttribute {
-  attributeId: string;
-  displayName: string;
-  groupDisplayName: string;
-  valueType: "BOOL" | "ENUM" | "REPEATED_ENUM" | "URL";
-  currentValue: unknown;
-  valueMetadata?: Array<{ value: string; displayName: string }>;
-}
-
-interface AttributeState {
-  attributeId: string;
-  displayName: string;
-  groupDisplayName: string;
-  valueType: "BOOL" | "ENUM" | "REPEATED_ENUM" | "URL";
-  boolValue?: boolean;
-  enumValue?: string;
-  repeatedEnumValues?: string[];
-  urlValue?: string;
-  valueMetadata?: Array<{ value: string; displayName: string }>;
-}
+import {
+  buildAttributePush,
+  parseAttribute,
+  type AttributeState,
+  type GBPAttribute,
+} from "./attributes-payload";
 
 interface AttributesStepProps {
   profileId: string;
@@ -39,34 +24,6 @@ interface AttributesStepProps {
   // no auto-advance, no skip; pushes stay on the page and the form can be
   // edited and pushed again.
   standalone?: boolean;
-}
-
-function parseAttribute(attr: GBPAttribute): AttributeState {
-  const base = {
-    attributeId: attr.attributeId,
-    displayName: attr.displayName,
-    groupDisplayName: attr.groupDisplayName,
-    valueType: attr.valueType,
-    valueMetadata: attr.valueMetadata,
-  };
-
-  switch (attr.valueType) {
-    case "BOOL":
-      return { ...base, boolValue: attr.currentValue === true };
-    case "ENUM":
-      return { ...base, enumValue: (attr.currentValue as string) ?? "" };
-    case "REPEATED_ENUM": {
-      const repeated = attr.currentValue as { setValues?: string[]; unsetValues?: string[] } | null;
-      return {
-        ...base,
-        repeatedEnumValues: repeated?.setValues ?? [],
-      };
-    }
-    case "URL":
-      return { ...base, urlValue: (attr.currentValue as string) ?? "" };
-    default:
-      return base;
-  }
 }
 
 function groupAttributes(
@@ -163,47 +120,17 @@ export function AttributesStep({
     setPushError(null);
     setPushSuccess(false);
     try {
-      const payload = attributes
-        .map((attr) => {
-          switch (attr.valueType) {
-            case "BOOL":
-              return {
-                attributeId: attr.attributeId,
-                valueType: "BOOL",
-                values: [attr.boolValue ?? false],
-              };
-            case "ENUM":
-              if (!attr.enumValue) return null;
-              return {
-                attributeId: attr.attributeId,
-                valueType: "ENUM",
-                values: [attr.enumValue],
-              };
-            case "REPEATED_ENUM":
-              return {
-                attributeId: attr.attributeId,
-                valueType: "REPEATED_ENUM",
-                repeatedEnumValue: {
-                  setValues: attr.repeatedEnumValues ?? [],
-                  unsetValues: [],
-                },
-              };
-            case "URL":
-              if (!attr.urlValue) return null;
-              return {
-                attributeId: attr.attributeId,
-                valueType: "URL",
-                uriValues: [{ uri: attr.urlValue }],
-              };
-            default:
-              return null;
-          }
-        })
-        .filter(Boolean);
+      const { attributes: payload, removeAttributeIds } =
+        buildAttributePush(attributes);
+
+      if (payload.length === 0 && removeAttributeIds.length === 0) {
+        setPushError("Nothing to push — no attributes were changed.");
+        return;
+      }
 
       const data = await sendJson<{ success?: boolean; error?: string }>(
         "/api/onboarding/attributes/push",
-        { profileId, attributes: payload }
+        { profileId, attributes: payload, removeAttributeIds }
       );
       if (data.success) {
         setPushSuccess(true);
