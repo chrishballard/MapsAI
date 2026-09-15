@@ -11,13 +11,24 @@ import {
 // entry is deleted. The form lists every attribute the category offers —
 // around 40, most unset — so what is NOT sent matters as much as what is.
 
-function state(over: Partial<AttributeState> & Pick<AttributeState, 'attributeId' | 'valueType'>): AttributeState {
-  return {
-    displayName: over.attributeId,
+/** An attribute exactly as it came back from Google, before anyone edits it. */
+function loaded(
+  attributeId: string,
+  valueType: GBPAttribute['valueType'],
+  currentValue: unknown
+): AttributeState {
+  return parseAttribute({
+    attributeId,
+    displayName: attributeId,
     groupDisplayName: 'Other',
-    wasSet: false,
-    ...over,
-  };
+    valueType,
+    currentValue,
+  });
+}
+
+/** The person changes something in the form. `initial` stays as loaded. */
+function edit(attr: AttributeState, changes: Partial<AttributeState>): AttributeState {
+  return { ...attr, ...changes };
 }
 
 describe('parseAttribute', () => {
@@ -58,27 +69,46 @@ describe('parseAttribute', () => {
 });
 
 describe('buildAttributePush', () => {
-  // The regression that matters: before the attribute reads were fixed the
-  // form saw nothing, so this never bit. With the catalog working it lists
-  // ~40 attributes, and sending them all would write an explicit "false" onto
-  // every box nobody ticked.
-  it('does not send untouched, unticked BOOL attributes', () => {
+  // An untouched form must write nothing. A checkbox cannot show the
+  // difference between "unset" and "explicitly false", so pushing the
+  // checkbox state of every row would turn each deliberate "No" on the
+  // profile into a deletion.
+  it('pushes nothing at all when the person changed nothing', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'is_black_owned', valueType: 'BOOL', boolValue: false }),
-      state({ attributeId: 'has_restroom', valueType: 'BOOL', boolValue: false }),
-      state({ attributeId: 'has_parking_lot_free', valueType: 'BOOL', boolValue: true }),
+      loaded('has_parking_lot_free', 'BOOL', true),
+      loaded('has_wheelchair_accessible_entrance', 'BOOL', false),
+      loaded('is_black_owned', 'BOOL', null),
+      loaded('url_facebook', 'URL', 'https://facebook.com/badger'),
+      loaded('url_tiktok', 'URL', null),
     ]);
 
-    expect(result.attributes).toHaveLength(1);
-    expect(result.attributes[0].attributeId).toBe('has_parking_lot_free');
+    expect(result.attributes).toEqual([]);
     expect(result.removeAttributeIds).toEqual([]);
   });
 
-  it('sends a ticked BOOL as true', () => {
+  // Regression: an attribute Google holds as an explicit false reads as
+  // "no value" to hasValue(). Removing it on an untouched push would drop a
+  // deliberate "No" — which Maps displays — without anyone asking.
+  it('never removes an explicitly-false attribute the person did not touch', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'has_parking_lot_free', valueType: 'BOOL', boolValue: true }),
+      loaded('has_wheelchair_accessible_entrance', 'BOOL', false),
     ]);
 
+    expect(result.removeAttributeIds).toEqual([]);
+    expect(result.attributes).toEqual([]);
+  });
+
+  // The hazard that fixing the attribute reads exposed: the form lists every
+  // attribute the category offers (~40, most unset), and sending them all
+  // would write an explicit false onto every box nobody ticked.
+  it('does not send untouched, never-set BOOL attributes', () => {
+    const result = buildAttributePush([
+      loaded('is_black_owned', 'BOOL', null),
+      loaded('has_restroom', 'BOOL', null),
+      edit(loaded('has_parking_lot_free', 'BOOL', null), { boolValue: true }),
+    ]);
+
+    expect(result.attributes).toHaveLength(1);
     expect(result.attributes[0]).toEqual({
       attributeId: 'has_parking_lot_free',
       valueType: 'BOOL',
@@ -88,12 +118,7 @@ describe('buildAttributePush', () => {
 
   it('removes an attribute the person unticked', () => {
     const result = buildAttributePush([
-      state({
-        attributeId: 'has_parking_lot_free',
-        valueType: 'BOOL',
-        boolValue: false,
-        wasSet: true,
-      }),
+      edit(loaded('has_parking_lot_free', 'BOOL', true), { boolValue: false }),
     ]);
 
     expect(result.attributes).toEqual([]);
@@ -104,28 +129,46 @@ describe('buildAttributePush', () => {
   // payload, so it never reached the mask and stayed live on the profile.
   it('removes a URL the person cleared instead of silently keeping it', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'url_facebook', valueType: 'URL', urlValue: '', wasSet: true }),
+      edit(loaded('url_facebook', 'URL', 'https://facebook.com/badger'), { urlValue: '' }),
     ]);
 
     expect(result.attributes).toEqual([]);
     expect(result.removeAttributeIds).toEqual(['url_facebook']);
   });
 
-  it('never removes an attribute that was never set', () => {
+  it('sends an edited URL as its new value', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'url_tiktok', valueType: 'URL', urlValue: '', wasSet: false }),
-      state({ attributeId: 'some_enum', valueType: 'ENUM', enumValue: '', wasSet: false }),
+      edit(loaded('url_facebook', 'URL', 'https://facebook.com/old'), {
+        urlValue: 'https://facebook.com/new',
+      }),
     ]);
 
-    expect(result.attributes).toEqual([]);
+    expect(result.attributes).toEqual([
+      {
+        attributeId: 'url_facebook',
+        valueType: 'URL',
+        uriValues: [{ uri: 'https://facebook.com/new' }],
+      },
+    ]);
     expect(result.removeAttributeIds).toEqual([]);
   });
 
-  it('sends each value type in its own field', () => {
+  it('never removes a field that was already empty when the form loaded', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'a_enum', valueType: 'ENUM', enumValue: 'SOME_VALUE' }),
-      state({ attributeId: 'a_repeated', valueType: 'REPEATED_ENUM', repeatedEnumValues: ['X', 'Y'] }),
-      state({ attributeId: 'a_url', valueType: 'URL', urlValue: 'https://x.test' }),
+      loaded('url_tiktok', 'URL', null),
+      loaded('some_enum', 'ENUM', null),
+    ]);
+
+    expect(result.removeAttributeIds).toEqual([]);
+  });
+
+  it('sends each changed value type in its own field', () => {
+    const result = buildAttributePush([
+      edit(loaded('a_enum', 'ENUM', null), { enumValue: 'SOME_VALUE' }),
+      edit(loaded('a_repeated', 'REPEATED_ENUM', { setValues: [] }), {
+        repeatedEnumValues: ['X', 'Y'],
+      }),
+      edit(loaded('a_url', 'URL', null), { urlValue: 'https://x.test' }),
     ]);
 
     expect(result.attributes).toEqual([
@@ -141,11 +184,8 @@ describe('buildAttributePush', () => {
 
   it('emptying a REPEATED_ENUM that had values is a removal', () => {
     const result = buildAttributePush([
-      state({
-        attributeId: 'a_repeated',
-        valueType: 'REPEATED_ENUM',
+      edit(loaded('a_repeated', 'REPEATED_ENUM', { setValues: ['X'] }), {
         repeatedEnumValues: [],
-        wasSet: true,
       }),
     ]);
 
@@ -153,9 +193,11 @@ describe('buildAttributePush', () => {
     expect(result.removeAttributeIds).toEqual(['a_repeated']);
   });
 
-  it('a form where nothing is set produces an empty push, not a mask meaning "all"', () => {
+  it('does not treat a reordered REPEATED_ENUM as a change', () => {
     const result = buildAttributePush([
-      state({ attributeId: 'x', valueType: 'BOOL', boolValue: false }),
+      edit(loaded('a_repeated', 'REPEATED_ENUM', { setValues: ['X', 'Y'] }), {
+        repeatedEnumValues: ['Y', 'X'],
+      }),
     ]);
 
     expect(result.attributes).toEqual([]);

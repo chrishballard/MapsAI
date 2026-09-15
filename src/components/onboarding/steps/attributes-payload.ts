@@ -15,6 +15,13 @@
 
 export type GBPAttributeValueType = "BOOL" | "ENUM" | "REPEATED_ENUM" | "URL";
 
+interface InitialValue {
+  boolValue?: boolean;
+  enumValue?: string;
+  repeatedEnumValues?: string[];
+  urlValue?: string;
+}
+
 export interface GBPAttribute {
   attributeId: string;
   displayName: string;
@@ -35,6 +42,14 @@ export interface AttributeState {
    * and what makes clearing a field a deletion rather than a silent no-op.
    */
   wasSet: boolean;
+  /**
+   * The value as loaded, kept so a push can send only what the person
+   * actually changed. A checkbox cannot show the difference between "unset"
+   * and "explicitly false", so an untouched row must not be written at all —
+   * pushing the checkbox state would turn every deliberate "No" on the
+   * profile into a deletion.
+   */
+  initial: InitialValue;
   boolValue?: boolean;
   enumValue?: string;
   repeatedEnumValues?: string[];
@@ -61,16 +76,44 @@ export function parseAttribute(attr: GBPAttribute): AttributeState {
   };
 
   switch (attr.valueType) {
-    case "BOOL":
-      return { ...base, boolValue: attr.currentValue === true };
-    case "ENUM":
-      return { ...base, enumValue: (attr.currentValue as string) ?? "" };
-    case "REPEATED_ENUM":
-      return { ...base, repeatedEnumValues: repeated?.setValues ?? [] };
-    case "URL":
-      return { ...base, urlValue: (attr.currentValue as string) ?? "" };
+    case "BOOL": {
+      const boolValue = attr.currentValue === true;
+      return { ...base, boolValue, initial: { boolValue } };
+    }
+    case "ENUM": {
+      const enumValue = (attr.currentValue as string) ?? "";
+      return { ...base, enumValue, initial: { enumValue } };
+    }
+    case "REPEATED_ENUM": {
+      const repeatedEnumValues = repeated?.setValues ?? [];
+      const initial = { repeatedEnumValues: [...repeatedEnumValues] };
+      return { ...base, repeatedEnumValues, initial };
+    }
+    case "URL": {
+      const urlValue = (attr.currentValue as string) ?? "";
+      return { ...base, urlValue, initial: { urlValue } };
+    }
     default:
-      return base;
+      return { ...base, initial: {} };
+  }
+}
+
+/** Has the person changed this attribute since the form loaded? */
+export function isChanged(attr: AttributeState): boolean {
+  switch (attr.valueType) {
+    case "BOOL":
+      return (attr.boolValue ?? false) !== (attr.initial.boolValue ?? false);
+    case "ENUM":
+      return (attr.enumValue ?? "") !== (attr.initial.enumValue ?? "");
+    case "REPEATED_ENUM": {
+      const now = [...(attr.repeatedEnumValues ?? [])].sort();
+      const before = [...(attr.initial.repeatedEnumValues ?? [])].sort();
+      return now.length !== before.length || now.some((v, i) => v !== before[i]);
+    }
+    case "URL":
+      return (attr.urlValue ?? "") !== (attr.initial.urlValue ?? "");
+    default:
+      return false;
   }
 }
 
@@ -103,10 +146,21 @@ export interface AttributePushPayload {
   removeAttributeIds: string[];
 }
 
+/**
+ * Build the write for a form the person has edited.
+ *
+ * Only changed attributes travel, which is what keeps an untouched row
+ * untouched on the profile: Google derives its attributeMask from this
+ * payload, so anything absent is left exactly as it is. A changed attribute
+ * that now holds a value is written; a changed one that is now empty is
+ * removed.
+ */
 export function buildAttributePush(
   attributes: AttributeState[]
 ): AttributePushPayload {
-  const writes = attributes.filter(hasValue).map((attr): AttributeWrite => {
+  const changed = attributes.filter(isChanged);
+
+  const writes = changed.filter(hasValue).map((attr): AttributeWrite => {
     switch (attr.valueType) {
       case "BOOL":
         return { attributeId: attr.attributeId, valueType: "BOOL", values: [true] };
@@ -136,7 +190,7 @@ export function buildAttributePush(
 
   // Set when the form loaded, emptied since: unticking a box or clearing a
   // link has to actually remove it from the profile.
-  const removeAttributeIds = attributes
+  const removeAttributeIds = changed
     .filter((attr) => attr.wasSet && !hasValue(attr))
     .map((attr) => attr.attributeId);
 

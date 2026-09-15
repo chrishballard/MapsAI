@@ -124,7 +124,7 @@ export function AttributesStep({
         buildAttributePush(attributes);
 
       if (payload.length === 0 && removeAttributeIds.length === 0) {
-        setPushError("Nothing to push — no attributes are set.");
+        setPushError("Nothing to push — no attributes were changed.");
         return;
       }
 
