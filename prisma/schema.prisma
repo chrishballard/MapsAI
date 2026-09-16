@@ -87,6 +87,20 @@ model Profile {
   googleReviewCount   Int?
   googleAverageRating Float?
   reviewStatsSyncedAt DateTime?
+  // Google's OWN copy of the location's description and services, read back
+  // from the Business Information API on every location sync. Everything
+  // else on this location's description/services lives in ProfileDescription
+  // and ProfileService, which are RankMaps' drafts and pushes — a client can
+  // (and does) edit the profile straight in GBP without us, so those tables
+  // are not evidence of what the public sees.
+  //   null   = never synced, we do not know
+  //   ""     = Google returned no description
+  //   [] (googleServiceItems) = Google returned no service items
+  // googleServiceItems holds the raw serviceItems array as Google returns it
+  // (structuredServiceItem / freeFormServiceItem entries).
+  googleDescription     String?   @db.Text
+  googleServiceItems    Json?
+  googleProfileSyncedAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   posts           Post[]

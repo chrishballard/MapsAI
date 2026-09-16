@@ -135,6 +135,24 @@ export async function syncProfileReviews(
             }
           }
         }
+
+        // repliedExternally used to be written on create only, so an owner
+        // who answered a review in GBP after we first stored it stayed
+        // flagged unanswered forever. Re-read it on every pass. Our own
+        // published reply comes back as a reviewReply too, so a review with
+        // a PUBLISHED RankMaps response is left alone: flagging it external
+        // would erase the record of who actually wrote it.
+        const answeredOnGoogle = Boolean(gbpReview.reviewReply);
+        const ourReplyIsLive = existing.response?.status === "PUBLISHED";
+        if (
+          !ourReplyIsLive &&
+          existing.repliedExternally !== answeredOnGoogle
+        ) {
+          await prisma.review.update({
+            where: { id: existing.id },
+            data: { repliedExternally: answeredOnGoogle },
+          });
+        }
         continue;
       }
 

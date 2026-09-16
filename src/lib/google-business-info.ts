@@ -236,6 +236,36 @@ export async function fetchCurrentDescription(params: {
   return data.profile?.description ?? null;
 }
 
+/**
+ * What Google currently holds for a location's description and service items.
+ *
+ * One `locations.get` with readMask=profile,serviceItems, so a caller looping
+ * over an account spends one request per location instead of two.
+ *
+ * `description` is "" when Google returns the field empty and `serviceItems`
+ * is [] when there are none — the caller distinguishes "Google says nothing
+ * is set" from "we never asked", which is the whole point of storing it.
+ */
+export async function fetchGoogleProfileState(params: {
+  googleAccountId: string;
+  locationName: string;
+}): Promise<{ description: string; serviceItems: unknown[] }> {
+  const oauth2Client = await createGoogleClient(params.googleAccountId);
+
+  const response = await oauth2Client.request<{
+    profile?: { description?: string };
+    serviceItems?: unknown[];
+  }>({
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=profile,serviceItems`,
+    method: "GET",
+  });
+
+  return {
+    description: response.data.profile?.description ?? "",
+    serviceItems: response.data.serviceItems ?? [],
+  };
+}
+
 export async function pushDescriptionToGBP(
   params: LocationWriteParams & { description: string }
 ): Promise<GBPWriteResult> {
