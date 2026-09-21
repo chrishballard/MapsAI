@@ -22,12 +22,18 @@
  * GBP therefore read as having none. Same for services, and same for
  * `responseStatus` on reviews, which is RankMaps' own reply record and says
  * nothing about a reply the owner left in GBP (that is repliedExternally).
+ *
+ * `metrics30d` is a sum with no stated window, which the vault prints as
+ * "Last 30 days (totals)". `metricsWindow` beside it says which days were
+ * summed and whether the rows were daily or month-start aggregates. The
+ * totals themselves are unchanged; the vault reads that key.
  */
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { resolveReviewStats } from "../src/lib/review-stats";
 import { scriptPoolConfig } from "./db-timeouts";
+import { describeMetricsWindow } from "./metrics-window";
 
 // A client of its own, not the app's shared one in src/lib/prisma.ts: that one
 // has no timeouts, which is how this script came to wait for hours on a dead
@@ -110,6 +116,17 @@ async function main(): Promise<number> {
       directionRequests: 0,
       conversations: 0,
     }
+  );
+
+  // Which days those totals are actually a sum of. metrics30d is the same
+  // numbers it always was; this says what they cover, so the vault can stop
+  // calling any row count "the last 30 days" and hoping. Emitted even when
+  // there are no rows: granularity "none" with a null first/last row is the
+  // honest answer, and reads differently from a window nobody described.
+  const metricsWindow = describeMetricsWindow(
+    dailyMetrics.map((m) => m.date),
+    since30,
+    new Date()
   );
 
   const liveAgg = await prisma.review.aggregate({
@@ -219,6 +236,7 @@ async function main(): Promise<number> {
     keywords: profile.keywords.map((k) => ({ keyword: k.keyword, sortOrder: k.sortOrder })),
     cities: profile.cities.map((c) => ({ city: c.city, sortOrder: c.sortOrder })),
     metrics30d,
+    metricsWindow,
     monthlyKeywords: monthlyKeywords.map((m) => ({
       month: m.month.toISOString(),
       keyword: m.keyword,
