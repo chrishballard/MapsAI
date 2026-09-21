@@ -6,6 +6,13 @@
  *   pnpm tsx scripts/export-profile.ts <profileId>
  *
  * Emits one JSON object to stdout. Consumed by ~/VineyardGrowth/vault/scripts/sync-rankmaps.sh.
+ * Exits 0 on success, 2 when the profile does not exist, 1 on any other error.
+ *
+ * Every database call here is bounded: a connect timeout, a per-query timeout
+ * and TCP keepalive, all set in scripts/db-timeouts.ts, which also says why
+ * they live with the scripts and not in src/lib/prisma.ts.
+ * SCRIPT_DB_CONNECT_TIMEOUT_MS and SCRIPT_DB_QUERY_TIMEOUT_MS override the
+ * defaults (10s and 30s).
  *
  * Everything Google-side and everything RankMaps-side is emitted under
  * separate keys. They are not the same thing and were conflated until
@@ -17,14 +24,26 @@
  * nothing about a reply the owner left in GBP (that is repliedExternally).
  */
 import "dotenv/config";
-import { prisma } from "../src/lib/prisma";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../src/generated/prisma/client";
 import { resolveReviewStats } from "../src/lib/review-stats";
+import { scriptPoolConfig } from "./db-timeouts";
 
-async function main() {
+// A client of its own, not the app's shared one in src/lib/prisma.ts: that one
+// has no timeouts, which is how this script came to wait for hours on a dead
+// socket. Same construction otherwise, plus the limits.
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL!,
+    ...scriptPoolConfig(process.env),
+  }),
+});
+
+async function main(): Promise<number> {
   const profileId = process.argv[2];
   if (!profileId) {
     console.error("usage: export-profile.ts <profileId>");
-    process.exit(1);
+    return 1;
   }
 
   const profile = await prisma.profile.findUnique({
@@ -39,7 +58,7 @@ async function main() {
 
   if (!profile) {
     console.error(`profile not found: ${profileId}`);
-    process.exit(2);
+    return 2;
   }
 
   const since30 = new Date();
@@ -247,12 +266,39 @@ async function main() {
     exportedAt: new Date().toISOString(),
   };
 
-  process.stdout.write(JSON.stringify(out, null, 2));
-  await prisma.$disconnect();
+  await writeStdout(JSON.stringify(out, null, 2));
+  return 0;
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+// stdout is a pipe when the vault reads this, and a write to a pipe can still
+// be in flight when write() returns. Wait for it, because the process.exit()
+// at the bottom of this file would not.
+function writeStdout(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(text, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+// Closing the pool politely says goodbye on every connection, and on a dead
+// network that can wait as long as the query would have. By the time this runs
+// the export has already succeeded or failed, so the wait is capped.
+const DISCONNECT_WAIT_MS = 5_000;
+
+async function run(): Promise<void> {
+  try {
+    process.exitCode = await main();
+  } catch (err) {
+    console.error(err);
+    process.exitCode = 1;
+  } finally {
+    await Promise.race([
+      prisma.$disconnect().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, DISCONNECT_WAIT_MS)),
+    ]);
+  }
+}
+
+// An explicit exit with the code set above. Left to drain on its own, the
+// event loop stays alive for as long as any socket does, and a socket the
+// network dropped never closes.
+run().then(() => process.exit());
