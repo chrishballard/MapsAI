@@ -20,6 +20,8 @@ vi.stubGlobal('fetch', mocks.fetch);
 
 const { captionImage, captionImages, captionUncaptionedApproved } =
   await import('@/lib/image-captioner');
+// Not mocked: the captioner's `instanceof` check needs the real class.
+const { ClaudeRefusalError } = await import('@/lib/claude-refusal');
 
 function imageRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -194,6 +196,32 @@ describe('captionImage input selection', () => {
     expect(result).toMatchObject({ ok: false, skipped: 'TOO_LARGE' });
     const arg = mocks.prisma.profileImage.update.mock.calls[0][0];
     expect(arg.data).toEqual({ captionSkipReason: 'TOO_LARGE' });
+  });
+
+  it('persists REFUSED when Claude declines the photo, so no batch picks it up again', async () => {
+    // A safety classifier's decline is permanent for these bytes. Left
+    // unrecorded, every sync and post-generation batch re-sent the photo.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+    mocks.generate.mockRejectedValue(
+      new ClaudeRefusalError('Failed to parse image caption from Claude', 'bio')
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'REFUSED' });
+    const arg = mocks.prisma.profileImage.update.mock.calls[0][0];
+    expect(arg.data).toEqual({ captionSkipReason: 'REFUSED' });
+
+    // The next batch sees the stored skip and leaves the photo alone.
+    mocks.generate.mockClear();
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]), captionSkipReason: 'REFUSED' })
+    );
+    expect(await captionImage('img1')).toMatchObject({ ok: false, skipped: 'REFUSED' });
+    expect(mocks.generate).not.toHaveBeenCalled();
   });
 
   it('includes business context and the GBP category hint in the prompt', async () => {

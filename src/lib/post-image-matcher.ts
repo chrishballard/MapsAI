@@ -94,7 +94,10 @@ export async function matchPostsToSpecificImages(args: {
     system: MATCHER_SYSTEM_PROMPT,
     prompt,
     schema,
-    maxTokens: 1024,
+    // A pick from a list: `low` effort, and room for the (short) thinking
+    // that Opus 5.5 always does before the answer.
+    maxTokens: 4_096,
+    effort: "low",
     errorMessage: "Failed to parse image choices from Claude",
   });
 

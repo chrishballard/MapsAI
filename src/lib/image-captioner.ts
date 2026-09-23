@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { generate } from "./claude";
+import { ClaudeRefusalError } from "./claude-refusal";
 
 // The Vision API rejects oversized images; stay under its 5MB decoded cap
 // with margin. Uploads are usually captioned from the ~480px thumbnail, so
@@ -26,13 +27,17 @@ const MAX_TAGS = 5;
  * - FETCH_DENIED: the image host returned a 4xx — a stale Google CDN URL;
  *   the next media sync refreshes the URL and re-enqueues the caption.
  * - GONE: the row was deleted (before or during captioning).
+ * - REFUSED: Claude declined to caption the photo (stop_reason "refusal", a
+ *   safety classifier). The same bytes would be declined again, so retrying
+ *   only spends rate limit, and a mid-output refusal bills the image each time.
  */
 export type CaptionSkipReason =
   | "NO_INPUT"
   | "TOO_LARGE"
   | "UNSUPPORTED_TYPE"
   | "FETCH_DENIED"
-  | "GONE";
+  | "GONE"
+  | "REFUSED";
 
 export interface CaptionResult {
   imageId: string;
@@ -155,7 +160,10 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       },
     ],
       schema: CaptionSchema,
-      maxTokens: 500,
+      // Classification of one photo: `low` effort. Was 500 before thinking
+      // was always on; thinking now comes out of this budget first.
+      maxTokens: 4_096,
+      effort: "low",
       errorMessage: "Failed to parse image caption from Claude",
     });
   } catch (err) {
@@ -164,6 +172,12 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
     // as the permanent skip it is instead of burning billed retries.
     if (isDimensionRejection(err)) {
       return persistSkip(imageId, "TOO_LARGE");
+    }
+    // Same logic for a decline: permanent for these bytes, so record it rather
+    // than leave the row for every sync and generation batch to pick up again.
+    if (err instanceof ClaudeRefusalError) {
+      console.warn(`image-captioner: ${imageId}: ${err.message}`);
+      return persistSkip(imageId, "REFUSED");
     }
     throw err;
   }

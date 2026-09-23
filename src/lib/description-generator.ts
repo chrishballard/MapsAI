@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generate } from "./claude";
+import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 
 const DescriptionSchema = z.object({
   description: z.string(),
@@ -24,7 +25,9 @@ export async function generateDescription(profile: {
 - Do NOT use ALL CAPS for emphasis
 - Focus on: what the business does, what makes it unique, and the areas it serves
 - Write in a professional, informative tone that builds trust
-- If website content is provided, use it to understand the business's unique selling points, tone, and specific offerings`;
+- If website content is provided, use it to understand the business's unique selling points, tone, and specific offerings
+
+${PASTED_CONTENT_SYSTEM_NOTE}`;
 
   const userMessage = [
     `Business name: ${profile.name}`,
@@ -37,7 +40,7 @@ export async function generateDescription(profile: {
       ? `Service areas/cities: ${profile.cities.join(", ")}`
       : null,
     profile.websiteText
-      ? `\nWebsite content (extracted from their site):\n${profile.websiteText}`
+      ? `\nWebsite content (extracted from their site):\n${pastedContent(profile.websiteText)}`
       : null,
   ]
     .filter(Boolean)
@@ -48,7 +51,9 @@ export async function generateDescription(profile: {
       system: systemPrompt,
       prompt: messages,
       schema: DescriptionSchema,
-      maxTokens: 1024,
+      // Was 1024 before thinking was always on; the description is ~750 chars.
+      maxTokens: 8_192,
+      effort: "medium",
       errorMessage: "Failed to parse description from Claude",
     });
     return parsed.description;
