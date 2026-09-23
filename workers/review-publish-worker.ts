@@ -5,6 +5,11 @@ import { prisma } from "../src/lib/prisma";
 import { replyModeForRating } from "../src/lib/review-reply-mode";
 import { reviewResourceName } from "../src/lib/review-key";
 import {
+  checkHealthcareReply,
+  describeHealthcareIssues,
+  isHealthcareCategory,
+} from "../src/lib/healthcare";
+import {
   REVIEW_REMOVED_SKIP_MESSAGE,
   isReviewNotFound,
 } from "../src/lib/review-removal";
@@ -86,6 +91,49 @@ export const worker = new Worker<ReviewPublishJobData>(
         data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
       });
       return;
+    }
+
+    // Healthcare profiles never auto-publish (the sync drafts AUTO replies
+    // for approval there). This catches jobs queued before that rule, or
+    // before the profile's category changed to a healthcare one.
+    if (
+      reviewResponse.autoApproved &&
+      isHealthcareCategory(review.profile.category)
+    ) {
+      console.log(
+        `${review.profile.name} is a healthcare business, reverting auto-approved response ${reviewResponseId} to DRAFTED for a person to review`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
+      });
+      return;
+    }
+
+    // Last gate for healthcare: even a person's approval doesn't publish a
+    // reply that confirms a patient or repeats their care. The approve route
+    // refuses these too; this catches anything approved before that check
+    // existed, or re-queued by the sync.
+    if (isHealthcareCategory(review.profile.category)) {
+      const issues = checkHealthcareReply(reviewResponse.content, {
+        reviewerName: review.reviewerName,
+        officePhone: review.profile.phone,
+      });
+      if (issues.length > 0) {
+        const reason = describeHealthcareIssues(issues);
+        console.warn(
+          `Healthcare reply ${reviewResponseId} for ${review.profile.name} fails the privacy check (${reason}), reverting to DRAFTED instead of publishing`
+        );
+        await prisma.reviewResponse.update({
+          where: { id: reviewResponseId },
+          data: {
+            status: "DRAFTED",
+            errorMessage: `Held before publishing: ${reason}`,
+            autoApproved: false,
+          },
+        });
+        return;
+      }
     }
 
     // Address Google with the profile's *current* account and the review's

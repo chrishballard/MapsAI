@@ -103,7 +103,7 @@ describe('review routes with review management off', () => {
   it('refuses to bulk-approve a profile', async () => {
     mocks.prisma.profile.findUnique.mockResolvedValue({ reviewsEnabled: false });
 
-    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1' }));
+    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(res.status).toBe(409);
     expect(mocks.prisma.review.findMany).not.toHaveBeenCalled();
@@ -119,7 +119,7 @@ describe('review routes with review management on', () => {
     ]);
     mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
 
-    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1' }));
+    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ approved: 1 });

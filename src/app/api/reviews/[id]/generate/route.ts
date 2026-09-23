@@ -23,6 +23,7 @@ export async function POST(
         select: {
           name: true,
           category: true,
+          phone: true,
           reviewsEnabled: true,
           reviewInstructions: true,
         },
@@ -78,6 +79,7 @@ export async function POST(
     starRating: review.rating,
     reviewComment: review.comment,
     customInstructions: review.profile.reviewInstructions,
+    businessPhone: review.profile.phone,
   });
 
   // Upsert: create if none exists, update if it does. Either way this is a

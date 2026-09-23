@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
-    reviewResponse: { update: vi.fn(), upsert: vi.fn() },
+    reviewResponse: { update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   scheduleReviewPublish: vi.fn(),
@@ -72,7 +72,7 @@ describe('bulk approve with star modes', () => {
     ]);
     mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
 
-    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1' }));
+    const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(res.status).toBe(200);
     expect(mocks.prisma.review.findMany).toHaveBeenCalledWith(
@@ -94,7 +94,7 @@ describe('bulk approve with star modes', () => {
     ]);
     mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
 
-    await bulkApprovePOST(bulkRequest({ profileId: 'p1' }));
+    await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -112,7 +112,7 @@ describe('single approve with star modes', () => {
       response: { id: 'resp1', status: 'DRAFTED' },
       profile: { reviewsEnabled: true },
     });
-    mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await approvePOST(
       new Request('http://localhost:3000/api/reviews/rev1/approve', {
@@ -122,7 +122,7 @@ describe('single approve with star modes', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith(
+    expect(mocks.prisma.reviewResponse.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { status: 'APPROVED', autoApproved: false },
       })

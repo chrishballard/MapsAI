@@ -4,6 +4,7 @@ import { generateReviewResponse } from "../review-responder";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
 import { normalizeReviewKey } from "../review-key";
 import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
+import { isHealthcareCategory } from "../healthcare";
 import {
   replyModeForRating,
   type StarReplyModes,
@@ -13,6 +14,7 @@ interface ReviewSyncProfile extends StarReplyModes {
   id: string;
   name: string;
   category: string | null;
+  phone?: string | null;
   googleAccountId: string;
   accountResourceName: string | null;
   locationName: string;
@@ -28,7 +30,8 @@ export interface SyncProfileReviewsOptions {
  * Fetch all reviews from the GBP API for one profile, store new ones, and
  * handle each per the profile's star reply mode: IGNORE stores the review
  * only, DRAFT adds an AI reply awaiting approval, AUTO approves and queues
- * publishing. Reviews that already have a reply on Google were answered
+ * publishing. Healthcare profiles (see healthcare.ts) never auto-publish:
+ * AUTO drafts for approval there, like DRAFT. Reviews that already have a reply on Google were answered
  * outside RankMaps — they're stored so the dashboard shows them, but never
  * get a generated or published response.
  *
@@ -195,9 +198,13 @@ export async function syncProfileReviews(
           starRating: rating,
           reviewComment: review.comment,
           customInstructions: profile.reviewInstructions,
+          businessPhone: profile.phone,
         });
 
-        const autoApprove = mode === "AUTO";
+        // A healthcare reply always waits for a person, whatever the star
+        // mode says: one that confirms a reviewer is a patient is a HIPAA
+        // disclosure the moment it publishes.
+        const autoApprove = mode === "AUTO" && !isHealthcareCategory(profile.category);
 
         const reviewResponse = await prisma.reviewResponse.create({
           data: {
