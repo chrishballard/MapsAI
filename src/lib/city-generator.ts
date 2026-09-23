@@ -1,12 +1,17 @@
 import { z } from "zod";
 import { generate } from "./claude";
+import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 
 const CitySuggestionsSchema = z.object({
   cities: z
     .array(
       z.object({
         city: z.string(),
-        reasoning: z.string(),
+        // A one-line answer shown beside the suggestion in onboarding, not a
+        // write-up of the model's thinking.
+        reasoning: z
+          .string()
+          .describe("One short sentence on why this business likely serves this city."),
       })
     )
     .min(3)
@@ -27,14 +32,16 @@ Rules:
 - Format each city as "City, State" (e.g., "Austin, TX")
 - Focus on cities within a realistic service radius for this type of business
 - If website content mentions specific service areas, use those
-- If you can identify the business location from the address, suggest surrounding cities`;
+- If you can identify the business location from the address, suggest surrounding cities
+
+${PASTED_CONTENT_SYSTEM_NOTE}`;
 
   const userMessage = [
     `Business name: ${profile.name}`,
     profile.category ? `Category: ${profile.category}` : null,
     profile.address ? `Address: ${profile.address}` : null,
     profile.websiteText
-      ? `\nWebsite content (extracted from their site):\n${profile.websiteText}`
+      ? `\nWebsite content (extracted from their site):\n${pastedContent(profile.websiteText)}`
       : null,
   ]
     .filter(Boolean)
@@ -44,7 +51,9 @@ Rules:
     system: systemPrompt,
     prompt: userMessage,
     schema: CitySuggestionsSchema,
-    maxTokens: 1024,
+    // Was 1024 before thinking was always on; the list itself is small.
+    maxTokens: 8_192,
+    effort: "medium",
     errorMessage: "Failed to parse city suggestions from Claude",
   });
 

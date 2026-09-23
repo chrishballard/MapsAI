@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generate } from "./claude";
+import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 import { MAX_SERVICE_DESCRIPTION_LENGTH } from "./gbp-limits";
 
 const ServiceDescriptionSchema = z.object({
@@ -102,7 +103,9 @@ Rules:
 - Focus on: what the service includes, why customers choose this business for it, and what makes their approach unique
 - Do NOT include phone numbers, URLs, or promotional language (e.g. "best", "#1", "call now")
 - Do NOT use ALL CAPS for emphasis
-- If website content is provided, use it to understand how the business describes its own services and mirror that tone and detail`;
+- If website content is provided, use it to understand how the business describes its own services and mirror that tone and detail
+
+${PASTED_CONTENT_SYSTEM_NOTE}`;
 
   const userMessage = [
     `Business name: ${context.businessName}`,
@@ -115,7 +118,7 @@ Rules:
       ? `Service areas/cities: ${context.cities.join(", ")}`
       : null,
     context.websiteText
-      ? `\nWebsite content (extracted from their site):\n${context.websiteText}`
+      ? `\nWebsite content (extracted from their site):\n${pastedContent(context.websiteText)}`
       : null,
     `\nServices to describe:\n${serviceNames.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
   ]
@@ -126,7 +129,10 @@ Rules:
     system: systemPrompt,
     prompt: userMessage,
     schema: ServiceDescriptionSchema,
-    maxTokens: 4096,
+    // Was 4096 before thinking was always on. 16_384 is the non-streaming
+    // ceiling this repo keeps to (see src/lib/claude.ts).
+    maxTokens: 16_384,
+    effort: "medium",
     errorMessage: "Failed to parse service descriptions from Claude",
   });
 

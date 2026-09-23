@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 
 // Module-level in-memory cache — shared across requests within one server process
@@ -47,7 +48,11 @@ async function getNarrative(
   try {
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 256,
+      // Opus 5.5 always thinks, and thinking comes out of max_tokens before
+      // the three sentences do (256 was sized for a model that did not think).
+      // `low` effort because the page render waits on this call.
+      max_tokens: 2_048,
+      output_config: { effort: "low" },
       messages: [
         {
           role: "user",
@@ -65,7 +70,17 @@ Write 3 professional sentences summarizing performance and key trends. Be specif
       ],
     });
 
-    const text = (message.content[0] as { type: string; text: string }).text;
+    // Read by block type: the response starts with a `thinking` block (empty
+    // text by default), so content[0] is no longer the answer. A refusal, or
+    // a reply that ran out of room, falls back like any other failure, and is
+    // not cached.
+    if (message.stop_reason === "refusal") throw new Error("summary declined by Claude");
+    const text = message.content
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("")
+      .trim();
+    if (!text || message.stop_reason === "max_tokens") throw new Error("summary incomplete");
 
     // Cache the result
     narrativeCache.set(cacheKey, { text, cachedAt: Date.now() });

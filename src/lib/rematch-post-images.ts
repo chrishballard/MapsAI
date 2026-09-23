@@ -444,7 +444,10 @@ async function matchChunk(
     system: MATCHER_SYSTEM_PROMPT,
     prompt,
     schema,
-    maxTokens: 2048,
+    // Same matcher prompt as post-image-matcher.ts, so the same `low` effort;
+    // was 2048 before thinking was always on.
+    maxTokens: 8_192,
+    effort: "low",
     errorMessage: "Failed to parse rematch decisions from Claude",
   });
 

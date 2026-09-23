@@ -40,7 +40,9 @@ export async function generateMonthlyPosts(
     system: systemPrompt,
     prompt: userMessage,
     schema: BatchPostsSchema,
-    maxTokens: 2048,
+    // Was 2048 before thinking was always on.
+    maxTokens: 8_192,
+    effort: "medium",
   });
 
   // Validate GBP hard limit of 1500 chars per post
