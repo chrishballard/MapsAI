@@ -4,13 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { Prisma, ReviewResponseStatus } from "@/generated/prisma/client";
 import { ReviewFilters } from "./review-filters";
 import {
-  ReviewActions,
+  ReviewReplyPanel,
   SyncButton,
   BulkApproveButton,
 } from "./review-actions";
 import { ReviewSettingsPanel } from "./review-settings-panel";
 import { getSelectedProfileId } from "@/lib/selected-profile";
-import { replyModeForRating } from "@/lib/review-reply-mode";
+import { bulkApprovableReviewsWhere } from "@/lib/review-bulk-approve";
+import { isHealthcareCategory } from "@/lib/healthcare";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -97,7 +98,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
     where.response = { status: validResponseStatus };
   }
 
-  const [reviews, selectedProfile] = await Promise.all([
+  const [reviews, selectedProfile, draftCount] = await Promise.all([
     prisma.review.findMany({
       where,
       include: {
@@ -106,12 +107,8 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             id: true,
             name: true,
             category: true,
+            phone: true,
             reviewsEnabled: true,
-            reviewReplyMode1: true,
-            reviewReplyMode2: true,
-            reviewReplyMode3: true,
-            reviewReplyMode4: true,
-            reviewReplyMode5: true,
           },
         },
         response: true,
@@ -124,6 +121,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
           select: {
             id: true,
             name: true,
+            category: true,
             reviewsEnabled: true,
             reviewInstructions: true,
             reviewReplyMode1: true,
@@ -134,6 +132,12 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
           },
         })
       : null,
+    // Counted with the same filter Approve all uses (whatever the page's
+    // rating/status filters show), so the number the operator types to
+    // confirm is the number that publishes.
+    profileId
+      ? prisma.review.count({ where: bulkApprovableReviewsWhere(profileId) })
+      : 0,
   ]);
 
   // Bulk approve targets the selected profile only, so it follows that
@@ -141,14 +145,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
   // (below), which matters in the "All Businesses" view where reviews from
   // enabled and disabled profiles are listed together.
   const reviewsDisabled = selectedProfile ? !selectedProfile.reviewsEnabled : false;
-
-  // Drafts for ratings set to Ignore are hidden from the pending queue and
-  // skipped by bulk approve, so they don't count toward the button either.
-  const draftCount = reviews.filter(
-    (r) =>
-      r.response?.status === "DRAFTED" &&
-      replyModeForRating(r.profile, r.rating) !== "IGNORE"
-  ).length;
+  const selectedIsHealthcare = isHealthcareCategory(selectedProfile?.category);
 
   const hasFilters = rating || responseStatus;
 
@@ -188,6 +185,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             <BulkApproveButton
               profileId={profileId}
               draftCount={draftCount}
+              healthcare={selectedIsHealthcare}
             />
           )}
           {/* Sync is global — it sweeps every profile that still has review
@@ -208,6 +206,7 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
           reviewsEnabled={selectedProfile.reviewsEnabled}
           reviewInstructions={selectedProfile.reviewInstructions}
           replyModes={selectedProfile}
+          healthcare={selectedIsHealthcare}
         />
       )}
 
@@ -303,38 +302,25 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
                           )}
                         </div>
 
-                        {review.response && (
-                          <div className="mt-3 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
-                            <p className="text-xs font-medium text-zinc-400 mb-1">
-                              AI Response
-                            </p>
-                            <p className="text-sm text-zinc-600">
-                              {review.response.content}
-                            </p>
-                            {review.response.status === "FAILED" &&
-                              review.response.errorMessage && (
-                                <p className="text-xs text-red-600 mt-2 truncate">
-                                  Error: {review.response.errorMessage}
-                                </p>
-                              )}
-                            {review.response.status === "SKIPPED" &&
-                              review.response.errorMessage && (
-                                <p className="text-xs text-amber-600 mt-2 truncate">
-                                  {review.response.errorMessage}
-                                </p>
-                              )}
-                          </div>
-                        )}
+                        <ReviewReplyPanel
+                          // Remount when the stored reply changes, so an
+                          // open editor never shows a stale draft.
+                          key={`${review.response?.status}:${review.response?.updatedAt?.toISOString()}`}
+                          reviewId={review.id}
+                          reviewerName={review.reviewerName}
+                          response={
+                            review.response && {
+                              content: review.response.content,
+                              status: review.response.status,
+                              errorMessage: review.response.errorMessage,
+                            }
+                          }
+                          repliedExternally={review.repliedExternally}
+                          reviewsDisabled={!review.profile.reviewsEnabled}
+                          healthcare={isHealthcareCategory(review.profile.category)}
+                          officePhone={review.profile.phone}
+                        />
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <ReviewActions
-                        reviewId={review.id}
-                        responseStatus={review.response?.status || null}
-                        repliedExternally={review.repliedExternally}
-                        reviewsDisabled={!review.profile.reviewsEnabled}
-                      />
                     </div>
                   </div>
                 </Card>

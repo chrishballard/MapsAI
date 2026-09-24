@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, ShieldAlert, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { StarReplyModeRows } from "@/components/reviews/star-reply-mode-rows";
 import { sendJson } from "@/lib/fetch-json";
@@ -25,6 +25,8 @@ interface ReviewSettingsPanelProps {
   reviewsEnabled: boolean;
   reviewInstructions: string | null;
   replyModes: StarReplyModes;
+  /** Google category is a healthcare one: stricter replies, nothing auto-publishes. */
+  healthcare?: boolean;
 }
 
 export function ReviewSettingsPanel({
@@ -33,6 +35,7 @@ export function ReviewSettingsPanel({
   reviewsEnabled: initialEnabled,
   reviewInstructions,
   replyModes,
+  healthcare,
 }: ReviewSettingsPanelProps) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -185,6 +188,19 @@ export function ReviewSettingsPanel({
             pendingRating={pendingRating}
           />
         </div>
+        {healthcare && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 max-w-2xl">
+            <ShieldAlert size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-900">
+              {profileName} is a healthcare business, so replies follow patient
+              privacy rules: they never confirm a reviewer is a patient or
+              mention a visit, treatment, appointment, bill or insurance.
+              Nothing publishes without a person approving it: ratings set to
+              reply automatically are drafted for approval instead, and
+              Approve all is off.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Train RankMaps */}
@@ -201,9 +217,9 @@ export function ReviewSettingsPanel({
           drafted from now on.
         </p>
         <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
-          A few rules always win, whatever you put here: replies never promise
-          refunds, discounts, or compensation, and never include phone numbers,
-          email addresses, links, or promo codes.
+          {healthcare
+            ? "A few rules always win, whatever you put here: replies never promise refunds, discounts, or compensation, never include email addresses, links, promo codes, or any phone number but the office's, and never break the patient privacy rules above."
+            : "A few rules always win, whatever you put here: replies never promise refunds, discounts, or compensation, and never include phone numbers, email addresses, links, or promo codes."}
         </p>
         <textarea
           value={instructions}

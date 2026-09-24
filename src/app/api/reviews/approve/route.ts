@@ -1,25 +1,41 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
-import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
+import { idSchema, parseBody } from "@/lib/api-validation";
 import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
 } from "@/lib/reviews-enabled";
-import { ratingNotIgnoredFilter } from "@/lib/review-reply-mode";
+import { bulkApprovableReviewsWhere } from "@/lib/review-bulk-approve";
+import {
+  HEALTHCARE_BULK_APPROVE_HELD_ERROR,
+  isHealthcareCategory,
+} from "@/lib/healthcare";
+
+/**
+ * Approve all publishes every live draft on a profile exactly as written,
+ * so the caller must confirm how many it is approving. If the queue has
+ * changed since the operator confirmed (a sync drafted more, someone else
+ * approved some), nothing is approved and the current count comes back.
+ */
+const bulkApproveBodySchema = z.object({
+  profileId: idSchema,
+  confirmCount: z.number().int().positive(),
+});
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
   if (unauthorized) return unauthorized;
 
-  const parsed = await parseBody(request, profileIdBodySchema);
+  const parsed = await parseBody(request, bulkApproveBodySchema);
   if (parsed.error) return parsed.error;
-  const { profileId } = parsed.data;
+  const { profileId, confirmCount } = parsed.data;
 
   const profile = await prisma.profile.findUnique({
     where: { id: profileId },
-    select: { reviewsEnabled: true },
+    select: { reviewsEnabled: true, category: true },
   });
 
   if (!profile) {
@@ -33,18 +49,17 @@ export async function POST(request: Request) {
     );
   }
 
-  // Find all reviews for profile with DRAFTED responses — excluding reviews
-  // that were already replied to outside RankMaps, and ratings set to
-  // Ignore: their drafts are hidden from the pending queue, so "approve
-  // all" must not publish them behind the operator's back.
+  // A healthcare reply must be read before it publishes, so there is no
+  // bulk path for these profiles at all.
+  if (isHealthcareCategory(profile.category)) {
+    return NextResponse.json(
+      { error: HEALTHCARE_BULK_APPROVE_HELD_ERROR },
+      { status: 409 }
+    );
+  }
+
   const reviews = await prisma.review.findMany({
-    where: {
-      profileId,
-      repliedExternally: false,
-      removedAt: null,
-      response: { status: "DRAFTED" },
-      ...ratingNotIgnoredFilter(),
-    },
+    where: bulkApprovableReviewsWhere(profileId),
     include: { response: true },
   });
 
@@ -52,6 +67,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "No drafted responses found for this profile" },
       { status: 404 }
+    );
+  }
+
+  if (reviews.length !== confirmCount) {
+    return NextResponse.json(
+      {
+        error: `There are now ${reviews.length} drafted replies, not the ${confirmCount} you confirmed. Nothing was approved. Refresh and check them again.`,
+        draftCount: reviews.length,
+      },
+      { status: 409 }
     );
   }
 

@@ -6,6 +6,26 @@ import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
 } from "@/lib/reviews-enabled";
+import {
+  checkHealthcareReply,
+  describeHealthcareIssues,
+  isHealthcareCategory,
+} from "@/lib/healthcare";
+
+/**
+ * Optional body: the reply text the operator is looking at. When given,
+ * approval only goes through if the stored draft still says exactly that,
+ * so Approve never publishes text someone else edited or regenerated after
+ * the page loaded.
+ */
+async function readExpectedContent(request: Request): Promise<string | null> {
+  try {
+    const body = (await request.json()) as { content?: unknown } | null;
+    return typeof body?.content === "string" ? body.content : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(
   request: Request,
@@ -20,7 +40,9 @@ export async function POST(
     where: { id },
     include: {
       response: true,
-      profile: { select: { reviewsEnabled: true } },
+      profile: {
+        select: { reviewsEnabled: true, category: true, phone: true },
+      },
     },
   });
 
@@ -63,16 +85,61 @@ export async function POST(
     );
   }
 
+  const expectedContent = await readExpectedContent(request);
+  if (expectedContent !== null && expectedContent !== review.response.content) {
+    return NextResponse.json(
+      {
+        error:
+          "This reply changed since you opened the page. Refresh and read it again before approving.",
+      },
+      { status: 409 }
+    );
+  }
+
+  // Healthcare: the reply must pass the privacy check before a person can
+  // approve it. Edit the text until it does.
+  if (isHealthcareCategory(review.profile.category)) {
+    const issues = checkHealthcareReply(review.response.content, {
+      reviewerName: review.reviewerName,
+      officePhone: review.profile.phone,
+    });
+    if (issues.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Edit this reply before approving it. ${describeHealthcareIssues(issues)}.`,
+          issues,
+        },
+        { status: 422 }
+      );
+    }
+  }
+
   // A person clicked Approve — clear autoApproved so the publish worker
-  // treats this as a human decision, whatever the star mode is now.
-  const updatedResponse = await prisma.reviewResponse.update({
-    where: { id: review.response.id },
+  // treats this as a human decision, whatever the star mode is now. Only
+  // the draft that was checked above is approved: if it was edited,
+  // regenerated or approved in the meantime, nothing changes.
+  const approved = await prisma.reviewResponse.updateMany({
+    where: {
+      id: review.response.id,
+      status: "DRAFTED",
+      content: review.response.content,
+    },
     data: { status: "APPROVED", autoApproved: false },
   });
 
+  if (approved.count === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "This reply changed while you were approving it. Refresh and read it again.",
+      },
+      { status: 409 }
+    );
+  }
+
   // Queue for publishing
   try {
-    await scheduleReviewPublish(updatedResponse.id);
+    await scheduleReviewPublish(review.response.id);
   } catch (err) {
     console.warn(
       "Failed to queue review response for publishing (Redis may be unavailable):",
