@@ -81,8 +81,20 @@ export async function syncLocationsForAccount(googleAccountId: string) {
     auth: oauth2Client,
   });
 
-  const accountsRes = await mybusinessaccountmanagement.accounts.list();
-  const accounts = accountsRes.data.accounts || [];
+  // accounts.list returns at most 20 accounts a page (the personal account
+  // plus every location group the login belongs to). Reading only the first
+  // page silently dropped every location under account 21 onwards, and the
+  // disconnect sweep below then marked them disconnected.
+  const accounts = [];
+  let accountsPageToken: string | undefined;
+  do {
+    const accountsRes = await mybusinessaccountmanagement.accounts.list({
+      pageSize: 20,
+      pageToken: accountsPageToken,
+    });
+    accounts.push(...(accountsRes.data.accounts || []));
+    accountsPageToken = accountsRes.data.nextPageToken || undefined;
+  } while (accountsPageToken);
 
   const syncedProfiles = [];
 

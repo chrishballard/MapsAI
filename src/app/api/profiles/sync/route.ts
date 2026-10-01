@@ -8,9 +8,13 @@ export async function POST() {
   if (unauthorized) return unauthorized;
 
   try {
-    const googleAccounts = await prisma.googleAccount.findMany({
-      where: { needsReauth: false },
-    });
+    const allAccounts = await prisma.googleAccount.findMany();
+    const googleAccounts = allAccounts.filter((a) => !a.needsReauth);
+    // A login whose Google grant was revoked is skipped, but say so: its
+    // locations never reach "Add a business" until it is reconnected.
+    const needsReauth = allAccounts
+      .filter((a) => a.needsReauth)
+      .map((a) => a.googleEmail);
     let totalSynced = 0;
     const failures: string[] = [];
 
@@ -30,6 +34,7 @@ export async function POST() {
     return NextResponse.json({
       count: totalSynced,
       ...(failures.length > 0 ? { failedAccounts: failures } : {}),
+      ...(needsReauth.length > 0 ? { needsReauth } : {}),
     });
   } catch (error) {
     console.error("Profile sync error:", error);
