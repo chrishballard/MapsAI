@@ -14,7 +14,18 @@ export function ResyncButton() {
       const res = await fetch("/api/profiles/sync", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        alert(`Synced ${data.count} profiles successfully.`);
+        const failed: string[] = data.failedAccounts ?? [];
+        const reauth: string[] = data.needsReauth ?? [];
+        const problems = [
+          failed.length > 0 && `Sync failed for ${failed.join(", ")}.`,
+          reauth.length > 0 &&
+            `Skipped ${reauth.join(", ")}: Google access expired, reconnect with "Connect another Google account".`,
+        ].filter(Boolean);
+        alert(
+          problems.length > 0
+            ? `Synced ${data.count} profiles.\n\n${problems.join("\n")}`
+            : `Synced ${data.count} profiles successfully.`
+        );
         router.refresh();
       } else {
         alert(`Sync failed: ${data.error}`);
