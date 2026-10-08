@@ -49,6 +49,30 @@ interface GenerateOptions<Schema extends z.ZodType> {
   effort: ClaudeEffort;
   /** Error message thrown when Claude returns no parseable output. */
   errorMessage?: string;
+  /**
+   * Prompt-cache the system prompt (and the output schema, which renders
+   * with it) for call sites whose system prompt repeats across calls within
+   * 5 minutes. Reads cost a twentieth of the input price on Opus 5.5; below
+   * the 512-token minimum the API silently ignores the marker.
+   */
+  cacheSystem?: boolean;
+  /** Call-site name for the CLAUDE_USAGE_LOG line. */
+  label?: string;
+}
+
+/**
+ * Log one response's token usage when CLAUDE_USAGE_LOG=1. The cache fields
+ * are the only ground truth that prompt caching is hitting: a cached call
+ * site whose cache_read stays 0 on repeat calls has a broken prefix.
+ */
+export function logUsage(label: string, usage: Anthropic.Usage): void {
+  if (process.env.CLAUDE_USAGE_LOG !== "1") return;
+  console.log(
+    `[claude-usage] ${label} input=${usage.input_tokens} ` +
+      `cache_write=${usage.cache_creation_input_tokens ?? 0} ` +
+      `cache_read=${usage.cache_read_input_tokens ?? 0} ` +
+      `output=${usage.output_tokens}`
+  );
 }
 
 /**
@@ -77,7 +101,15 @@ export async function generate<Schema extends z.ZodType>(
   const message = await anthropic.messages.parse({
     model: CLAUDE_MODEL,
     max_tokens: options.maxTokens,
-    system: options.system,
+    system: options.cacheSystem
+      ? [
+          {
+            type: "text",
+            text: options.system,
+            cache_control: { type: "ephemeral" },
+          },
+        ]
+      : options.system,
     messages,
     output_config: {
       effort: options.effort,
@@ -94,6 +126,7 @@ export async function generate<Schema extends z.ZodType>(
       },
     },
   });
+  logUsage(options.label ?? "generate", message.usage);
 
   throwIfRefused(message, options.errorMessage ?? "Structured output from Claude");
 

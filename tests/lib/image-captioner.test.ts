@@ -91,6 +91,18 @@ describe('captionImage input selection', () => {
     expect(imageBlock.source.data).toBe(Buffer.from(thumb).toString('base64'));
   });
 
+  it('caches the shared caption system prompt', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([9]) })
+    );
+
+    await captionImage('img1');
+
+    const options = mocks.generate.mock.calls[0][0];
+    expect(options.cacheSystem).toBe(true);
+    expect(options.label).toBe('image-caption');
+  });
+
   it('falls back to original data with the stored contentType', async () => {
     const data = new Uint8Array([5, 6, 7]);
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
