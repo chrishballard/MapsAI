@@ -134,3 +134,12 @@ describe('generateReviewResponse pasted-content marking (Opus 5.5)', () => {
     expect(call.maxTokens).toBeGreaterThanOrEqual(4096);
   });
 });
+
+describe('generateReviewResponse prompt caching', () => {
+  it('caches the system prompt, which every profile without instructions shares', async () => {
+    await generateReviewResponse(input);
+    const options = mocks.generate.mock.calls[0][0];
+    expect(options.cacheSystem).toBe(true);
+    expect(options.label).toBe('review-response');
+  });
+});

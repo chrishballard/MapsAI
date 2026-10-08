@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
 // generate() through the real SDK: only the HTTP layer is faked (global fetch,
@@ -81,5 +81,83 @@ describe('generate() with the real SDK parse', () => {
     expect(err).not.toBeInstanceOf(ClaudeRefusalError);
     expect((err as Error).message).toBe('Failed to parse image caption from Claude');
     expect(String((err as Error).cause)).toMatch(/Failed to parse structured output/);
+  });
+});
+
+function sentBody() {
+  return JSON.parse(
+    (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body
+  );
+}
+
+const ok = () => answers.push({ text: '{"description":"A new gutter."}', stop_reason: 'end_turn' });
+const base = { schema: Schema, maxTokens: 4_096, effort: 'low' as const };
+
+// Prompt caching may add a cache marker and nothing else: the same system
+// prompt and message text go out, and call sites that don't opt in send
+// exactly the request they always did.
+describe('generate() prompt caching', () => {
+  it('sends system and messages unchanged when no caching is asked for', async () => {
+    ok();
+    await mod.generate({ ...base, system: 's', prompt: 'p' });
+
+    const body = sentBody();
+    expect(body.system).toBe('s');
+    expect(body.messages).toEqual([{ role: 'user', content: 'p' }]);
+    expect(JSON.stringify(body)).not.toContain('cache_control');
+  });
+
+  it('cacheSystem puts a 5-minute breakpoint on the system prompt, text unchanged', async () => {
+    ok();
+    await mod.generate({ ...base, system: 's', prompt: 'p', cacheSystem: true });
+
+    const body = sentBody();
+    expect(body.system).toEqual([
+      { type: 'text', text: 's', cache_control: { type: 'ephemeral' } },
+    ]);
+    expect(body.messages).toEqual([{ role: 'user', content: 'p' }]);
+  });
+});
+
+describe('Claude usage logging', () => {
+  const usage = {
+    input_tokens: 12,
+    output_tokens: 3,
+    cache_creation_input_tokens: 1200,
+    cache_read_input_tokens: 0,
+  } as Parameters<typeof mod.logUsage>[1];
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('stays quiet unless CLAUDE_USAGE_LOG=1', () => {
+    vi.stubEnv('CLAUDE_USAGE_LOG', '');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    mod.logUsage('quiet', usage);
+    expect(log).not.toHaveBeenCalled();
+
+    vi.stubEnv('CLAUDE_USAGE_LOG', '1');
+    mod.logUsage('loud', usage);
+    expect(log).toHaveBeenCalledTimes(1);
+    const line = log.mock.calls[0][0] as string;
+    expect(line).toContain('[claude-usage] loud');
+    expect(line).toContain('input=12');
+    expect(line).toContain('cache_write=1200');
+    expect(line).toContain('cache_read=0');
+    expect(line).toContain('output=3');
+  });
+
+  it('generate logs each response under its call-site label', async () => {
+    vi.stubEnv('CLAUDE_USAGE_LOG', '1');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    ok();
+
+    await mod.generate({ ...base, system: 's', prompt: 'p', label: 'review-response' });
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain('[claude-usage] review-response');
   });
 });

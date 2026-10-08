@@ -449,6 +449,7 @@ async function matchChunk(
     maxTokens: 8_192,
     effort: "low",
     errorMessage: "Failed to parse rematch decisions from Claude",
+    label: "rematch-post-images",
   });
 
   const decisions = result.decisions as {

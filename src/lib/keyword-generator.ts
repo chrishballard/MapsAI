@@ -59,6 +59,7 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
     maxTokens: 8_192,
     effort: "medium",
     errorMessage: "Failed to parse keyword suggestions from Claude",
+    label: "keyword-suggestions",
   });
 
   return parsed.keywords;

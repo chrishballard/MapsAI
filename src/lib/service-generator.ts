@@ -134,6 +134,7 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
     maxTokens: 16_384,
     effort: "medium",
     errorMessage: "Failed to parse service descriptions from Claude",
+    label: "service-descriptions",
   });
 
   const outputs = parsed.services.filter((s) => s.description.trim() !== "");

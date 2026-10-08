@@ -55,6 +55,7 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
       maxTokens: 8_192,
       effort: "medium",
       errorMessage: "Failed to parse description from Claude",
+      label: "description",
     });
     return parsed.description;
   };

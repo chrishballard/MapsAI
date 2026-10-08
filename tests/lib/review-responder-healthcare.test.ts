@@ -20,7 +20,11 @@ const dentist = {
 };
 
 function call(n = 0) {
-  return mocks.generate.mock.calls[n][0] as { system: string; prompt: string };
+  return mocks.generate.mock.calls[n][0] as {
+    system: string;
+    prompt: string;
+    cacheSystem?: boolean;
+  };
 }
 
 function reply(response: string) {
@@ -99,6 +103,10 @@ describe('generateReviewResponse healthcare mode', () => {
     expect(call(1).prompt).toContain('Admits fault');
     expect(call(1).prompt).toContain('Mentions a visit or appointment');
     expect(result.response).toBe(SAFE);
+    // The retry resends the same system prompt, so it reads the cache.
+    expect(call(0).cacheSystem).toBe(true);
+    expect(call(1).cacheSystem).toBe(true);
+    expect(call(1).system).toBe(call(0).system);
   });
 
   it('falls back to a plain safe reply when the retry also breaks the rules', async () => {
