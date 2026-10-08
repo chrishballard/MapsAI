@@ -43,6 +43,9 @@ export async function generateMonthlyPosts(
     // Was 2048 before thinking was always on.
     maxTokens: 8_192,
     effort: "medium",
+    // Profiles sharing a template run back to back in the daily job.
+    cacheSystem: true,
+    label: "monthly-posts",
   });
 
   // Validate GBP hard limit of 1500 chars per post

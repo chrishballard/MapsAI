@@ -225,6 +225,11 @@ export async function generateReviewResponse(
       // 4096 bytes (about 1k tokens), so most of this is thinking headroom.
       maxTokens: 8_192,
       effort: "medium",
+      // Shared by every profile without operator instructions (one prompt
+      // for healthcare, one for the rest), and the healthcare retry resends
+      // it: syncs draft in bursts, ~79% of calls read it within 5 minutes.
+      cacheSystem: true,
+      label: "review-response",
     });
 
   const parsed = await draft(userMessage);

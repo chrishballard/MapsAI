@@ -99,6 +99,7 @@ export async function matchPostsToSpecificImages(args: {
     maxTokens: 4_096,
     effort: "low",
     errorMessage: "Failed to parse image choices from Claude",
+    label: "post-image-match",
   });
 
   return result.choices;

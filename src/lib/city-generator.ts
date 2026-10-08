@@ -55,6 +55,7 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
     maxTokens: 8_192,
     effort: "medium",
     errorMessage: "Failed to parse city suggestions from Claude",
+    label: "city-suggestions",
   });
 
   return parsed.cities;

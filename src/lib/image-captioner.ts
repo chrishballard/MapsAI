@@ -165,6 +165,11 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       maxTokens: 4_096,
       effort: "low",
       errorMessage: "Failed to parse image caption from Claude",
+      // Captions run in bursts (syncs, backfills). The prefix is ~514
+      // tokens, just over the 512 minimum: lengthen the prompt freely, but
+      // shortening it can silently switch caching off.
+      cacheSystem: true,
+      label: "image-caption",
     });
   } catch (err) {
     // The API rejects images over 8,000px on a side with a 400 even when

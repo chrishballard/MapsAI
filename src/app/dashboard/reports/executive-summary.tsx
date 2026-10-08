@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
+import { anthropic, CLAUDE_MODEL, logUsage } from "@/lib/claude";
 
 // Module-level in-memory cache — shared across requests within one server process
 const narrativeCache = new Map<string, { text: string; cachedAt: number }>();
@@ -69,6 +69,7 @@ Write 3 professional sentences summarizing performance and key trends. Be specif
         },
       ],
     });
+    logUsage("executive-summary", message.usage);
 
     // Read by block type: the response starts with a `thinking` block (empty
     // text by default), so content[0] is no longer the answer. A refusal, or
