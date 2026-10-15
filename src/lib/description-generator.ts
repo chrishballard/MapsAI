@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generate } from "./claude";
 import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
+import { US_ENGLISH_RULE } from "./copy-language";
 
 const DescriptionSchema = z.object({
   description: z.string(),
@@ -26,6 +27,8 @@ export async function generateDescription(profile: {
 - Focus on: what the business does, what makes it unique, and the areas it serves
 - Write in a professional, informative tone that builds trust
 - If website content is provided, use it to understand the business's unique selling points, tone, and specific offerings
+
+${US_ENGLISH_RULE}
 
 ${PASTED_CONTENT_SYSTEM_NOTE}`;
 

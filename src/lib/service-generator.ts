@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generate } from "./claude";
 import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 import { MAX_SERVICE_DESCRIPTION_LENGTH } from "./gbp-limits";
+import { US_ENGLISH_RULE } from "./copy-language";
 
 const ServiceDescriptionSchema = z.object({
   services: z.array(
@@ -104,6 +105,10 @@ Rules:
 - Do NOT include phone numbers, URLs, or promotional language (e.g. "best", "#1", "call now")
 - Do NOT use ALL CAPS for emphasis
 - If website content is provided, use it to understand how the business describes its own services and mirror that tone and detail
+- A service name may be in another language (Google sends service names in the profile's own language). Still write its description in US English, and still copy the name itself exactly as given, untranslated
+
+${US_ENGLISH_RULE}
+The one exception is the serviceName field: copy each service name exactly as given, even when it is not in English, because that is how each description is matched back to its service.
 
 ${PASTED_CONTENT_SYSTEM_NOTE}`;
 

@@ -101,6 +101,10 @@ model Profile {
   googleDescription     String?   @db.Text
   googleServiceItems    Json?
   googleProfileSyncedAt DateTime?
+  // The location's languageCode as Google reports it ("en", "es-419"), read
+  // by the same sync. Google localizes service type and category names into
+  // it, and the API cannot change it. NULL = never read.
+  googleLanguageCode    String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   posts           Post[]
@@ -396,6 +400,11 @@ model ProfileService {
   serviceName     String
   description     String?   @db.Text
   isStructured    Boolean   @default(true)
+  // Google's structured service type ("job_type_id:mattress_cleaning") this
+  // row pushes as. The push matches on it before the display name, because
+  // Google localizes display names into the location's language. Recorded
+  // on every successful push; NULL = not resolved yet, or a custom service.
+  serviceTypeId   String?
   isApproved      Boolean   @default(false)
   isPushed        Boolean   @default(false)
   pushedAt        DateTime?

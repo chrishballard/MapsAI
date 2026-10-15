@@ -1,6 +1,7 @@
 import { generate } from "./claude";
 import { BatchPostsSchema, type BatchPosts } from "./prompts/types";
 import { getDefaultPrompt } from "./prompts/defaults";
+import { US_ENGLISH_RULE } from "./copy-language";
 
 interface ProfileInput {
   name: string;
@@ -15,7 +16,11 @@ export async function generateMonthlyPosts(
   customPrompt?: string,
   postCount: number = 4
 ): Promise<BatchPosts> {
-  const systemPrompt = customPrompt || getDefaultPrompt(profile.category);
+  // A custom template replaces the default outright, so the language rule is
+  // appended to whichever one is used rather than written into the defaults.
+  const systemPrompt = `${customPrompt || getDefaultPrompt(profile.category)}
+
+${US_ENGLISH_RULE}`;
 
   const userMessage = [
     `Business name: ${profile.name}`,

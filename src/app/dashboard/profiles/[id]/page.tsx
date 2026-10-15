@@ -18,6 +18,7 @@ import { ReoptimizeSection } from "./reoptimize-section";
 import { OffboardButton } from "./offboard-button";
 import { getMonthStart } from "@/lib/dates";
 import { formatMediumDate } from "@/lib/dates";
+import { isNonEnglishLanguageCode } from "@/lib/copy-language";
 
 export default async function ProfileDetailPage({
   params,
@@ -120,6 +121,14 @@ export default async function ProfileDetailPage({
               {profile.category && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-primary">
                   {profile.category}
+                </span>
+              )}
+              {isNonEnglishLanguageCode(profile.googleLanguageCode) && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700"
+                  title="Google names this profile's category and service types in this language, and the API cannot change it. RankMaps still writes copy in US English and matches services by their Google type id."
+                >
+                  GBP language: {profile.googleLanguageCode}
                 </span>
               )}
               {profile.address && (

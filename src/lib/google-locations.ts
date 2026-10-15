@@ -54,6 +54,7 @@ async function syncGoogleProfileState(params: {
       data: {
         googleDescription: state.description,
         googleServiceItems: state.serviceItems as never,
+        googleLanguageCode: state.languageCode,
         googleProfileSyncedAt: new Date(),
       },
     });

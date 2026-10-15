@@ -12,7 +12,7 @@
  *   pnpm tsx scripts/sync-google-profile-state.ts --stale   # never-synced profiles
  *   pnpm tsx scripts/sync-google-profile-state.ts --all     # every connected profile
  *
- * Read-only against Google (locations.get); the only writes are the three
+ * Read-only against Google (locations.get); the only writes are the four
  * google* columns on Profile.
  */
 import "dotenv/config";
@@ -59,13 +59,14 @@ async function main() {
         data: {
           googleDescription: state.description,
           googleServiceItems: state.serviceItems as never,
+          googleLanguageCode: state.languageCode,
           googleProfileSyncedAt: new Date(),
         },
       });
       ok++;
       console.log(
         `${profile.id}  ${profile.name}  description ${state.description.length} chars  ` +
-          `serviceItems ${state.serviceItems.length}`
+          `serviceItems ${state.serviceItems.length}  language ${state.languageCode ?? "?"}`
       );
     } catch (err) {
       // Leave the stored values alone: a blank we wrote on a failed read
