@@ -108,6 +108,7 @@ Rules:
 - A service name may be in another language (Google sends service names in the profile's own language). Still write its description in US English, and still copy the name itself exactly as given, untranslated
 
 ${US_ENGLISH_RULE}
+The one exception is the serviceName field: copy each service name exactly as given, even when it is not in English, because that is how each description is matched back to its service.
 
 ${PASTED_CONTENT_SYSTEM_NOTE}`;
 

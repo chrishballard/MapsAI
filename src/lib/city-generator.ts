@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generate } from "./claude";
 import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
+import { US_ENGLISH_RULE } from "./copy-language";
 
 const CitySuggestionsSchema = z.object({
   cities: z
@@ -33,6 +34,8 @@ Rules:
 - Focus on cities within a realistic service radius for this type of business
 - If website content mentions specific service areas, use those
 - If you can identify the business location from the address, suggest surrounding cities
+
+${US_ENGLISH_RULE}
 
 ${PASTED_CONTENT_SYSTEM_NOTE}`;
 

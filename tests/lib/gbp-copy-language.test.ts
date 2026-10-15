@@ -16,6 +16,7 @@ const { generateDescription } = await import('@/lib/description-generator');
 const { generateMonthlyPosts } = await import('@/lib/post-generator');
 const { generateReviewResponse } = await import('@/lib/review-responder');
 const { generateKeywordSuggestions } = await import('@/lib/keyword-generator');
+const { generateCitySuggestions } = await import('@/lib/city-generator');
 
 // A Spanish-language profile, as RankMaps receives it from Google
 const spanishProfile = {
@@ -30,7 +31,7 @@ function lastSystemPrompt(): string {
 }
 
 function expectUsEnglishRule(system: string) {
-  expect(system).toMatch(/write (?:everything |it |the \w+ )?in US English/i);
+  expect(system).toMatch(/write\b[^.]*\bin US English/i);
   // Inputs in another language must not pull the output along with them
   expect(system).toMatch(/even (?:when|if) .*another language/i);
 }
@@ -54,8 +55,12 @@ describe('US English instruction in GBP copy generators', () => {
     });
     const system = lastSystemPrompt();
     expectUsEnglishRule(system);
-    // The service name itself is a matching key and must not be translated
+    // The service name itself is a matching key and must not be translated,
+    // and the language rule must say so rather than contradict it
     expect(system).toMatch(/Copy each service name EXACTLY as given/);
+    expect(system.slice(system.indexOf('Language:'))).toMatch(
+      /serviceName field.*exactly as given, even when it is not in English/
+    );
   });
 
   it('business description', async () => {
@@ -119,6 +124,29 @@ describe('US English instruction in GBP copy generators', () => {
     const system = lastSystemPrompt();
     const afterInstructions = system.slice(system.indexOf('</operator_instructions>'));
     expect(afterInstructions).toMatch(/always reply in US English/);
+  });
+
+  it('regular replies keep English after operator instructions', async () => {
+    mocks.generate.mockResolvedValue({ response: 'Thank you, Ana!', sentiment: 'positive', tone: 'warm' });
+    await generateReviewResponse({
+      businessName: spanishProfile.name,
+      businessCategory: spanishProfile.category,
+      reviewerName: 'Ana',
+      starRating: 5,
+      reviewComment: 'Excelente servicio',
+      customInstructions: 'Answer Spanish reviews in Spanish.',
+    });
+    const system = lastSystemPrompt();
+    const afterInstructions = system.slice(system.indexOf('</operator_instructions>'));
+    expect(afterInstructions).toMatch(/always reply in US English/);
+  });
+
+  it('target cities (they feed every other generator)', async () => {
+    mocks.generate.mockResolvedValue({
+      cities: [{ city: 'Portland, ME', reasoning: 'Home base.' }],
+    });
+    await generateCitySuggestions(spanishProfile);
+    expectUsEnglishRule(lastSystemPrompt());
   });
 
   it('target keywords (they feed every other generator)', async () => {

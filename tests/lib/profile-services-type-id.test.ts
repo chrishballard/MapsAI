@@ -203,6 +203,89 @@ describe('pushApprovedServices matches by stored service type id', () => {
   });
 });
 
+describe('pushApprovedServices stored ids in replace mode', () => {
+  it('trusts only catalog ids, since the live list is not re-sent', async () => {
+    const ADDITIONAL = 'job_type_id:upholstery_cleaning';
+    mocks.fetchCurrentServices.mockResolvedValue({
+      serviceItems: [{ structuredServiceItem: { serviceTypeId: ADDITIONAL } }],
+    });
+    mocks.prisma.profileService.findMany.mockResolvedValue([
+      row('Upholstery cleaning', ADDITIONAL),
+    ]);
+
+    await pushApprovedServices('p1');
+
+    expect(pushedItems()).toEqual([
+      {
+        freeFormServiceItem: {
+          category: 'categories/gcid:house_cleaning_service',
+          label: { displayName: 'Upholstery cleaning', description: 'About Upholstery cleaning.' },
+        },
+      },
+    ]);
+  });
+});
+
+describe('pushApprovedServices type-id slug on a non-English profile', () => {
+  // A title typed in English through the UI is a new row with no stored id,
+  // and Google's display names are Spanish. The type id itself is English
+  // ("job_type_id:mattress_cleaning"), so on a non-English profile the title
+  // is also compared with it.
+  it('pushes an English title with no stored id as the type its id spells', async () => {
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress Cleaning', null)]);
+
+    await pushApprovedServices('p1');
+
+    expect(pushedItems()).toEqual([
+      {
+        structuredServiceItem: {
+          serviceTypeId: MATTRESS,
+          description: 'About Mattress Cleaning.',
+        },
+      },
+    ]);
+    expect(idWrites()).toEqual({ 'svc-Mattress Cleaning': MATTRESS });
+  });
+
+  it('drops the custom item the same title went out as before, instead of leaving a duplicate', async () => {
+    mocks.fetchCurrentServices.mockResolvedValue({
+      serviceItems: [
+        { freeFormServiceItem: { category: 'x', label: { displayName: 'Mattress cleaning', description: 'Old.' } } },
+        { freeFormServiceItem: { category: 'x', label: { displayName: 'Window washing' } } },
+      ],
+    });
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
+
+    await pushApprovedServices('p1', { merge: true });
+
+    expect(pushedItems()).toEqual([
+      { freeFormServiceItem: { category: 'x', label: { displayName: 'Window washing' } } },
+      {
+        structuredServiceItem: {
+          serviceTypeId: MATTRESS,
+          description: 'About Mattress cleaning.',
+        },
+      },
+    ]);
+  });
+
+  it.each(['en-US', null])('does not compare titles with type ids when the language is %s', async (code) => {
+    mocks.prisma.profile.findUnique.mockResolvedValue(profile(code));
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
+
+    await pushApprovedServices('p1');
+
+    expect(pushedItems()).toEqual([
+      {
+        freeFormServiceItem: {
+          category: 'categories/gcid:house_cleaning_service',
+          label: { displayName: 'Mattress cleaning', description: 'About Mattress cleaning.' },
+        },
+      },
+    ]);
+  });
+});
+
 describe('pushApprovedServices on an English profile with no stored ids', () => {
   beforeEach(() => {
     mocks.prisma.profile.findUnique.mockResolvedValue(profile('en-US'));
@@ -233,7 +316,9 @@ describe('pushApprovedServices on an English profile with no stored ids', () => 
     ]);
   });
 
-  it('records the id it resolved, so a later rename or language change still finds the type', async () => {
+  // A rename through the UI makes a new row, so this covers a rename done on
+  // the row itself (a script) and a later change in Google's display names.
+  it('records the id it resolved, so the row keeps its type if its title changes', async () => {
     mocks.prisma.profileService.findMany.mockResolvedValue([
       row('Mattress cleaning', null),
       row('Move-out cleaning', null),

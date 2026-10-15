@@ -13,9 +13,11 @@
  */
 
 /** Appended to the system prompt of every generator whose output reaches a
- * Google profile, or feeds one (keywords). */
+ * Google profile, or feeds one (keywords, cities). It governs the copy the
+ * model writes; a prompt that echoes input back verbatim (the service
+ * generator's names) states that exception right after it. */
 export const US_ENGLISH_RULE =
-  "Language: write everything in US English (American spelling and usage), even when the business name, category, service names, keywords, website text or anything else you are given is in another language. Every business we write for is a US business. Never answer in another language.";
+  "Language: write all the copy you produce in US English (American spelling and usage), even when the business name, category, service names, keywords, website text or anything else you are given is in another language. Every business we write for is a US business. Never write that copy in another language.";
 
 /**
  * True for a language code that is set and is not English ("es-419", "fr").

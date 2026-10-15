@@ -137,6 +137,7 @@ export async function POST(request: NextRequest) {
     const typeIdByDisplayName = new Map(
       structuredServices.map((s) => [s.displayName.toLowerCase(), s.serviceTypeId])
     );
+    const catalogTypeIds = new Set(structuredServices.map((s) => s.serviceTypeId));
     const storedTypeIds = new Map(
       existingServices.map((s) => [s.serviceName, s.serviceTypeId])
     );
@@ -155,7 +156,9 @@ export async function POST(request: NextRequest) {
             serviceName: s.serviceName,
             description: s.description,
             serviceTypeId,
-            isStructured: serviceTypeId !== null,
+            // What the page shows; the push decides for itself
+            isStructured:
+              serviceTypeId !== null && catalogTypeIds.has(serviceTypeId),
             isApproved: false,
             isPushed: false,
           };
