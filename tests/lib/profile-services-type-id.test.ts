@@ -269,6 +269,18 @@ describe('pushApprovedServices type-id slug on a non-English profile', () => {
     ]);
   });
 
+  it('skips a catalog entry with no id instead of failing the push', async () => {
+    mocks.fetchStructuredServices.mockResolvedValue([
+      ...spanishCatalog,
+      { displayName: 'Sin id' } as { serviceTypeId: string; displayName: string },
+    ]);
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
+
+    const result = await pushApprovedServices('p1');
+
+    expect(result).toEqual({ success: true, pushedCount: 1 });
+  });
+
   it.each(['en-US', null])('does not compare titles with type ids when the language is %s', async (code) => {
     mocks.prisma.profile.findUnique.mockResolvedValue(profile(code));
     mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
@@ -282,6 +294,29 @@ describe('pushApprovedServices type-id slug on a non-English profile', () => {
           label: { displayName: 'Mattress cleaning', description: 'About Mattress cleaning.' },
         },
       },
+    ]);
+  });
+});
+
+describe('pushApprovedServices on an English profile with stored ids', () => {
+  beforeEach(() => {
+    mocks.prisma.profile.findUnique.mockResolvedValue(profile('en-US'));
+    mocks.fetchStructuredServices.mockResolvedValue(englishCatalog);
+  });
+
+  it('leaves a live custom item with the same title alone in merge mode, as before ids', async () => {
+    const live = [
+      { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'Old.' } },
+      { freeFormServiceItem: { category: 'x', label: { displayName: 'Mattress Cleaning', description: "Client's own." } } },
+    ];
+    mocks.fetchCurrentServices.mockResolvedValue({ serviceItems: live });
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', MATTRESS)]);
+
+    await pushApprovedServices('p1', { merge: true });
+
+    expect(pushedItems()).toEqual([
+      { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'About Mattress cleaning.' } },
+      live[1],
     ]);
   });
 });

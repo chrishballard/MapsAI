@@ -219,7 +219,11 @@ export async function pushApprovedServices(
   }
   // English profiles keep matching by display name alone, as they always have
   const typeIdBySlug = isNonEnglishLanguageCode(profile.googleLanguageCode)
-    ? new Map(structuredServices.map((s) => [typeIdSlug(s.serviceTypeId), s.serviceTypeId]))
+    ? new Map(
+        structuredServices
+          .filter((s) => typeof s.serviceTypeId === "string" && s.serviceTypeId)
+          .map((s) => [typeIdSlug(s.serviceTypeId), s.serviceTypeId])
+      )
     : undefined;
 
   // Pre-push snapshot for manual recovery
@@ -258,10 +262,12 @@ export async function pushApprovedServices(
           description: service.description || undefined,
         },
       };
-      if (match?.via !== "displayName") {
-        // A title that did not match Google's display name may already be
-        // live as a custom service from an earlier push. Now that it goes
+      if (match?.via === "typeIdSlug") {
+        // A title only the slug recognizes (non-English profiles) went out
+        // as a custom service on every push before this one. Now that it goes
         // out as its structured type, drop that copy rather than leave both.
+        // Stored-id and display-name matches leave custom items alone, as
+        // pushes always have.
         for (let i = serviceItems.length - 1; i >= 0; i--) {
           const label = serviceItems[i].freeFormServiceItem?.label?.displayName;
           if (label?.toLowerCase() === nameKey) serviceItems.splice(i, 1);
