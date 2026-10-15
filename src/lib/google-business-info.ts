@@ -237,32 +237,40 @@ export async function fetchCurrentDescription(params: {
 }
 
 /**
- * What Google currently holds for a location's description and service items.
+ * What Google currently holds for a location's description and service
+ * items, plus the location's language.
  *
- * One `locations.get` with readMask=profile,serviceItems, so a caller looping
- * over an account spends one request per location instead of two.
+ * One `locations.get` with readMask=profile,serviceItems,languageCode, so a
+ * caller looping over an account spends one request per location.
  *
  * `description` is "" when Google returns the field empty and `serviceItems`
  * is [] when there are none — the caller distinguishes "Google says nothing
  * is set" from "we never asked", which is the whole point of storing it.
+ * `languageCode` is null when Google sends none.
  */
 export async function fetchGoogleProfileState(params: {
   googleAccountId: string;
   locationName: string;
-}): Promise<{ description: string; serviceItems: unknown[] }> {
+}): Promise<{
+  description: string;
+  serviceItems: unknown[];
+  languageCode: string | null;
+}> {
   const oauth2Client = await createGoogleClient(params.googleAccountId);
 
   const response = await oauth2Client.request<{
     profile?: { description?: string };
     serviceItems?: unknown[];
+    languageCode?: string;
   }>({
-    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=profile,serviceItems`,
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/${params.locationName}?readMask=profile,serviceItems,languageCode`,
     method: "GET",
   });
 
   return {
     description: response.data.profile?.description ?? "",
     serviceItems: response.data.serviceItems ?? [],
+    languageCode: response.data.languageCode || null,
   };
 }
 

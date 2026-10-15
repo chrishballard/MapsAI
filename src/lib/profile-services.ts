@@ -6,6 +6,7 @@ import {
   pushServicesToGBP,
 } from "@/lib/google-business-info";
 import { MAX_SERVICE_DESCRIPTION_LENGTH } from "@/lib/gbp-limits";
+import { isNonEnglishLanguageCode } from "@/lib/copy-language";
 
 export interface ProfileServiceInput {
   serviceName: string;
@@ -100,9 +101,12 @@ export type PushApprovedServicesResult =
  * (onboarding — the wizard owns the full list). With merge: true they are
  * merged into the live list (re-optimization may only cover a subset).
  *
- * Structured services are resolved to real GBP serviceTypeIds by display
- * name; anything without a match is pushed as a free-form item, deduplicated
- * by display name against the live list and other approved services.
+ * Structured services are resolved to real GBP serviceTypeIds by the id the
+ * row stored (see resolveServiceTypeId), then by display name; anything
+ * without a match is pushed as a free-form item, deduplicated by display name
+ * against the live list and other approved services. After a successful push
+ * each row records the id it went out as (null for free-form), so the next
+ * push finds the type whatever language Google names it in.
  */
 export async function pushApprovedServices(
   profileId: string,
@@ -117,11 +121,21 @@ export async function pushApprovedServices(
       googleAccountId: true,
       locationName: true,
       category: true,
+      googleLanguageCode: true,
     },
   });
 
   if (!profile) {
     return { success: false, error: "Profile not found", status: 404 };
+  }
+
+  if (isNonEnglishLanguageCode(profile.googleLanguageCode)) {
+    // Google names this location's service types in its own language, and
+    // the API cannot change it. Rows with a stored serviceTypeId still match;
+    // a row with neither an id nor a localized name goes out as custom.
+    console.warn(
+      `[SERVICE_PUSH] Profile ${profileId} has GBP language ${profile.googleLanguageCode}, not English: Google's service type names are localized, so services match by stored type id first`
+    );
   }
 
   const approvedServices = await prisma.profileService.findMany({
@@ -191,6 +205,13 @@ export async function pushApprovedServices(
   for (const s of structuredServices) {
     typeIdMap.set(s.displayName.toLowerCase(), s.serviceTypeId);
   }
+  // Ids Google will take: the category's catalog plus any structured item
+  // the location already carries (a type from an additional category)
+  const validTypeIds = new Set(structuredServices.map((s) => s.serviceTypeId));
+  for (const item of currentGBP.serviceItems as GBPServiceItem[]) {
+    const id = item.structuredServiceItem?.serviceTypeId;
+    if (id) validTypeIds.add(id);
+  }
 
   // Pre-push snapshot for manual recovery
   console.log(
@@ -212,9 +233,13 @@ export async function pushApprovedServices(
     if (name) seenFreeFormNames.add(name.toLowerCase());
   }
 
+  // Row id -> the serviceTypeId it is pushed as (null = free-form)
+  const resolvedTypeIds = new Map<string, string | null>();
+
   for (const service of approvedServices) {
     const nameKey = service.serviceName.toLowerCase();
-    const serviceTypeId = typeIdMap.get(nameKey);
+    const serviceTypeId = resolveServiceTypeId(service, typeIdMap, validTypeIds);
+    resolvedTypeIds.set(service.id, serviceTypeId);
 
     if (serviceTypeId) {
       const newItem: GBPServiceItem = {
@@ -283,5 +308,44 @@ export async function pushApprovedServices(
     data: { isPushed: true, pushedAt: new Date() },
   });
 
+  // Record what each row went out as. Best-effort: the push already landed,
+  // and a row left unrecorded just resolves by display name next time.
+  for (const service of approvedServices) {
+    const serviceTypeId = resolvedTypeIds.get(service.id) ?? null;
+    if (serviceTypeId === (service.serviceTypeId ?? null)) continue;
+    try {
+      await prisma.profileService.update({
+        where: { id: service.id },
+        data: { serviceTypeId },
+      });
+    } catch (error: unknown) {
+      console.error(
+        `[SERVICE_PUSH] Could not record serviceTypeId for ${service.id}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
   return { success: true, pushedCount: approvedServices.length };
+}
+
+/**
+ * The structured service type a saved service pushes as, or null for a
+ * free-form item.
+ *
+ * The stored id wins when Google will take it: display names are localized
+ * into the location's language (an es-419 profile calls mattress cleaning
+ * "Limpieza de colchones"), so a title that no longer matches the catalog
+ * still finds its type. Without a usable stored id, the display name decides,
+ * case-insensitively, exactly as before ids were stored.
+ */
+export function resolveServiceTypeId(
+  service: { serviceName: string; serviceTypeId?: string | null },
+  typeIdByDisplayName: Map<string, string>,
+  validTypeIds: Set<string>
+): string | null {
+  if (service.serviceTypeId && validTypeIds.has(service.serviceTypeId)) {
+    return service.serviceTypeId;
+  }
+  return typeIdByDisplayName.get(service.serviceName.toLowerCase()) ?? null;
 }

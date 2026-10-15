@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
   if (profile instanceof NextResponse) return profile;
 
   try {
-    const [keywordRecords, cityRecords, structuredServices] =
+    const [keywordRecords, cityRecords, structuredServices, existingServices] =
       await Promise.all([
         prisma.profileKeyword.findMany({
           where: { profileId },
@@ -113,6 +113,10 @@ export async function POST(request: NextRequest) {
           googleAccountId: profile.googleAccountId,
           locationName: profile.locationName,
         }),
+        prisma.profileService.findMany({
+          where: { profileId },
+          select: { serviceName: true, serviceTypeId: true },
+        }),
       ]);
 
     const result = await generateServiceDescriptions({
@@ -125,23 +129,37 @@ export async function POST(request: NextRequest) {
     });
 
     // A service is structured only if GBP has a matching serviceTypeId;
-    // everything else must be pushed as a free-form item
-    const structuredNames = new Set(
-      structuredServices.map((s) => s.displayName.toLowerCase())
+    // everything else must be pushed as a free-form item. The replace below
+    // deletes every row, so a surviving name keeps the id it already had
+    // (on a non-English profile an English title only resolves through it;
+    // the push checks the id is still valid). Other names get the catalog's
+    // id by display name.
+    const typeIdByDisplayName = new Map(
+      structuredServices.map((s) => [s.displayName.toLowerCase(), s.serviceTypeId])
+    );
+    const storedTypeIds = new Map(
+      existingServices.map((s) => [s.serviceName, s.serviceTypeId])
     );
 
     // Save generated services to DB (replace full set, matching onboarding pattern)
     const savedServices = await prisma.$transaction(async (tx) => {
       await tx.profileService.deleteMany({ where: { profileId } });
       await tx.profileService.createMany({
-        data: result.map((s) => ({
-          profileId,
-          serviceName: s.serviceName,
-          description: s.description,
-          isStructured: structuredNames.has(s.serviceName.toLowerCase()),
-          isApproved: false,
-          isPushed: false,
-        })),
+        data: result.map((s) => {
+          const serviceTypeId =
+            storedTypeIds.get(s.serviceName) ??
+            typeIdByDisplayName.get(s.serviceName.toLowerCase()) ??
+            null;
+          return {
+            profileId,
+            serviceName: s.serviceName,
+            description: s.description,
+            serviceTypeId,
+            isStructured: serviceTypeId !== null,
+            isApproved: false,
+            isPushed: false,
+          };
+        }),
       });
       return tx.profileService.findMany({
         where: { profileId },
