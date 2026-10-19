@@ -10,13 +10,16 @@ export const worker = new Worker(
 
     // Fetch all connected profiles with accountResourceName.
     // Profiles with review management turned off are excluded here (and
-    // guarded again inside syncProfileReviews).
+    // guarded again inside syncProfileReviews). An offboarded profile is
+    // skipped unless it is marked reviewsOnly: offboarding used to stop
+    // review sync silently, which is how Lumos Dental went three months
+    // without a stored review (2026-07-10 to 2026-10-19).
     const profiles = await prisma.profile.findMany({
       where: {
         isConnected: true,
-        isOnboarded: true,
         reviewsEnabled: true,
         accountResourceName: { not: null },
+        OR: [{ isOnboarded: true }, { reviewsOnly: true }],
       },
       include: {
         googleAccount: true,
