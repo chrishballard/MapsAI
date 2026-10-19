@@ -42,10 +42,17 @@ describe('review sync worker', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           isConnected: true,
-          isOnboarded: true,
           reviewsEnabled: true,
         }),
       })
     );
+  });
+
+  it('selects onboarded profiles and offboarded ones marked reviewsOnly, nothing else', async () => {
+    await mocks.processor!({ id: 'job1' } as Job);
+
+    const { where } = mocks.prisma.profile.findMany.mock.calls[0][0];
+    expect(where).not.toHaveProperty('isOnboarded');
+    expect(where.OR).toEqual([{ isOnboarded: true }, { reviewsOnly: true }]);
   });
 });
