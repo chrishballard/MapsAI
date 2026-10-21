@@ -33,7 +33,9 @@ function month(ym: string, perDay: Partial<DailyMetricRow>, fromDay = 1): DailyM
 
 const originalTZ = process.env.TZ;
 afterEach(() => {
-  process.env.TZ = originalTZ;
+  // Assigning undefined would set the string "undefined".
+  if (originalTZ === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTZ;
 });
 
 // Mid-month, mid-day in every US zone: the window is May..October 2026.
@@ -166,5 +168,38 @@ describe('the current month comes from the operator calendar (M11)', () => {
       new Date('2026-11-01T15:00:00Z')
     );
     expect(snap.trend!.comparing).toBe('October 2026');
+  });
+});
+
+describe('caveats travel inside the headline line', () => {
+  // The metrics sync stores a row (of zeros) for days Google hasn't reported
+  // yet, so a month that just ended can look fully synced and still read
+  // low. Whatever undercuts the headline number goes in the same line, since
+  // that's the line that gets pasted into an email.
+  const rows = [
+    ...month('2026-09', { callClicks: 2 }),
+    ...month('2026-10', { callClicks: 2 }),
+  ];
+
+  it('says a month that ended in the last few days may still rise', () => {
+    process.env.TZ = 'America/Denver';
+    const snap = buildPerfSnapshot(rows, new Date('2026-11-02T18:00:00Z'));
+    expect(snap.trend!.comparing).toBe('October 2026');
+    expect(snap.highlights[0]).toMatch(/^October 2026 \(.*may still rise.*\):/);
+    expect(snap.trend!.baselineNote).toMatch(/few days late/);
+  });
+
+  it('says nothing of the kind once the month is well past', () => {
+    process.env.TZ = 'America/Denver';
+    const snap = buildPerfSnapshot(rows, new Date('2026-11-12T18:00:00Z'));
+    expect(snap.highlights[0]).toMatch(/^October 2026: /);
+  });
+
+  it('puts a short month in the headline too', () => {
+    const snap = buildPerfSnapshot(
+      [...month('2026-08', { callClicks: 2 }), ...month('2026-09', { callClicks: 2 }, 15)],
+      OCT_21
+    );
+    expect(snap.highlights[0]).toMatch(/^September 2026 \(only 16 of 30 days synced\):/);
   });
 });

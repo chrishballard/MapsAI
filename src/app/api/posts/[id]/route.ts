@@ -120,11 +120,14 @@ export async function PATCH(
   }
 
   if (unschedules) {
+    // Returns 0 rather than throwing for a job a worker holds right now; it
+    // claims only SCHEDULED posts, so it finds a DRAFT and publishes nothing.
+    // A job that survives (Redis error, locked mid-retry) can't publish early
+    // either: the next schedulePostPublish replaces a stale delayed job, and
+    // the worker skips a post whose scheduledAt hasn't come.
     try {
       await publishQueue.remove(`publish-${id}`);
     } catch (err) {
-      // Locked: a worker holds the job right now. It claims only SCHEDULED
-      // posts, so it finds a DRAFT and publishes nothing.
       console.warn(`Could not remove publish job for post ${id}:`, err);
     }
   }

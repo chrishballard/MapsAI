@@ -85,6 +85,14 @@ const BASELINE_TARGET = 4;
  */
 const FULL_MONTH_SHARE = 0.9;
 
+/**
+ * Google posts performance numbers a few days late, and the metrics sync
+ * stores a row of zeros for a day it hasn't reported yet. So a month that
+ * ended this recently can look fully synced and still read low.
+ */
+const REPORTING_LAG_DAYS = 5;
+const DAY_MS = 86_400_000;
+
 function addMonths(d: Date, n: number): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
 }
@@ -206,6 +214,9 @@ export function buildPerfSnapshot(rows: DailyMetricRow[], now: Date): PerfSnapsh
 
   let trend: Trend | null = null;
   let trendUnavailable: string | null = null;
+  // Anything that undercuts the headline number, said inside that same line:
+  // it's the line that gets pasted into a client email.
+  const headlineCaveats: string[] = [];
   if (!lastComplete || lastComplete.daysWithData === 0) {
     trendUnavailable = lastComplete
       ? `no data synced for ${lastComplete.monthLabel}`
@@ -223,6 +234,23 @@ export function buildPerfSnapshot(rows: DailyMetricRow[], now: Date): PerfSnapsh
       notes.push(
         `${lastComplete.monthLabel} has only ${lastComplete.daysWithData} of ${lastComplete.daysInMonth} days synced, so its totals read low.`
       );
+      headlineCaveats.push(
+        `only ${lastComplete.daysWithData} of ${lastComplete.daysInMonth} days synced`
+      );
+    }
+    // Days from the end of the compared month to today, on the operator's
+    // calendar (the same calendar that decided which month is current).
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const monthEnd = Date.UTC(
+      Number(lastComplete.month.slice(0, 4)),
+      Number(lastComplete.month.slice(5, 7)),
+      1
+    );
+    if ((today - monthEnd) / DAY_MS < REPORTING_LAG_DAYS) {
+      notes.push(
+        `${lastComplete.monthLabel} only just ended and Google reports a few days late, so its last days may still rise.`
+      );
+      headlineCaveats.push("numbers may still rise: Google reports a few days late");
     }
     const avg = (metric: TrendMetric) =>
       baseline.reduce((a, m) => a + m[metric], 0) / baseline.length;
@@ -246,8 +274,9 @@ export function buildPerfSnapshot(rows: DailyMetricRow[], now: Date): PerfSnapsh
   const highlights: string[] = [];
   if (lastComplete && trend) {
     const vs = `vs prior ${trend.baselineMonths}-month avg`;
+    const caveat = headlineCaveats.length ? ` (${headlineCaveats.join("; ")})` : "";
     highlights.push(
-      `${lastComplete.monthLabel}: ${lastComplete.callClicks} calls (${trend.changes.callClicks} ${vs}), ${lastComplete.directionRequests} direction requests (${trend.changes.directionRequests}), ${lastComplete.websiteClicks} website clicks (${trend.changes.websiteClicks}).`
+      `${lastComplete.monthLabel}${caveat}: ${lastComplete.callClicks} calls (${trend.changes.callClicks} ${vs}), ${lastComplete.directionRequests} direction requests (${trend.changes.directionRequests}), ${lastComplete.websiteClicks} website clicks (${trend.changes.websiteClicks}).`
     );
     highlights.push(
       `Total impressions in ${lastComplete.monthLabel}: ${lastComplete.totalImpressions.toLocaleString("en-US")} (${trend.changes.totalImpressions} ${vs}).`

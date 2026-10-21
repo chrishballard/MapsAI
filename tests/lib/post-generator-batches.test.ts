@@ -97,6 +97,41 @@ describe('per-post validation (M12)', () => {
     expect(result.posts[1].content.endsWith('.')).toBe(true);
   });
 
+  it('drops a post over the limit that has no sentence end to cut at', async () => {
+    // Trimming at a word would publish an unfinished sentence.
+    const runOn = 'word '.repeat(400);
+    mocks.generate.mockResolvedValueOnce({ posts: [post('Fine.'), post(runOn)] });
+
+    const result = await generateMonthlyPosts(profile, undefined, 2);
+
+    expect(result.posts[0].content).toBe('Fine.');
+    expect(result.posts.some((p) => p.content.startsWith('word'))).toBe(false);
+    // The one spare call topped the batch back up.
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a post that ends a sentence exactly at the limit', async () => {
+    const exact = `${'a'.repeat(1499)}.`;
+    mocks.generate.mockResolvedValueOnce({ posts: [post(`Short. ${exact}`.slice(-1500))] });
+
+    const result = await generateMonthlyPosts(profile, undefined, 1);
+
+    expect(result.posts[0].content).toHaveLength(1500);
+  });
+
+  it('stops calling Claude when answers make no progress', async () => {
+    // Whitespace-only posts are cleaned away; without a cap this loops and
+    // pays for a call every time.
+    mocks.generate.mockImplementation(async (options: { prompt: string }) => ({
+      posts: Array.from({ length: requestedCount(options) }, () => post('   ')),
+    }));
+
+    const result = await generateMonthlyPosts(profile, undefined, 4);
+
+    expect(result.posts).toHaveLength(0);
+    expect(mocks.generate.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+
   it('drops a CTA URL that is not a real URL and keeps the post', async () => {
     mocks.generate.mockResolvedValueOnce({
       posts: [

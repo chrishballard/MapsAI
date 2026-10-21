@@ -359,7 +359,7 @@ export function BulkApproveButton({
       setOpen(false);
       alert(
         result.skipped
-          ? `${result.approved} responses approved and queued for publishing. ${result.skipped} changed while you were confirming and were left as drafts.`
+          ? `${result.approved} responses approved and queued for publishing. ${result.skipped} were edited or approved by someone else while this ran, so they were left alone.`
           : `${result.approved} responses approved and queued for publishing!`
       );
       router.refresh();

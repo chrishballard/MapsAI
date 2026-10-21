@@ -20,21 +20,21 @@ interface ProfileInput {
 export const GBP_POST_MAX_LENGTH = 1500;
 
 /**
- * Cut a post that runs past Google's limit at its last sentence end (or,
- * failing that, its last word) inside the limit, so it still publishes.
+ * Cut a post that runs past Google's limit at its last sentence end inside
+ * the limit, so it still publishes. null when there's no sentence end in the
+ * back half to cut at: cutting at a word would publish an unfinished
+ * sentence, so the post is dropped instead.
  */
-function trimToGbpLimit(content: string): string {
+function trimToGbpLimit(content: string): string | null {
   if (content.length <= GBP_POST_MAX_LENGTH) return content;
   const head = content.slice(0, GBP_POST_MAX_LENGTH);
+  if (/[.!?]$/.test(head) && /\s/.test(content[GBP_POST_MAX_LENGTH])) return head;
   const sentenceEnd = Math.max(
     head.lastIndexOf(". "),
     head.lastIndexOf("! "),
     head.lastIndexOf("? ")
   );
-  if (sentenceEnd > GBP_POST_MAX_LENGTH / 2) return head.slice(0, sentenceEnd + 1);
-  if (/[.!?]$/.test(head)) return head;
-  const wordEnd = head.lastIndexOf(" ");
-  return (wordEnd > 0 ? head.slice(0, wordEnd) : head).trimEnd();
+  return sentenceEnd > GBP_POST_MAX_LENGTH / 2 ? head.slice(0, sentenceEnd + 1) : null;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -48,14 +48,23 @@ function isHttpUrl(value: string): boolean {
 
 /**
  * The per-post checks the schema no longer makes (see prompts/types.ts): a
- * post over Google's limit is trimmed and a CTA that isn't a URL is dropped,
- * so one bad post never costs the rest of the batch.
+ * post over Google's limit is trimmed (or dropped, see trimToGbpLimit) and a
+ * CTA that isn't a URL is dropped, so one bad post never costs the rest of
+ * the batch. null = drop the post.
  */
-function cleanPost(post: GeneratedPost): GeneratedPost {
-  const content = trimToGbpLimit(post.content.trim());
-  if (content.length !== post.content.trim().length) {
+function cleanPost(post: GeneratedPost): GeneratedPost | null {
+  const original = post.content.trim();
+  if (!original) return null;
+  const content = trimToGbpLimit(original);
+  if (content === null) {
     console.warn(
-      `[post-generator] Trimmed a ${post.content.length}-char post to ${content.length} chars (GBP limit ${GBP_POST_MAX_LENGTH})`
+      `[post-generator] Dropped a ${original.length}-char post with no sentence end to trim at (GBP limit ${GBP_POST_MAX_LENGTH})`
+    );
+    return null;
+  }
+  if (content.length !== original.length) {
+    console.warn(
+      `[post-generator] Trimmed a ${original.length}-char post to ${content.length} chars (GBP limit ${GBP_POST_MAX_LENGTH})`
     );
   }
   const { callToActionUrl, ...rest } = post;
@@ -114,8 +123,11 @@ export async function generateMonthlyPosts(
 
 ${US_ENGLISH_RULE}`;
 
+  // One spare call past the chunks needed, for an answer that came back
+  // short after cleaning; never an open-ended loop of paid calls.
+  const maxCalls = Math.ceil(postCount / MAX_POSTS_PER_CALL) + 1;
   const posts: GeneratedPost[] = [];
-  while (posts.length < postCount) {
+  for (let call = 0; call < maxCalls && posts.length < postCount; call++) {
     const count = Math.min(MAX_POSTS_PER_CALL, postCount - posts.length);
     let parsed: BatchPosts;
     try {
@@ -143,10 +155,16 @@ ${US_ENGLISH_RULE}`;
       ...parsed.posts
         .slice(0, count)
         .map(cleanPost)
-        .filter((p) => p.content.length > 0)
+        .filter((p): p is GeneratedPost => p !== null)
     );
     // Fewer than asked for: take what came back rather than loop on it.
     if (parsed.posts.length < count) break;
+  }
+
+  if (posts.length < postCount) {
+    console.warn(
+      `[post-generator] Generated ${posts.length} of ${postCount} requested posts for ${profile.name}`
+    );
   }
 
   return { posts };

@@ -37,10 +37,19 @@ export async function schedulePostPublish(
   // that gets reset and re-approved would stay stuck until retention expires.
   // Clear completed/failed records; pending jobs (delayed/waiting/active,
   // including retries awaiting backoff) still dedupe as intended.
+  //
+  // One pending case is cleared too: a delayed job that has never run and is
+  // set for a different time is left over from an earlier schedule (a post
+  // moved back to DRAFT whose job removal failed). Deduping against it would
+  // publish the re-approved post on its old date.
   const existing = await publishQueue.getJob(jobId);
   if (existing) {
     const state = await existing.getState();
-    if (state === "completed" || state === "failed") {
+    const staleSchedule =
+      state === "delayed" &&
+      existing.attemptsMade === 0 &&
+      Math.abs(existing.timestamp + existing.delay - publishAt.getTime()) > 1_000;
+    if (state === "completed" || state === "failed" || staleSchedule) {
       await existing.remove().catch(() => {
         // Lost a race with retention cleanup or another scheduler — either
         // way the record is gone or being handled; the add() below decides.
