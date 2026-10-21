@@ -21,13 +21,28 @@ export async function POST(request: Request) {
   });
 
   await prisma.$transaction([
+    // Offboarding ends everything, review sync included (Chris,
+    // 2026-10-21): a profile that should keep its reviews syncing is marked
+    // reviewsOnly again afterwards.
     prisma.profile.update({
       where: { id: body.profileId },
-      data: { isOnboarded: false },
+      data: { isOnboarded: false, reviewsOnly: false },
     }),
     prisma.post.updateMany({
       where: { profileId: body.profileId, status: "SCHEDULED" },
       data: { status: "DRAFT", scheduledAt: null },
+    }),
+    // Approved replies not yet published go back to waiting for approval,
+    // as the publish worker does for an offboarded profile. Left APPROVED,
+    // one whose job was lost would be published by the stranded-reply sweep
+    // if the profile were marked reviewsOnly again.
+    prisma.reviewResponse.updateMany({
+      where: { status: "APPROVED", review: { profileId: body.profileId } },
+      data: {
+        status: "DRAFTED",
+        autoApproved: false,
+        errorMessage: "Held before publishing: the profile was offboarded",
+      },
     }),
     prisma.onboardingProgress.deleteMany({
       where: { profileId: body.profileId },
