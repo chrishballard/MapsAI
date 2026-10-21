@@ -2,7 +2,10 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
-import { replyModeForRating } from "../src/lib/review-reply-mode";
+import {
+  AUTO_REPLY_MAX_REVIEW_AGE_DAYS,
+  replyModeForRating,
+} from "../src/lib/review-reply-mode";
 import { reviewResourceName } from "../src/lib/review-key";
 import {
   checkHealthcareReply,
@@ -70,6 +73,55 @@ export const worker = new Worker<ReviewPublishJobData>(
       await prisma.reviewResponse.update({
         where: { id: reviewResponseId },
         data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
+      });
+      return;
+    }
+
+    // Publish only for the profiles the review sync serves: connected, and
+    // onboarded or marked reviewsOnly. A reply approved just before the
+    // profile was offboarded or disconnected would otherwise still publish
+    // from the queue. Same revert as above, so it waits for approval again
+    // if the profile comes back.
+    const servedBySync =
+      review.profile.isConnected &&
+      (review.profile.isOnboarded || review.profile.reviewsOnly);
+    if (!servedBySync) {
+      const state = review.profile.isConnected ? "offboarded" : "disconnected";
+      console.log(
+        `${review.profile.name} is ${state}, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
+      );
+      // Said on the row, so whoever approved it can see where it went.
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: {
+          status: "DRAFTED",
+          errorMessage: `Held before publishing: the profile is ${state}`,
+          autoApproved: false,
+        },
+      });
+      return;
+    }
+
+    // The sync never AUTO-approves a reply to a review older than
+    // AUTO_REPLY_MAX_REVIEW_AGE_DAYS, but a job queued before that rule (in
+    // retry backoff, or re-queued when a removed review reappeared) still
+    // lands here. A person's approval publishes whatever the review's age.
+    if (
+      reviewResponse.autoApproved &&
+      review.reviewDate &&
+      Date.now() - review.reviewDate.getTime() >
+        AUTO_REPLY_MAX_REVIEW_AGE_DAYS * 24 * 60 * 60 * 1000
+    ) {
+      console.log(
+        `Review ${review.id} is older than ${AUTO_REPLY_MAX_REVIEW_AGE_DAYS} days, reverting auto-approved response ${reviewResponseId} to DRAFTED for a person to review`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: {
+          status: "DRAFTED",
+          errorMessage: `Held before publishing: AUTO replies don't publish to reviews older than ${AUTO_REPLY_MAX_REVIEW_AGE_DAYS} days`,
+          autoApproved: false,
+        },
       });
       return;
     }

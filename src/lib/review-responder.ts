@@ -12,7 +12,14 @@ import {
 
 export const ReviewResponseSchema = z.object({
   response: z.string(),
-  sentiment: z.enum(["positive", "neutral", "negative"]),
+  // The SDK sends this enum to Claude only as a description, not as a
+  // constraint, so "Positive" can come back. Lower-case it before
+  // validating rather than fail a good reply over casing. The JSON schema
+  // Claude sees is unchanged, so the cached prompt is too.
+  sentiment: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().toLowerCase() : value),
+    z.enum(["positive", "neutral", "negative"])
+  ),
   tone: z.string(),
 });
 

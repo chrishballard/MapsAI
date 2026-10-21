@@ -6,9 +6,27 @@ import { normalizeReviewKey } from "../review-key";
 import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
 import { isHealthcareCategory } from "../healthcare";
 import {
+  AUTO_REPLY_MAX_REVIEW_AGE_DAYS,
+  STAR_RATINGS,
   replyModeForRating,
   type StarReplyModes,
 } from "../review-reply-mode";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// AUTO_REPLY_MAX_REVIEW_AGE_DAYS lives with the reply modes so the publish
+// worker can apply it without importing the sync.
+export { AUTO_REPLY_MAX_REVIEW_AGE_DAYS };
+
+/**
+ * How long after a profile's first review row is stored every sync still
+ * counts as its first. A backlog pass makes a Claude call per review and can
+ * run for tens of minutes, and the onboarding sync and the 30-minute cron are
+ * separate workers: a second pass starting meanwhile (or a retry of a first
+ * pass that failed partway) sees stored reviews, and without this would
+ * auto-publish the recent ones the first pass hadn't reached yet.
+ */
+const FIRST_SYNC_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 interface ReviewSyncProfile extends StarReplyModes {
   id: string;
@@ -31,9 +49,12 @@ export interface SyncProfileReviewsOptions {
  * handle each per the profile's star reply mode: IGNORE stores the review
  * only, DRAFT adds an AI reply awaiting approval, AUTO approves and queues
  * publishing. Healthcare profiles (see healthcare.ts) never auto-publish:
- * AUTO drafts for approval there, like DRAFT. Reviews that already have a reply on Google were answered
- * outside RankMaps — they're stored so the dashboard shows them, but never
- * get a generated or published response.
+ * AUTO drafts for approval there, like DRAFT. AUTO drafts instead on any
+ * profile's first review sync too, and for reviews older than
+ * AUTO_REPLY_MAX_REVIEW_AGE_DAYS. Reviews that already have a reply on
+ * Google were answered outside RankMaps — they're stored so the dashboard
+ * shows them, but never get a generated or published response. A review
+ * Google returns without a star rating is not stored until it has one.
  *
  * Reviews are matched on their normalized key (see review-key.ts), so the
  * same review coming back under a different account segment is never
@@ -72,6 +93,28 @@ export async function syncProfileReviews(
   // sweep if pagination ran to completion and covered Google's own total.
   const seenKeys: string[] = [];
   let pagesComplete = false;
+
+  // The first sync stores a profile's whole backlog as new reviews, so AUTO
+  // never publishes on it: every reply it drafts waits for a person. "First"
+  // means nothing was stored for the profile before this pass (removed
+  // reviews count), or the first row was stored under FIRST_SYNC_WINDOW_MS
+  // ago. Decided once up front so page one's reviews don't turn page two
+  // into a later sync. Only asked when AUTO could apply at all.
+  const canAutoPublish =
+    !isHealthcareCategory(profile.category) &&
+    STAR_RATINGS.some((stars) => replyModeForRating(profile, stars) === "AUTO");
+  let firstSync = false;
+  if (canAutoPublish) {
+    const firstStored = await prisma.review.findFirst({
+      where: { profileId: profile.id },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    firstSync =
+      !firstStored ||
+      Date.now() - firstStored.createdAt.getTime() < FIRST_SYNC_WINDOW_MS;
+  }
+  let heldForApproval = 0;
 
   do {
     const result = await fetchReviews(
@@ -159,8 +202,20 @@ export async function syncProfileReviews(
         continue;
       }
 
-      const rating = STAR_RATING_MAP[gbpReview.starRating] ?? 3;
+      const rating: number | undefined = STAR_RATING_MAP[gbpReview.starRating];
+      if (rating === undefined) {
+        // Google sent STAR_RATING_UNSPECIFIED, or no rating at all. This used
+        // to be stored as 3 stars, which skewed the stored average and ran
+        // the 3-star reply mode on a rating nobody gave. Review.rating can't
+        // be null, so leave the review out until Google reports a real
+        // rating; a later pass then stores it as a new review.
+        console.warn(
+          `${logPrefix} Review ${googleReviewKey} for ${profile.name} has no star rating (${gbpReview.starRating ?? "missing"}), not storing it yet`
+        );
+        continue;
+      }
       const repliedExternally = Boolean(gbpReview.reviewReply);
+      const reviewDate = new Date(gbpReview.createTime);
 
       const review = await prisma.review.create({
         data: {
@@ -172,7 +227,7 @@ export async function syncProfileReviews(
             : gbpReview.reviewer.displayName,
           rating,
           comment: gbpReview.comment || null,
-          reviewDate: new Date(gbpReview.createTime),
+          reviewDate,
           repliedExternally,
         },
       });
@@ -203,8 +258,17 @@ export async function syncProfileReviews(
 
         // A healthcare reply always waits for a person, whatever the star
         // mode says: one that confirms a reviewer is a patient is a HIPAA
-        // disclosure the moment it publishes.
-        const autoApprove = mode === "AUTO" && !isHealthcareCategory(profile.category);
+        // disclosure the moment it publishes. So does any reply on a first
+        // sync, or to a review too old to count as just in (an unparseable
+        // date counts as too old).
+        const recent =
+          Date.now() - reviewDate.getTime() <=
+          AUTO_REPLY_MAX_REVIEW_AGE_DAYS * DAY_MS;
+        const autoApprove =
+          mode === "AUTO" && canAutoPublish && !firstSync && recent;
+        if (mode === "AUTO" && canAutoPublish && !autoApprove) {
+          heldForApproval++;
+        }
 
         const reviewResponse = await prisma.reviewResponse.create({
           data: {
@@ -300,6 +364,12 @@ export async function syncProfileReviews(
         `${logPrefix} Marked ${removed.count} review(s) removed on Google for ${profile.name}`
       );
     }
+  }
+
+  if (heldForApproval > 0) {
+    console.log(
+      `${logPrefix} Drafted ${heldForApproval} AUTO-mode replies for approval instead of publishing them for ${profile.name} (${firstSync ? "first review sync" : `reviews older than ${AUTO_REPLY_MAX_REVIEW_AGE_DAYS} days`})`
+    );
   }
 
   console.log(

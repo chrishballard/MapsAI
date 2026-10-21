@@ -68,6 +68,8 @@ function approvedResponse(review: { removedAt: Date | null }) {
         googleAccountId: 'ga1',
         accountResourceName: 'accounts/103088058873659208402',
         reviewsEnabled: true,
+        isConnected: true,
+        isOnboarded: true,
         reviewReplyMode1: 'DRAFT',
         reviewReplyMode2: 'DRAFT',
         reviewReplyMode3: 'DRAFT',

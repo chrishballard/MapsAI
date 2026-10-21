@@ -3,11 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Star-based reply handling: each new review follows the profile's mode for
 // its star rating — IGNORE stores the review and stops, DRAFT waits for
 // human approval, AUTO approves and queues publishing. The legacy
-// autoApproveReviews flag has no effect anymore.
+// autoApproveReviews flag has no effect anymore. (AUTO also needs a profile
+// that has synced before and a recent review; see review-sync-auto-backlog.)
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    review: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    review: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      count: vi.fn(),
+      findFirst: vi.fn(),
+    },
     reviewResponse: { create: vi.fn() },
     profile: { update: vi.fn() },
   },
@@ -52,7 +60,7 @@ function gbpReview(starRating: string) {
     reviewer: { displayName: 'Dana', isAnonymous: false },
     starRating,
     comment: 'Some feedback',
-    createTime: '2026-08-01T00:00:00Z',
+    createTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
   };
 }
 
@@ -61,6 +69,10 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.review.findUnique.mockResolvedValue(null);
   mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
+  // Not the profile's first review sync.
+  mocks.prisma.review.count.mockResolvedValue(12);
+  // An earlier sync stored this profile's first review a month ago.
+  mocks.prisma.review.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 30 * 86_400_000) });
   mocks.prisma.review.create.mockResolvedValue({
     id: 'rev1',
     reviewerName: 'Dana',
