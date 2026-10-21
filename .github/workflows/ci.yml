@@ -1,0 +1,44 @@
+name: CI
+
+# Typecheck, lint and the vitest suite on every PR and every push to main, so
+# "merge on green" means the code compiles and the tests pass, not only that
+# the security review found nothing. Tests run offline: every Google, Claude,
+# database and Redis call is mocked.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # src/generated is gitignored; tsc and the tests import the client.
+      - run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+
+      - name: Lint
+        run: npx eslint
+
+      - name: Test
+        run: npx vitest run

@@ -56,8 +56,10 @@ jobs:
 
       # Fail on any finding, so a merge on green CI stops for it. Also fails when
       # the review never returned a result (plan limit reached, expired token).
+      # Not on a cancelled run: a newer push superseded it, and its empty
+      # result would report a misleading token error.
       - name: Fail on findings
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           RESULT: ${{ steps.review.outputs.structured_output }}
         run: |
