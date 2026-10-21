@@ -1,0 +1,14 @@
+**MapsAI: this repository is public:**
+- Flag any committed secret, API key, OAuth client secret, database URL, Google account email, client business data or customer review content that is not already public.
+
+**Google account tokens:**
+- GoogleAccount rows hold the OAuth access and refresh tokens that can edit every connected client's Google Business Profile (100 to 200 profiles). Flag code that returns them in an API response, passes them to a client component, writes them to a log or error message, or sends them anywhere other than Google's own APIs.
+
+**Auth on API routes:**
+- There is no middleware: each route under src/app/api must check the session itself with requireSession() or requireProfile() from src/lib/auth/require-session.ts. Sign-in is limited to ALLOWED_EMAILS through NextAuth. Flag a new or changed route that skips the check, does work before it, or acts on a profile, post, review or image id without confirming it belongs to a profile the caller may manage.
+- src/app/api/public/* and /u/[token] are public on purpose and gated by isValidImageToken() plus a database lookup. Flag a public path that skips either, accepts an upload without the type and size checks in src/lib/image-validation.ts, builds a file path or storage key from user input, or reveals data beyond the one token's scope.
+
+**Untrusted text that reaches Google or a server fetch:**
+- Review text, scraped website content (src/lib/website-scraper.ts) and client uploads are untrusted and flow into Claude prompts. Flag model output that is published to a Google profile (posts, review replies, descriptions, services) without the approval step, or that is executed or built into a query.
+- Flag server-side fetches of a URL that comes from a user, a client website or model output without restricting the scheme and host (SSRF to internal addresses or cloud metadata).
+- BullMQ workers in workers/ act on ids carried in job data. Flag a worker that trusts job data to publish to, or read from, a profile other than the one the job was created for.
