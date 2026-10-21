@@ -4,7 +4,7 @@ import {
   parseMetricsResponse,
 } from "../google-performance";
 import { fetchSearchKeywords } from "../google-keywords";
-import { getMonthStart, formatMonthISO } from "../dates";
+import { getDayStart, getMonthStart, formatMonthISO } from "../dates";
 
 interface MetricsSyncProfile {
   id: string;
@@ -39,9 +39,11 @@ export async function syncProfileMetrics(
   // Extract numeric location ID from locationName (e.g., "locations/12345" -> "12345")
   const locationId = profile.locationName.split("/").pop()!;
 
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  // UTC midnights: fetchDailyMetrics asks Google for these dates' UTC days,
+  // which are the days DailyMetric rows are keyed on, in any timezone.
+  const endDate = getDayStart(new Date());
+  const startDate = new Date(endDate);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
 
   const metricsResponse = await fetchDailyMetrics(
     profile.googleAccountId,

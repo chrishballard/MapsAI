@@ -101,6 +101,57 @@ export function aggregateDailyMetrics(
   );
 }
 
+// A type alias, not an interface, so it stays assignable to
+// computeSparklineData's index-signature parameter.
+export type DailyMetricCounts = {
+  date: Date;
+  impressionsSearchDesktop: number;
+  impressionsSearchMobile: number;
+  impressionsMapsDesktop: number;
+  impressionsMapsMobile: number;
+  websiteClicks: number;
+  callClicks: number;
+  directionRequests: number;
+};
+
+/**
+ * Collapses DailyMetric rows to one per day, summing every count, oldest first.
+ * A range across all profiles holds one row per profile per day; charted
+ * as-is that draws N points per date instead of the day's total.
+ */
+export function sumDailyMetricsByDate(
+  metrics: DailyMetricCounts[]
+): DailyMetricCounts[] {
+  const byDate = new Map<string, DailyMetricCounts>();
+  for (const m of metrics) {
+    const key = formatDateISO(m.date);
+    const day = byDate.get(key);
+    if (!day) {
+      byDate.set(key, {
+        date: m.date,
+        impressionsSearchDesktop: m.impressionsSearchDesktop,
+        impressionsSearchMobile: m.impressionsSearchMobile,
+        impressionsMapsDesktop: m.impressionsMapsDesktop,
+        impressionsMapsMobile: m.impressionsMapsMobile,
+        websiteClicks: m.websiteClicks,
+        callClicks: m.callClicks,
+        directionRequests: m.directionRequests,
+      });
+      continue;
+    }
+    day.impressionsSearchDesktop += m.impressionsSearchDesktop;
+    day.impressionsSearchMobile += m.impressionsSearchMobile;
+    day.impressionsMapsDesktop += m.impressionsMapsDesktop;
+    day.impressionsMapsMobile += m.impressionsMapsMobile;
+    day.websiteClicks += m.websiteClicks;
+    day.callClicks += m.callClicks;
+    day.directionRequests += m.directionRequests;
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, day]) => day);
+}
+
 /**
  * Returns Math.round(((current - previous) / previous) * 100) or null if previous === 0.
  */
@@ -129,10 +180,26 @@ export function computeSparklineData(
 }
 
 /**
+ * ReviewResponse `where` for replies that went live in [from, to], by the
+ * same rule buildActionsLog dates them with: publishedAt, or createdAt for a
+ * published row that has no publishedAt.
+ */
+export function replyPublishedBetween(from: Date, to: Date) {
+  return {
+    OR: [
+      { publishedAt: { gte: from, lte: to } },
+      { publishedAt: null, createdAt: { gte: from, lte: to } },
+    ],
+  };
+}
+
+/**
  * Builds action log items from Post, ReviewResponse, and ProfileDescription arrays,
  * filtered to the given date range.
  * Per D-14 and research: services and attributes are NOT trackable (no timestamp fields).
  * NO .slice() limit — returns all items in range, sorted newest-first.
+ * A review reply is dated by when it went live (publishedAt), not when it was
+ * drafted: a draft can wait days for approval, across a month boundary.
  */
 export function buildActionsLog(
   posts: Array<{
@@ -144,6 +211,7 @@ export function buildActionsLog(
   responses: Array<{
     id: string;
     status: string;
+    publishedAt: Date | null;
     createdAt: Date;
     review: { profile: { name: string } };
   }>,
@@ -172,17 +240,15 @@ export function buildActionsLog(
     }));
 
   const responseItems: ActionLogItem[] = responses
+    .map((r) => ({ r, time: r.publishedAt ?? r.createdAt }))
     .filter(
-      (r) =>
-        r.status === "PUBLISHED" &&
-        r.createdAt >= from &&
-        r.createdAt <= to
+      ({ r, time }) => r.status === "PUBLISHED" && time >= from && time <= to
     )
-    .map((r) => ({
+    .map(({ r, time }) => ({
       id: r.id,
       label: "Published review reply",
       profileName: r.review.profile.name,
-      time: r.createdAt,
+      time,
       type: "review_reply" as const,
     }));
 

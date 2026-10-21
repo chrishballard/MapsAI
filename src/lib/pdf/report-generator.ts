@@ -14,11 +14,14 @@ import {
   computePriorPeriod,
   computeSparklineData,
   buildActionsLog,
+  replyPublishedBetween,
+  sumDailyMetricsByDate,
 } from "@/lib/report-metrics";
 import {
   getMonthStart,
   getMonthEnd,
   formatMonthYear,
+  formatMediumDateUTC,
 } from "@/lib/dates";
 
 function getMonthRange(month: Date): { start: Date; end: Date } {
@@ -122,8 +125,10 @@ export async function generateReport(
     reviewCount > 0
       ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount
       : 0;
+  // A review the owner answered in GBP is responded to, even though
+  // RankMaps never wrote the reply.
   const respondedCount = reviews.filter(
-    (r) => r.response && r.response.status === "PUBLISHED"
+    (r) => r.repliedExternally || r.response?.status === "PUBLISHED"
   ).length;
   const responseRate = reviewCount > 0 ? (respondedCount / reviewCount) * 100 : 0;
 
@@ -154,11 +159,19 @@ export async function generateReport(
   }
 
   // 9. Build report data
+  // A month that hasn't ended is month-to-date, and against a whole previous
+  // month every comparison reads as a drop. The generate route defaults to
+  // the last complete month, so this only happens when someone asks for the
+  // current one: the PDF labels it partial and leaves the comparison out.
+  const now = new Date();
+  const isPartialMonth = curStart.getTime() >= getMonthStart(now).getTime();
+
   const reportData: ReportData = {
     businessName: profile.name,
     address: profile.address,
     category: profile.category,
     month: formatMonthLabel(month),
+    partialMonthAsOf: isPartialMonth ? formatMediumDateUTC(now) : null,
     currentMetrics,
     previousMetrics,
     chartImageUri,
@@ -216,7 +229,10 @@ export async function generateDashboardReport(
   const prior = aggregateDailyMetrics(priorDailyMetrics);
 
   // 5. Build chart data for impressions chart
-  const chartData = currentDailyMetrics.map((m) => ({
+  // One point per day: without a profile filter there is a row per profile
+  // per day, and the chart wants the day's total.
+  const dailyTotals = sumDailyMetricsByDate(currentDailyMetrics);
+  const chartData = dailyTotals.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
@@ -240,7 +256,7 @@ export async function generateDashboardReport(
   ];
   const sparkUris: Record<string, string | null> = {};
   for (const { field, color } of sparklineFields) {
-    const sparkData = computeSparklineData(currentDailyMetrics, field);
+    const sparkData = computeSparklineData(dailyTotals, field);
     if (sparkData.length > 1) {
       try {
         const buf = await renderSparklineChart(sparkData, color);
@@ -272,12 +288,13 @@ export async function generateDashboardReport(
     prisma.reviewResponse.findMany({
       where: {
         status: "PUBLISHED",
-        createdAt: { gte: from, lte: to },
+        ...replyPublishedBetween(from, to),
         ...(profileId ? { review: { profileId } } : {}),
       },
       select: {
         id: true,
         status: true,
+        publishedAt: true,
         createdAt: true,
         review: { select: { profile: { select: { name: true } } } },
       },
@@ -292,24 +309,16 @@ export async function generateDashboardReport(
     }),
   ]);
   const actionItems = buildActionsLog(posts, responses, descriptions, from, to);
+  // Dates print in UTC: from/to are UTC midnights and actions were filtered
+  // against them, so a local-time formatter put both a day early in US zones.
   const actionsForPdf = actionItems.map((a) => ({
     label: a.label,
     profileName: a.profileName,
-    date: a.time.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
+    date: formatMediumDateUTC(a.time),
   }));
 
   // 8. Format period label
-  const fmtDate = (d: Date) =>
-    d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  const periodLabel = `${fmtDate(from)} - ${fmtDate(to)}`;
+  const periodLabel = `${formatMediumDateUTC(from)} - ${formatMediumDateUTC(to)}`;
 
   // 9. Build report data
   const reportData: DashboardReportData = {

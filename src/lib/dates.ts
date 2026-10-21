@@ -4,6 +4,13 @@
  * month boundaries computed in local time silently miss rows.
  */
 
+/** Midnight UTC of the date's UTC calendar day. */
+export function getDayStart(date: Date = new Date()): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  );
+}
+
 /** First of the month (UTC midnight). `offsetMonths` shifts the month, e.g. -1 for the previous month. */
 export function getMonthStart(date: Date = new Date(), offsetMonths = 0): Date {
   return new Date(
@@ -41,6 +48,16 @@ export function formatMonthYear(date: Date): string {
 export function formatShortMonthYear(date: Date): string {
   return date.toLocaleDateString("en-US", {
     month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** "Jul 9, 2026" — UTC, for dates compared against UTC day boundaries. */
+export function formatMediumDateUTC(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
     year: "numeric",
     timeZone: "UTC",
   });

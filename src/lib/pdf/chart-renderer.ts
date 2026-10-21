@@ -34,9 +34,11 @@ export async function renderImpressionsChart(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
+  // "YYYY-MM-DD" parses as UTC midnight, so read it back in UTC: local
+  // getters label every point a day early west of UTC.
   const labels = sorted.map((d) => {
     const date = new Date(d.date);
-    return `${date.getMonth() + 1}/${date.getDate()}`;
+    return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
   });
 
   const config: ChartConfiguration = {

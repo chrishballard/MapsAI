@@ -6,6 +6,8 @@ import {
   computePctChange,
   computeSparklineData,
   buildActionsLog,
+  sumDailyMetricsByDate,
+  replyPublishedBetween,
 } from '@/lib/report-metrics';
 
 // Helpers
@@ -250,16 +252,43 @@ describe('buildActionsLog', () => {
     expect(result[0].type).toBe('post');
   });
 
-  it('filters responses to only PUBLISHED status with createdAt in range', () => {
+  // Replies used to be dated by createdAt, which is when the draft was
+  // written. A draft can wait days for approval, across a month boundary, so
+  // the reply landed in the wrong month's log. The client-facing action is the
+  // reply going live, so publishedAt dates it; createdAt only stands in for a
+  // PUBLISHED row that has no publishedAt.
+  it('filters responses to only PUBLISHED status with publishedAt in range', () => {
     const responses = [
-      { id: 'r1', status: 'PUBLISHED', createdAt: new Date('2026-03-10T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
-      { id: 'r2', status: 'DRAFT', createdAt: new Date('2026-03-10T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
-      { id: 'r3', status: 'PUBLISHED', createdAt: new Date('2026-01-10T00:00:00Z'), review: { profile: { name: 'Profile B' } } }, // out of range
+      { id: 'r1', status: 'PUBLISHED', createdAt: new Date('2026-03-10T00:00:00Z'), publishedAt: new Date('2026-03-11T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
+      { id: 'r2', status: 'DRAFT', createdAt: new Date('2026-03-10T00:00:00Z'), publishedAt: null, review: { profile: { name: 'Profile B' } } },
+      { id: 'r3', status: 'PUBLISHED', createdAt: new Date('2026-01-10T00:00:00Z'), publishedAt: new Date('2026-01-11T00:00:00Z'), review: { profile: { name: 'Profile B' } } }, // out of range
     ];
     const result = buildActionsLog([], responses, [], from, to);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('r1');
     expect(result[0].type).toBe('review_reply');
+  });
+
+  it('dates a reply by when it was published, not when it was drafted', () => {
+    const responses = [
+      // Drafted in February, published in March: March's action, on its publish day.
+      { id: 'feb-draft', status: 'PUBLISHED', createdAt: new Date('2026-02-26T00:00:00Z'), publishedAt: new Date('2026-03-02T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
+      // Drafted in March, published in April: not March's.
+      { id: 'apr-publish', status: 'PUBLISHED', createdAt: new Date('2026-03-28T00:00:00Z'), publishedAt: new Date('2026-04-02T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
+    ];
+    const result = buildActionsLog([], responses, [], from, to);
+    expect(result.map((r) => r.id)).toEqual(['feb-draft']);
+    expect(result[0].time).toEqual(new Date('2026-03-02T00:00:00Z'));
+  });
+
+  it('falls back to createdAt for a published reply with no publishedAt', () => {
+    const responses = [
+      { id: 'legacy', status: 'PUBLISHED', createdAt: new Date('2026-03-12T00:00:00Z'), publishedAt: null, review: { profile: { name: 'Profile B' } } },
+      { id: 'legacy-old', status: 'PUBLISHED', createdAt: new Date('2026-02-12T00:00:00Z'), publishedAt: null, review: { profile: { name: 'Profile B' } } },
+    ];
+    const result = buildActionsLog([], responses, [], from, to);
+    expect(result.map((r) => r.id)).toEqual(['legacy']);
+    expect(result[0].time).toEqual(new Date('2026-03-12T00:00:00Z'));
   });
 
   it('filters descriptions to only those with pushedAt in range', () => {
@@ -314,7 +343,7 @@ describe('buildActionsLog', () => {
       { id: 'p1', status: 'PUBLISHED', publishedAt: new Date('2026-03-10T00:00:00Z'), profile: { name: 'Profile A' } },
     ];
     const responses = [
-      { id: 'r1', status: 'PUBLISHED', createdAt: new Date('2026-03-20T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
+      { id: 'r1', status: 'PUBLISHED', createdAt: new Date('2026-03-19T00:00:00Z'), publishedAt: new Date('2026-03-20T00:00:00Z'), review: { profile: { name: 'Profile B' } } },
     ];
     const descriptions = [
       { id: 'd1', pushedAt: new Date('2026-03-15T00:00:00Z'), profile: { name: 'Profile C' } },
@@ -324,5 +353,61 @@ describe('buildActionsLog', () => {
     expect(result[0].id).toBe('r1'); // Mar 20
     expect(result[1].id).toBe('d1'); // Mar 15
     expect(result[2].id).toBe('p1'); // Mar 10
+  });
+});
+
+describe('sumDailyMetricsByDate', () => {
+  const metricRow = (ymd: string, n: number) => ({
+    date: new Date(`${ymd}T00:00:00Z`),
+    impressionsSearchDesktop: n,
+    impressionsSearchMobile: n * 2,
+    impressionsMapsDesktop: n * 3,
+    impressionsMapsMobile: n * 4,
+    websiteClicks: n * 5,
+    callClicks: n * 6,
+    directionRequests: n * 7,
+  });
+
+  it('returns an empty array for no rows', () => {
+    expect(sumDailyMetricsByDate([])).toEqual([]);
+  });
+
+  // An All Profiles range holds one row per profile per day.
+  it('sums every count across rows that share a date, one row per day, oldest first', () => {
+    const result = sumDailyMetricsByDate([
+      metricRow('2026-03-02', 2),
+      metricRow('2026-03-01', 1),
+      metricRow('2026-03-02', 20),
+      metricRow('2026-03-01', 10),
+    ]);
+    expect(result).toEqual([
+      { ...metricRow('2026-03-01', 11) },
+      { ...metricRow('2026-03-02', 22) },
+    ]);
+  });
+
+  it('leaves single-profile rows as they were', () => {
+    const rows = [metricRow('2026-03-01', 1), metricRow('2026-03-02', 2)];
+    expect(sumDailyMetricsByDate(rows)).toEqual(rows);
+  });
+
+  it('keeps the headline totals the same as summing the raw rows', () => {
+    const rows = [metricRow('2026-03-01', 1), metricRow('2026-03-01', 10), metricRow('2026-03-02', 4)];
+    expect(aggregateDailyMetrics(sumDailyMetricsByDate(rows))).toEqual(aggregateDailyMetrics(rows));
+  });
+});
+
+describe('replyPublishedBetween', () => {
+  // The query side of buildActionsLog's rule, so the rows fetched are the
+  // rows it keeps.
+  it('matches publishedAt in range, or createdAt when publishedAt is missing', () => {
+    const from = new Date('2026-03-01T00:00:00Z');
+    const to = new Date('2026-03-31T00:00:00Z');
+    expect(replyPublishedBetween(from, to)).toEqual({
+      OR: [
+        { publishedAt: { gte: from, lte: to } },
+        { publishedAt: null, createdAt: { gte: from, lte: to } },
+      ],
+    });
   });
 });

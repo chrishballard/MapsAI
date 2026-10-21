@@ -8,6 +8,7 @@ import {
   computePriorPeriod,
   computeSparklineData,
   buildActionsLog,
+  replyPublishedBetween,
 } from "@/lib/report-metrics";
 import { ViewsOnGoogleChart } from "./views-on-google-chart";
 import { MetricSparkCard } from "./metric-spark-card";
@@ -64,10 +65,11 @@ export async function ReportsDashboardContent({
         },
         include: { profile: { select: { name: true } } },
       }),
+      // Fetched by the same publish date buildActionsLog filters on.
       prisma.reviewResponse.findMany({
         where: {
           status: "PUBLISHED",
-          createdAt: { gte: fromDate, lte: toDate },
+          ...replyPublishedBetween(fromDate, toDate),
           ...(profileId ? { review: { profileId } } : {}),
         },
         include: { review: { include: { profile: { select: { name: true } } } } },
