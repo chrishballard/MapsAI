@@ -534,14 +534,69 @@ describe('captionImage claim (two runs never both pay for one image)', () => {
 
     const claim = mocks.prisma.profileImage.updateMany.mock.calls[0][0];
     expect(claim.where).toMatchObject({ id: 'img1', captionedAt: null });
-    // Unclaimed, or claimed by a run that died long enough ago.
+    // Unclaimed, claimed by a run that died long enough ago, or given up on
+    // long enough ago to try again.
     expect(claim.where.OR).toEqual([
       { captionSkipReason: null },
       { captionSkipReason: 'IN_PROGRESS', updatedAt: { lt: expect.any(Date) } },
+      { captionSkipReason: 'RETRIES_EXHAUSTED', updatedAt: { lt: expect.any(Date) } },
     ]);
+    // The lease is 15 minutes: a shorter one lets a second run take over a
+    // claim while the first is still waiting on Claude, and both pay.
+    const leaseCutoff = claim.where.OR[1].updatedAt.lt.getTime();
+    expect(Math.abs(Date.now() - 15 * 60_000 - leaseCutoff)).toBeLessThan(5_000);
     expect(claim.data).toMatchObject({ captionSkipReason: 'IN_PROGRESS' });
     expect(order[0]).toBe('updateMany');
     expect(order).toContain('fetch');
+  });
+
+  it('bounds the Claude call well inside the claim lease', async () => {
+    // A call that outlived the 15-minute lease would let a second run take
+    // the claim over and pay for the same image again.
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.prisma.profileImage.updateMany.mockResolvedValue({ count: 1 });
+    mocks.fetch.mockResolvedValue(fetchResponse());
+
+    await captionImage('img1');
+
+    const { timeoutMs, maxRetries } = mocks.generate.mock.calls[0][0];
+    expect(timeoutMs * (maxRetries + 1)).toBeLessThan(15 * 60_000);
+  });
+
+  it('tries again an image the worker gave up on, once the cooldown has passed', async () => {
+    // An outage (Claude down, credits out) can exhaust a fine photo; nothing
+    // else clears the marker on an upload, so it would stay out of posts.
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({
+        googleUrl: 'https://lh3.googleusercontent.com/photo',
+        captionSkipReason: 'RETRIES_EXHAUSTED',
+        updatedAt: new Date(Date.now() - 8 * 86_400_000),
+      })
+    );
+    mocks.prisma.profileImage.updateMany.mockResolvedValue({ count: 1 });
+    mocks.fetch.mockResolvedValue(fetchResponse());
+
+    await captionImage('img1');
+
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an image the worker gave up on recently alone', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({
+        googleUrl: 'https://lh3.googleusercontent.com/photo',
+        captionSkipReason: 'RETRIES_EXHAUSTED',
+        updatedAt: new Date(Date.now() - 86_400_000),
+      })
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'RETRIES_EXHAUSTED' });
+    expect(mocks.prisma.profileImage.updateMany).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
   });
 
   it('leaves the image to the run already captioning it: no fetch, no Claude call', async () => {
@@ -672,7 +727,11 @@ describe('captionUncaptionedApproved (bounded pre-pass)', () => {
       profileId: 'p1',
       status: 'APPROVED',
       captionedAt: null,
-      OR: [{ captionSkipReason: null }, { captionSkipReason: 'IN_PROGRESS' }],
+      OR: [
+        { captionSkipReason: null },
+        { captionSkipReason: 'IN_PROGRESS' },
+        { captionSkipReason: 'RETRIES_EXHAUSTED', updatedAt: { lt: expect.any(Date) } },
+      ],
     });
     expect(query.take).toBe(10);
   });

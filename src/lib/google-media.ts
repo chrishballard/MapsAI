@@ -198,10 +198,21 @@ export async function syncProfileMediaToLibrary(
   // filter above dropped: a photo that came back without a URL on a
   // degraded read was not deleted, and removing its row would lose its
   // caption, usage history and public link.
+  //
+  // And an empty list proves nothing: for a profile we hold photos for it
+  // is indistinguishable from an API hiccup, so nothing is removed on it.
   const liveNames = new Set(items.map((item) => item.name));
-  const staleIds = existing
-    .filter((row) => row.googleMediaName && !liveNames.has(row.googleMediaName))
-    .map((row) => row.id);
+  const staleIds =
+    items.length === 0
+      ? []
+      : existing
+          .filter((row) => row.googleMediaName && !liveNames.has(row.googleMediaName))
+          .map((row) => row.id);
+  if (items.length === 0 && existing.some((row) => row.googleMediaName)) {
+    console.warn(
+      `[media-sync] Google returned no photos for profile ${profileId}; keeping the library rows as they are`
+    );
+  }
 
   const results = await prisma.$transaction([
     ...updates.map((u) =>

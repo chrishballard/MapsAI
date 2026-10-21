@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { captionImages, type CaptionSkipReason } from "./image-captioner";
-import { AWAITING_CAPTION } from "./caption-state";
+import { awaitingCaption } from "./caption-state";
 
 // Rough per-image cost at the pinned Sonnet model ($3/M input, $15/M output).
 // GBP-hosted photos are fetched as ~512px CDN variants (~350 image tokens,
@@ -118,7 +118,7 @@ export async function backfillImageCaptions(
           profileId: profile.id,
           status: "APPROVED",
           // Permanent skips are recorded on the row and never retried.
-          ...AWAITING_CAPTION,
+          ...awaitingCaption(),
         },
         orderBy: { createdAt: "asc" },
         // Never pull image bytes just to count rows.

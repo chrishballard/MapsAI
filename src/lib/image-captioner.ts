@@ -2,7 +2,12 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { generate } from "./claude";
 import { ClaudeRefusalError } from "./claude-refusal";
-import { AWAITING_CAPTION, CAPTION_IN_PROGRESS } from "./caption-state";
+import {
+  awaitingCaption,
+  CAPTION_IN_PROGRESS,
+  CAPTION_RETRIES_EXHAUSTED,
+  RETRIES_EXHAUSTED_COOLDOWN_MS,
+} from "./caption-state";
 
 // The Vision API rejects oversized images; stay under its 5MB decoded cap
 // with margin. Uploads are usually captioned from the ~480px thumbnail, so
@@ -118,15 +123,21 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       category: true,
       captionedAt: true,
       captionSkipReason: true,
+      updatedAt: true,
       profile: { select: { name: true, category: true } },
     },
   });
 
   if (!image) return { imageId, ok: false, skipped: "GONE" };
   if (image.captionedAt) return { imageId, ok: true };
+  const exhaustedCutoff = new Date(Date.now() - RETRIES_EXHAUSTED_COOLDOWN_MS);
+  const exhaustedCooledDown =
+    image.captionSkipReason === CAPTION_RETRIES_EXHAUSTED &&
+    image.updatedAt < exhaustedCutoff;
   if (
     image.captionSkipReason &&
-    image.captionSkipReason !== CAPTION_IN_PROGRESS
+    image.captionSkipReason !== CAPTION_IN_PROGRESS &&
+    !exhaustedCooledDown
   ) {
     // Already found unusable — don't re-pull bytes or re-hit the CDN.
     return {
@@ -149,6 +160,11 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
         {
           captionSkipReason: CAPTION_IN_PROGRESS,
           updatedAt: { lt: new Date(Date.now() - CAPTION_CLAIM_LEASE_MS) },
+        },
+        // Given up on, but long enough ago to try again (an outage, say)
+        {
+          captionSkipReason: CAPTION_RETRIES_EXHAUSTED,
+          updatedAt: { lt: exhaustedCutoff },
         },
       ],
     },
@@ -245,6 +261,10 @@ async function captionClaimedImage(
       // shortening it can silently switch caching off.
       cacheSystem: true,
       label: "image-caption",
+      // Every attempt must finish well inside CAPTION_CLAIM_LEASE_MS, or a
+      // second run takes the claim over and pays for the image again.
+      timeoutMs: 2 * 60 * 1000,
+      maxRetries: 1,
     });
   } catch (err) {
     // The API rejects images over 8,000px on a side with a 400 even when
@@ -304,8 +324,8 @@ export async function recordCaptionRetriesExhausted(
   imageId: string
 ): Promise<void> {
   await prisma.profileImage.updateMany({
-    where: { id: imageId, ...AWAITING_CAPTION },
-    data: { captionSkipReason: "RETRIES_EXHAUSTED" },
+    where: { id: imageId, ...awaitingCaption() },
+    data: { captionSkipReason: CAPTION_RETRIES_EXHAUSTED },
   });
 }
 
@@ -394,7 +414,7 @@ export async function captionUncaptionedApproved(
 ): Promise<number> {
   try {
     const rows = await prisma.profileImage.findMany({
-      where: { profileId, status: "APPROVED", ...AWAITING_CAPTION },
+      where: { profileId, status: "APPROVED", ...awaitingCaption() },
       orderBy: { createdAt: "asc" },
       take: options.limit ?? 50,
       select: { id: true },

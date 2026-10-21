@@ -165,7 +165,11 @@ describe('enqueueCaptionsForProfile', () => {
           captionedAt: null,
           // Permanently skipped images must never be re-enqueued. A claimed
           // one is, so a claim whose run died doesn't hide it for good.
-          OR: [{ captionSkipReason: null }, { captionSkipReason: 'IN_PROGRESS' }],
+          OR: [
+            { captionSkipReason: null },
+            { captionSkipReason: 'IN_PROGRESS' },
+            { captionSkipReason: 'RETRIES_EXHAUSTED', updatedAt: { lt: expect.any(Date) } },
+          ],
         },
       })
     );

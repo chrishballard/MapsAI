@@ -90,7 +90,7 @@ describe('stale-row removal', () => {
 
   it('still removes the row of a photo Google no longer returns at all', async () => {
     mocks.prisma.profileImage.findMany.mockResolvedValue([gbpRow()]);
-    googleReturns([]);
+    googleReturns([photo({ name: 'accounts/1/locations/2/media/other' })]);
 
     const result = await syncProfileMediaToLibrary('p1');
 
@@ -98,6 +98,19 @@ describe('stale-row removal', () => {
       where: { id: { in: ['row1'] } },
     });
     expect(result.removed).toBe(1);
+  });
+
+  it('removes nothing when Google returns no photos at all', async () => {
+    // An empty list for a profile we hold photos for is indistinguishable
+    // from an API hiccup, and deleting on it would lose every row's caption,
+    // usage history and public link in one sync.
+    mocks.prisma.profileImage.findMany.mockResolvedValue([gbpRow()]);
+    googleReturns([]);
+
+    const result = await syncProfileMediaToLibrary('p1');
+
+    expect(mocks.prisma.profileImage.deleteMany).not.toHaveBeenCalled();
+    expect(result.removed).toBe(0);
   });
 });
 

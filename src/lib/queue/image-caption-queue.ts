@@ -1,7 +1,7 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
 import { prisma } from "../prisma";
-import { AWAITING_CAPTION } from "../caption-state";
+import { awaitingCaption } from "../caption-state";
 
 export interface ImageCaptionJobData {
   imageId: string;
@@ -84,7 +84,7 @@ export async function enqueueCaptionsForProfile(
         // Permanently skipped images (no usable input) must never be
         // re-enqueued — without this they'd be reprocessed on every sync
         // and every generation batch, forever.
-        ...AWAITING_CAPTION,
+        ...awaitingCaption(),
       },
       select: { id: true },
     });
