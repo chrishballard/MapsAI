@@ -74,6 +74,25 @@ export const worker = new Worker<ReviewPublishJobData>(
       return;
     }
 
+    // Publish only for the profiles the review sync serves: connected, and
+    // onboarded or marked reviewsOnly. A reply approved just before the
+    // profile was offboarded or disconnected would otherwise still publish
+    // from the queue. Same revert as above, so it waits for approval again
+    // if the profile comes back.
+    const servedBySync =
+      review.profile.isConnected &&
+      (review.profile.isOnboarded || review.profile.reviewsOnly);
+    if (!servedBySync) {
+      console.log(
+        `${review.profile.name} is ${review.profile.isConnected ? "offboarded" : "disconnected"}, reverting response ${reviewResponseId} to DRAFTED instead of publishing`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: { status: "DRAFTED", errorMessage: null, autoApproved: false },
+      });
+      return;
+    }
+
     // A response the AUTO mode approved only publishes while its star
     // rating is still set to AUTO. If the operator switched that rating to
     // Draft or Ignore after this job was queued, drop it back to DRAFTED —

@@ -73,6 +73,8 @@ function approved(options: {
         googleAccountId: 'ga1',
         accountResourceName: 'accounts/1',
         reviewsEnabled: true,
+        isConnected: true,
+        isOnboarded: true,
         reviewReplyMode1: 'AUTO',
         reviewReplyMode2: 'AUTO',
         reviewReplyMode3: 'AUTO',

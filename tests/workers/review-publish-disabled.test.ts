@@ -58,6 +58,8 @@ function approvedResponse(reviewsEnabled: boolean) {
         googleAccountId: 'ga1',
         accountResourceName: 'accounts/1',
         reviewsEnabled,
+        isConnected: true,
+        isOnboarded: true,
         googleAccount: { id: 'ga1' },
       },
     },

@@ -6,7 +6,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    review: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    review: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      count: vi.fn(),
+    },
     reviewResponse: { create: vi.fn() },
     profile: { update: vi.fn() },
   },
@@ -51,6 +57,8 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.review.findUnique.mockResolvedValue(null);
   mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
+  // Not the profile's first review sync.
+  mocks.prisma.review.count.mockResolvedValue(12);
   mocks.prisma.review.create.mockResolvedValue({
     id: 'rev1',
     reviewerName: 'Dana',
@@ -69,7 +77,7 @@ beforeEach(() => {
         reviewer: { displayName: 'Dana', isAnonymous: false },
         starRating: 'FIVE',
         comment: 'Lovely team',
-        createTime: '2026-09-01T00:00:00Z',
+        createTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       },
     ],
     nextPageToken: undefined,

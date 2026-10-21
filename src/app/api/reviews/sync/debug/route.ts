@@ -11,12 +11,13 @@ export async function GET() {
   const results: Record<string, unknown>[] = [];
 
   try {
-    // 1. Find profiles
+    // 1. Find profiles, as the review sync worker picks them: onboarded,
+    // or offboarded but marked reviewsOnly.
     const profiles = await prisma.profile.findMany({
       where: {
         isConnected: true,
-        isOnboarded: true,
         accountResourceName: { not: null },
+        OR: [{ isOnboarded: true }, { reviewsOnly: true }],
       },
       include: { googleAccount: true },
     });
@@ -26,7 +27,7 @@ export async function GET() {
     if (profiles.length === 0) {
       // Check why — are there profiles at all?
       const allProfiles = await prisma.profile.findMany({
-        select: { id: true, name: true, isConnected: true, isOnboarded: true, accountResourceName: true, googleAccountId: true },
+        select: { id: true, name: true, isConnected: true, isOnboarded: true, reviewsOnly: true, accountResourceName: true, googleAccountId: true },
       });
       results.push({ step: "all_profiles_debug", profiles: allProfiles });
       return NextResponse.json({ status: "no_eligible_profiles", results });
