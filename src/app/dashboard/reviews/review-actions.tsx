@@ -352,18 +352,26 @@ export function BulkApproveButton({
     setLoading(true);
     setError(null);
     try {
-      const result = await sendJson<{ approved: number }>(
+      const result = await sendJson<{ approved: number; skipped?: number }>(
         "/api/reviews/approve",
         { profileId, confirmCount: draftCount }
       );
       setOpen(false);
-      alert(`${result.approved} responses approved and queued for publishing!`);
+      alert(
+        result.skipped
+          ? `${result.approved} responses approved and queued for publishing. ${result.skipped} changed while you were confirming and were left as drafts.`
+          : `${result.approved} responses approved and queued for publishing!`
+      );
       router.refresh();
     } catch (err) {
       setError(
         err instanceof FetchError ? err.message : "Failed to approve responses"
       );
-      if (err instanceof FetchError && err.status === 409) router.refresh();
+      // 409: the queue changed. 503: some were approved before the publish
+      // queue failed. Either way the list on screen is stale.
+      if (err instanceof FetchError && (err.status === 409 || err.status === 503)) {
+        router.refresh();
+      }
     } finally {
       setLoading(false);
     }

@@ -81,6 +81,7 @@ export async function POST(request: Request) {
   }
 
   let approvedCount = 0;
+  let skippedCount = 0;
 
   // Stagger publishes so a bulk approval stays under GBP's 10 edits/min
   // per-profile limit (all these reviews belong to one profile).
@@ -90,25 +91,50 @@ export async function POST(request: Request) {
     if (!review.response) continue;
 
     // A person clicked Approve — clear autoApproved so the publish worker
-    // treats this as a human decision, whatever the star mode is now.
-    await prisma.reviewResponse.update({
-      where: { id: review.response.id },
+    // treats this as a human decision, whatever the star mode is now. Only
+    // the draft read above is approved: one edited, regenerated or approved
+    // by someone else since is skipped, as single approve does.
+    const approved = await prisma.reviewResponse.updateMany({
+      where: {
+        id: review.response.id,
+        status: "DRAFTED",
+        content: review.response.content,
+      },
       data: { status: "APPROVED", autoApproved: false },
     });
+    if (approved.count === 0) {
+      skippedCount++;
+      continue;
+    }
 
     try {
       await scheduleReviewPublish(review.response.id, {
         delayMs: approvedCount * STAGGER_MS,
       });
     } catch (err) {
+      // The queue is down. Put this reply back to DRAFTED (an APPROVED reply
+      // with no job never publishes and can't be edited) and stop: the rest
+      // are still drafts, untouched.
       console.warn(
         `Failed to queue review response ${review.response.id} for publishing:`,
         err
+      );
+      await prisma.reviewResponse.updateMany({
+        where: { id: review.response.id, status: "APPROVED" },
+        data: { status: "DRAFTED", autoApproved: false },
+      });
+      return NextResponse.json(
+        {
+          error: `${approvedCount} ${approvedCount === 1 ? "reply was" : "replies were"} approved and queued, then the publish queue stopped answering. The rest are still drafts. Try again in a minute.`,
+          approved: approvedCount,
+          skipped: skippedCount,
+        },
+        { status: 503 }
       );
     }
 
     approvedCount++;
   }
 
-  return NextResponse.json({ approved: approvedCount });
+  return NextResponse.json({ approved: approvedCount, skipped: skippedCount });
 }

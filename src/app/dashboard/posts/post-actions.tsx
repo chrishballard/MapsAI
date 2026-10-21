@@ -200,7 +200,11 @@ export function BulkApproveButton({
         return;
       }
       const result = await res.json();
-      alert(`${result.approved} posts approved and scheduled!`);
+      alert(
+        result.leftAsDraft > 0
+          ? `${result.approved} posts approved and scheduled. ${result.leftAsDraft} stayed as drafts: there were no open dates left this month or next.`
+          : `${result.approved} posts approved and scheduled!`
+      );
       router.refresh();
     } catch {
       alert("Failed to approve posts");

@@ -70,7 +70,7 @@ describe('bulk approve with star modes', () => {
     mocks.prisma.review.findMany.mockResolvedValue([
       { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
     ]);
-    mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
@@ -92,11 +92,11 @@ describe('bulk approve with star modes', () => {
     mocks.prisma.review.findMany.mockResolvedValue([
       { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
     ]);
-    mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
-    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith(
+    expect(mocks.prisma.reviewResponse.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { status: 'APPROVED', autoApproved: false },
       })

@@ -1,10 +1,10 @@
-export const GENERIC_TEMPLATE = `You are an expert Google Business Profile (GBP) post writer. Generate exactly 4 monthly posts for the business described below.
+export const GENERIC_TEMPLATE = `You are an expert Google Business Profile (GBP) post writer. Generate the number of monthly posts the request asks for, for the business described below.
 
 Rules:
 - Each post must be 150-300 characters
 - Front-load the most important information
 - Use a friendly, professional tone
-- Vary the content across all 4 posts (different topics, angles, or offers)
+- Vary the content across all the posts (different topics, angles, or offers)
 - Do NOT use hashtags
 - Use at most 1-2 emojis per post, only where natural
 - For suggestedType: use WHATS_NEW for general updates and announcements, EVENT only if the post describes a specific event with a date/time, OFFER only if the post includes a specific deal or discount

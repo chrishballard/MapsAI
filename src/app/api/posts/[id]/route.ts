@@ -4,6 +4,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseBody, idSchema } from "@/lib/api-validation";
 import { markImagesUsed } from "@/lib/post-images";
+import { isPrismaError } from "@/lib/prisma-errors";
+import { publishQueue } from "@/lib/queue/publish-queue";
 import { PostStatus } from "@/generated/prisma/client";
 
 // Status changes allowed through this endpoint. Scheduling happens via
@@ -94,10 +96,38 @@ export async function PATCH(
     }
   }
 
-  const updatedPost = await prisma.post.update({
-    where: { id },
-    data: body,
-  });
+  // Back to DRAFT means off the schedule: clear the date and, below, the
+  // delayed publish job. Left in Redis, that job kept its old delay and the
+  // stable jobId deduped the next approval's enqueue, so the edited post went
+  // out on the old date.
+  const unschedules =
+    body.status === "DRAFT" && post.status !== "DRAFT";
+
+  // Written only if the post is still in the status checked above: the
+  // publish worker may have claimed it (PUBLISHING) since it was read.
+  let updatedPost;
+  try {
+    updatedPost = await prisma.post.update({
+      where: { id, status: post.status },
+      data: unschedules ? { ...body, scheduledAt: null } : body,
+    });
+  } catch (err) {
+    if (!isPrismaError(err, "P2025")) throw err;
+    return NextResponse.json(
+      { error: "This post changed while you were editing it. Refresh and try again." },
+      { status: 409 }
+    );
+  }
+
+  if (unschedules) {
+    try {
+      await publishQueue.remove(`publish-${id}`);
+    } catch (err) {
+      // Locked: a worker holds the job right now. It claims only SCHEDULED
+      // posts, so it finds a DRAFT and publishes nothing.
+      console.warn(`Could not remove publish job for post ${id}:`, err);
+    }
+  }
 
   // A manual pick counts as a use so the rotation moves past this image.
   if (body.imageId && body.imageId !== post.imageId) {

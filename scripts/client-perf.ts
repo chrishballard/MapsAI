@@ -18,7 +18,8 @@
  *   - profile basics
  *   - 6 calendar months of metrics, broken out by month
  *   - 6-month totals
- *   - last complete month vs prior 4-month average (% change per metric)
+ *   - last complete month vs the average of the prior fully synced months
+ *     (up to 4; % change per metric, and a note when the history is shorter)
  *   - top keywords aggregated over the period
  *   - review summary
  *   - human-readable summary lines
@@ -26,37 +27,7 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
 import { resolveReviewStats } from "../src/lib/review-stats";
-
-type Metric = {
-  month: string;
-  monthLabel: string;
-  isPartial: boolean;
-  callClicks: number;
-  websiteClicks: number;
-  directionRequests: number;
-  conversations: number;
-  searchImpressions: number;
-  mapsImpressions: number;
-  totalImpressions: number;
-};
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-function startOfMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
-}
-
-function pct(curr: number, prev: number): number | null {
-  if (prev === 0) return curr === 0 ? 0 : null;
-  return Math.round(((curr - prev) / prev) * 1000) / 10;
-}
+import { buildPerfSnapshot, perfWindow } from "./perf-snapshot";
 
 async function resolveProfile(arg: string, isId: boolean) {
   if (isId) {
@@ -144,8 +115,7 @@ async function main() {
   }
 
   const now = new Date();
-  const currentMonthStart = startOfMonth(now);
-  const windowStart = addMonths(currentMonthStart, -5);
+  const { windowStart } = perfWindow(now);
 
   const [dailyMetrics, monthlyKeywords, liveAgg, recentReviewCount] = await Promise.all([
     prisma.dailyMetric.findMany({
@@ -175,82 +145,7 @@ async function main() {
     liveSummary: { count: liveAgg._count, averageRating: liveAgg._avg.rating },
   });
 
-  const buckets: Map<string, Metric> = new Map();
-  for (let i = 0; i < 6; i++) {
-    const m = addMonths(windowStart, i);
-    const key = m.toISOString().slice(0, 7);
-    buckets.set(key, {
-      month: key,
-      monthLabel: `${MONTH_NAMES[m.getUTCMonth()]} ${m.getUTCFullYear()}`,
-      isPartial: key === currentMonthStart.toISOString().slice(0, 7),
-      callClicks: 0,
-      websiteClicks: 0,
-      directionRequests: 0,
-      conversations: 0,
-      searchImpressions: 0,
-      mapsImpressions: 0,
-      totalImpressions: 0,
-    });
-  }
-
-  for (const d of dailyMetrics) {
-    const key = d.date.toISOString().slice(0, 7);
-    const b = buckets.get(key);
-    if (!b) continue;
-    b.callClicks += d.callClicks;
-    b.websiteClicks += d.websiteClicks;
-    b.directionRequests += d.directionRequests;
-    b.conversations += d.conversations;
-    const search = d.impressionsSearchDesktop + d.impressionsSearchMobile;
-    const maps = d.impressionsMapsDesktop + d.impressionsMapsMobile;
-    b.searchImpressions += search;
-    b.mapsImpressions += maps;
-    b.totalImpressions += search + maps;
-  }
-
-  const months = Array.from(buckets.values());
-  const totals = months.reduce(
-    (acc, m) => ({
-      callClicks: acc.callClicks + m.callClicks,
-      websiteClicks: acc.websiteClicks + m.websiteClicks,
-      directionRequests: acc.directionRequests + m.directionRequests,
-      conversations: acc.conversations + m.conversations,
-      searchImpressions: acc.searchImpressions + m.searchImpressions,
-      mapsImpressions: acc.mapsImpressions + m.mapsImpressions,
-      totalImpressions: acc.totalImpressions + m.totalImpressions,
-    }),
-    {
-      callClicks: 0, websiteClicks: 0, directionRequests: 0, conversations: 0,
-      searchImpressions: 0, mapsImpressions: 0, totalImpressions: 0,
-    }
-  );
-
-  const completeMonths = months.filter((m) => !m.isPartial);
-  const lastComplete = completeMonths[completeMonths.length - 1];
-  const priorComplete = completeMonths.slice(0, -1);
-
-  const trend = lastComplete && priorComplete.length > 0
-    ? {
-        comparing: lastComplete.monthLabel,
-        vsAvgOfPrior: priorComplete.map((m) => m.monthLabel).join(", "),
-        callClicks: pct(
-          lastComplete.callClicks,
-          priorComplete.reduce((a, m) => a + m.callClicks, 0) / priorComplete.length
-        ),
-        websiteClicks: pct(
-          lastComplete.websiteClicks,
-          priorComplete.reduce((a, m) => a + m.websiteClicks, 0) / priorComplete.length
-        ),
-        directionRequests: pct(
-          lastComplete.directionRequests,
-          priorComplete.reduce((a, m) => a + m.directionRequests, 0) / priorComplete.length
-        ),
-        totalImpressions: pct(
-          lastComplete.totalImpressions,
-          priorComplete.reduce((a, m) => a + m.totalImpressions, 0) / priorComplete.length
-        ),
-      }
-    : null;
+  const snapshot = buildPerfSnapshot(dailyMetrics, now);
 
   const keywordTotals: Map<string, number> = new Map();
   for (const k of monthlyKeywords) {
@@ -261,26 +156,7 @@ async function main() {
     .slice(0, 15)
     .map(([keyword, impressions]) => ({ keyword, impressions }));
 
-  const highlights: string[] = [];
-  if (lastComplete && trend) {
-    const dir = (n: number | null) =>
-      n === null ? "flat" : n > 0 ? `up ${n}%` : n < 0 ? `down ${Math.abs(n)}%` : "flat";
-    highlights.push(
-      `${lastComplete.monthLabel}: ${lastComplete.callClicks} calls (${dir(trend.callClicks)} vs prior 4-month avg), ${lastComplete.directionRequests} direction requests (${dir(trend.directionRequests)}), ${lastComplete.websiteClicks} website clicks (${dir(trend.websiteClicks)}).`
-    );
-    highlights.push(
-      `Total impressions in ${lastComplete.monthLabel}: ${lastComplete.totalImpressions.toLocaleString()} (${dir(trend.totalImpressions)} vs prior 4-month avg).`
-    );
-  }
-  if (completeMonths.length > 0) {
-    const best = completeMonths.reduce((a, b) => (b.callClicks > a.callClicks ? b : a));
-    const worst = completeMonths.reduce((a, b) => (b.callClicks < a.callClicks ? b : a));
-    if (best.callClicks !== worst.callClicks) {
-      highlights.push(
-        `Best month for calls: ${best.monthLabel} (${best.callClicks}). Lowest: ${worst.monthLabel} (${worst.callClicks}).`
-      );
-    }
-  }
+  const highlights = [...snapshot.highlights];
   if (recentReviewCount > 0 && reviewStats.averageRating !== null) {
     highlights.push(
       `${recentReviewCount} new review${recentReviewCount === 1 ? "" : "s"} in the last 6 months. All-time avg rating: ${reviewStats.averageRating.toFixed(2)}.`
@@ -296,14 +172,11 @@ async function main() {
       category: profile.category,
       websiteUrl: profile.websiteUrl,
     },
-    window: {
-      from: windowStart.toISOString().slice(0, 10),
-      to: now.toISOString().slice(0, 10),
-      months: months.length,
-    },
-    months,
-    totals6mo: totals,
-    trend,
+    window: snapshot.window,
+    months: snapshot.months,
+    totals6mo: snapshot.totals,
+    trend: snapshot.trend,
+    trendUnavailable: snapshot.trendUnavailable,
     topKeywords,
     reviews: {
       totalAllTime: reviewStats.count,
