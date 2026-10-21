@@ -59,8 +59,13 @@ describe('dry run', () => {
       profileId: 'p1',
       status: 'APPROVED',
       captionedAt: null,
-      // Permanent skips are recorded on the row and never retried.
-      captionSkipReason: null,
+      // Permanent skips are recorded on the row and never retried; a claim
+      // left by a run that died is.
+      OR: [
+        { captionSkipReason: null },
+        { captionSkipReason: 'IN_PROGRESS' },
+        { captionSkipReason: 'RETRIES_EXHAUSTED', updatedAt: { lt: expect.any(Date) } },
+      ],
     });
     // Never pull image bytes just to count rows.
     expect(query.select).toEqual({ id: true, source: true });

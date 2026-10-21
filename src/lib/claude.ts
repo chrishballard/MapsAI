@@ -58,6 +58,13 @@ interface GenerateOptions<Schema extends z.ZodType> {
   cacheSystem?: boolean;
   /** Call-site name for the CLAUDE_USAGE_LOG line. */
   label?: string;
+  /**
+   * Per-request timeout and retry count, for a caller that must finish
+   * inside a window (the SDK default is 10 minutes and 2 retries). Omitted,
+   * the SDK defaults apply.
+   */
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 /**
@@ -98,6 +105,14 @@ export async function generate<Schema extends z.ZodType>(
   const format = zodOutputFormat(options.schema);
   let parseError: unknown = null;
 
+  const requestOptions =
+    options.timeoutMs !== undefined || options.maxRetries !== undefined
+      ? {
+          ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+          ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+        }
+      : undefined;
+
   const message = await anthropic.messages.parse({
     model: CLAUDE_MODEL,
     max_tokens: options.maxTokens,
@@ -125,7 +140,7 @@ export async function generate<Schema extends z.ZodType>(
         },
       },
     },
-  });
+  }, requestOptions);
   logUsage(options.label ?? "generate", message.usage);
 
   throwIfRefused(message, options.errorMessage ?? "Structured output from Claude");

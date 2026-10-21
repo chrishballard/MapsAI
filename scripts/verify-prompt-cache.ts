@@ -12,8 +12,9 @@
  * Bills real Claude calls on the production model (caches are per model,
  * so a cheaper model would prove nothing; Opus 5.5 thinks on every call):
  * roughly $0.15. Requires ANTHROPIC_API_KEY. The caption check stubs the
- * two database calls captionImage makes, so nothing is read from or written
- * to the database, but the Prisma client still needs DATABASE_URL to load.
+ * database calls captionImage makes (the read, its claim and the caption
+ * write), so nothing is read from or written to the database, but the Prisma
+ * client still needs DATABASE_URL to load.
  */
 import { anthropic } from "../src/lib/claude";
 import { prisma } from "../src/lib/prisma";
@@ -52,8 +53,8 @@ anthropic.messages.parse = (async (
   return message;
 }) as unknown as typeof anthropic.messages.parse;
 
-// captionImage needs an image row, not a real one: serve a 1x1 PNG and
-// swallow the caption write.
+// captionImage needs an image row, not a real one: serve a 1x1 PNG, grant
+// its claim and swallow the caption write.
 const PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
   "base64"
@@ -72,6 +73,7 @@ imageRows.findUnique = async () => ({
   profile: { name: "Harbor Creek Plumbing", category: "Plumber" },
 });
 imageRows.update = async () => ({ id: "verify-prompt-cache" });
+imageRows.updateMany = async () => ({ count: 1 });
 
 const review = {
   businessName: "Harbor Creek Plumbing",

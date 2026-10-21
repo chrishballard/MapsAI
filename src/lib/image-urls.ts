@@ -36,12 +36,54 @@ export function isPubliclyReachable(url: string): boolean {
     return false;
   }
   if (parsed.protocol !== "https:") return false;
-  const host = parsed.hostname;
+  return !isNonPublicHost(parsed.hostname);
+}
+
+/**
+ * Local names and private, loopback, link-local and unspecified addresses:
+ * hosts Google's fetchers can never reach. URL has already lowercased the
+ * name and normalized any IPv4 spelling (2130706433, 0x7f.1) to dotted form.
+ */
+function isNonPublicHost(hostname: string): boolean {
+  const host = hostname.replace(/\.$/, "");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    return true;
+  }
+
+  // IPv6 literals keep their brackets in URL.hostname.
+  if (host.startsWith("[")) {
+    const ip = host.slice(1, -1);
+    if (ip === "::1" || ip === "::") return true;
+    // An IPv4-mapped address (::ffff:a.b.c.d) is written as two hex groups.
+    const mapped = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mapped) {
+      const hi = parseInt(mapped[1], 16);
+      const lo = parseInt(mapped[2], 16);
+      return isPrivateIPv4([hi >> 8, hi & 0xff, lo >> 8, lo & 0xff]);
+    }
+    // fc00::/7 unique local, fe80::/10 link-local. URL drops leading zeros,
+    // so a first group in those ranges is always four digits.
+    return /^f[cd][0-9a-f]{2}:/.test(ip) || /^fe[89ab][0-9a-f]:/.test(ip);
+  }
+
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  return v4 ? isPrivateIPv4(v4.slice(1).map(Number)) : false;
+}
+
+/** 0/8, 10/8, 127/8, 169.254/16, 172.16/12 and 192.168/16. */
+function isPrivateIPv4([a, b]: number[]): boolean {
   return (
-    host !== "localhost" &&
-    host !== "127.0.0.1" &&
-    host !== "::1" &&
-    !host.endsWith(".local")
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
   );
 }
 

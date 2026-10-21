@@ -1,5 +1,6 @@
 import { createGoogleClient } from "./google";
 import { prisma } from "./prisma";
+import type { Prisma } from "../generated/prisma/client";
 import { newImageToken } from "./image-tokens";
 import { IMAGE_MIN_WIDTH, IMAGE_MIN_HEIGHT } from "./image-validation";
 import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
@@ -66,7 +67,9 @@ export interface MediaSyncResult {
  * metadata-only rows (Google keeps hosting the bytes). Re-running updates
  * URLs/dimensions in place, keeps any team-set status, and removes rows for
  * photos that were deleted from GBP (posts that used them keep their
- * recorded mediaUrl; the FK nulls out via onDelete: SetNull).
+ * recorded mediaUrl; the FK nulls out via onDelete: SetNull). Library
+ * uploads pushed to the listing are already in the library and are never
+ * imported a second time.
  */
 export async function syncProfileMediaToLibrary(
   profileId: string,
@@ -107,10 +110,16 @@ export async function syncProfileMediaToLibrary(
     return true;
   });
 
-  const existing = await prisma.profileImage.findMany({
-    where: { profileId, source: "GBP" },
+  const rows = await prisma.profileImage.findMany({
+    // GBP-synced rows, plus library uploads pushLibraryImageToGBP put on the
+    // listing: those carry the media name Google gave them.
+    where: {
+      profileId,
+      OR: [{ source: "GBP" }, { googleMediaName: { not: null } }],
+    },
     select: {
       id: true,
+      source: true,
       googleMediaName: true,
       googleUrl: true,
       thumbnailUrl: true,
@@ -119,8 +128,14 @@ export async function syncProfileMediaToLibrary(
       category: true,
     },
   });
+  const existing = rows.filter((row) => row.source === "GBP");
   const existingByName = new Map(
     existing.map((row) => [row.googleMediaName, row])
+  );
+  // Google's copy of a pushed upload is the same photo the library already
+  // holds; a second APPROVED row would rotate it through posts twice.
+  const pushedNames = new Set(
+    rows.filter((row) => row.source !== "GBP").map((row) => row.googleMediaName)
   );
 
   // Batch the whole reconciliation into one transaction: update only rows
@@ -167,7 +182,7 @@ export async function syncProfileMediaToLibrary(
             : shared;
         updates.push({ id: row.id, data });
       }
-    } else {
+    } else if (!pushedNames.has(item.name)) {
       creates.push({
         profileId,
         source: "GBP",
@@ -179,12 +194,27 @@ export async function syncProfileMediaToLibrary(
     }
   }
 
-  const liveNames = new Set(photos.map((p) => p.name));
-  const staleIds = existing
-    .filter((row) => row.googleMediaName && !liveNames.has(row.googleMediaName))
-    .map((row) => row.id);
+  // Every item Google returned is still there, including the ones the
+  // filter above dropped: a photo that came back without a URL on a
+  // degraded read was not deleted, and removing its row would lose its
+  // caption, usage history and public link.
+  //
+  // And an empty list proves nothing: for a profile we hold photos for it
+  // is indistinguishable from an API hiccup, so nothing is removed on it.
+  const liveNames = new Set(items.map((item) => item.name));
+  const staleIds =
+    items.length === 0
+      ? []
+      : existing
+          .filter((row) => row.googleMediaName && !liveNames.has(row.googleMediaName))
+          .map((row) => row.id);
+  if (items.length === 0 && existing.some((row) => row.googleMediaName)) {
+    console.warn(
+      `[media-sync] Google returned no photos for profile ${profileId}; keeping the library rows as they are`
+    );
+  }
 
-  await prisma.$transaction([
+  const results = await prisma.$transaction([
     ...updates.map((u) =>
       prisma.profileImage.update({
         where: { id: u.id },
@@ -192,8 +222,13 @@ export async function syncProfileMediaToLibrary(
         select: { id: true },
       })
     ),
+    // skipDuplicates: two syncs of one profile can overlap (the Images page
+    // button, onboarding, the generation pipeline's auto-sync). The slower
+    // one's insert of the same photo would hit the googleMediaName unique
+    // index and roll back its whole reconcile; skipping it is correct, since
+    // the row it wanted now exists.
     ...(creates.length > 0
-      ? [prisma.profileImage.createMany({ data: creates })]
+      ? [prisma.profileImage.createMany({ data: creates, skipDuplicates: true })]
       : []),
     ...(staleIds.length > 0
       ? [prisma.profileImage.deleteMany({ where: { id: { in: staleIds } } })]
@@ -218,8 +253,14 @@ export async function syncProfileMediaToLibrary(
     );
   }
 
+  // The createMany result sits right after the updates in the batch.
+  const added =
+    creates.length > 0
+      ? (results[updates.length] as Prisma.BatchPayload).count
+      : 0;
+
   return {
-    added: creates.length,
+    added,
     updated: updates.length,
     removed: staleIds.length,
     total: photos.length,
@@ -344,9 +385,10 @@ export async function pushPhotoToGBP(
  * Upload an image the library already holds. Resolves the profile's v4 parent
  * and the image's public URL, so a caller only needs the two ids.
  *
- * The new photo is not written into the library here — the next
- * syncProfileMediaToLibrary picks it up from Google with its real media name
- * and dimensions, which keeps one writer for ProfileImage rows.
+ * The library row records the media name Google gave the new photo, so the
+ * next syncProfileMediaToLibrary recognizes it as this image instead of
+ * importing Google's copy as a second row. A row that already has a media
+ * name is a photo synced from GBP; its name stays tied to the original item.
  */
 export async function pushLibraryImageToGBP(params: {
   profileId: string;
@@ -373,7 +415,12 @@ export async function pushLibraryImageToGBP(params: {
 
   const image = await prisma.profileImage.findFirst({
     where: { id: params.imageId, profileId: params.profileId },
-    select: { publicToken: true, googleUrl: true, thumbnailUrl: true },
+    select: {
+      publicToken: true,
+      googleUrl: true,
+      thumbnailUrl: true,
+      googleMediaName: true,
+    },
   });
   if (!image) {
     return {
@@ -391,11 +438,30 @@ export async function pushLibraryImageToGBP(params: {
     };
   }
 
-  return createGBPMedia({
+  const result = await createGBPMedia({
     googleAccountId: profile.googleAccountId,
     accountResourceName: profile.accountResourceName,
     locationName: profile.locationName,
     sourceUrl,
     category: params.category,
   });
+
+  if (result.success && result.mediaName && !image.googleMediaName) {
+    // The photo is live on the listing whatever happens here, so a failed
+    // write is logged, not returned: reporting the push as failed would
+    // invite a retry that uploads it twice.
+    await prisma.profileImage
+      .updateMany({
+        where: { id: params.imageId, googleMediaName: null },
+        data: { googleMediaName: result.mediaName },
+      })
+      .catch((err) =>
+        console.warn(
+          `[google-media] Pushed image ${params.imageId} but could not record its media name:`,
+          err
+        )
+      );
+  }
+
+  return result;
 }

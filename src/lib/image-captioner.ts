@@ -2,6 +2,12 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { generate } from "./claude";
 import { ClaudeRefusalError } from "./claude-refusal";
+import {
+  awaitingCaption,
+  CAPTION_IN_PROGRESS,
+  CAPTION_RETRIES_EXHAUSTED,
+  RETRIES_EXHAUSTED_COOLDOWN_MS,
+} from "./caption-state";
 
 // The Vision API rejects oversized images; stay under its 5MB decoded cap
 // with margin. Uploads are usually captioned from the ~480px thumbnail, so
@@ -18,6 +24,11 @@ const SUPPORTED_MEDIA_TYPES = new Set([
 const MAX_DESCRIPTION_CHARS = 300;
 const MAX_TAGS = 5;
 
+// How long a caption claim holds before another run may take it over. One
+// caption is a CDN fetch and a Claude call, normally seconds; a claim this
+// old belongs to a run that died (a deploy restarting the worker).
+const CAPTION_CLAIM_LEASE_MS = 15 * 60 * 1000;
+
 /**
  * Why a caption was permanently skipped (captionedAt stays null; the image
  * is treated as "unknown" by the matcher and never blind-attached):
@@ -30,6 +41,11 @@ const MAX_TAGS = 5;
  * - REFUSED: Claude declined to caption the photo (stop_reason "refusal", a
  *   safety classifier). The same bytes would be declined again, so retrying
  *   only spends rate limit, and a mid-output refusal bills the image each time.
+ * - RETRIES_EXHAUSTED: the caption worker spent MAX_CAPTION_ATTEMPTS on the
+ *   image across its queue jobs and every one failed. A GBP sync that
+ *   refreshes the URL clears it, like the other skips.
+ * - IN_PROGRESS: not a skip on the row's merits. Another run holds the
+ *   caption claim, so this one left the image to it (see caption-state.ts).
  */
 export type CaptionSkipReason =
   | "NO_INPUT"
@@ -37,7 +53,9 @@ export type CaptionSkipReason =
   | "UNSUPPORTED_TYPE"
   | "FETCH_DENIED"
   | "GONE"
-  | "REFUSED";
+  | "REFUSED"
+  | "RETRIES_EXHAUSTED"
+  | typeof CAPTION_IN_PROGRESS;
 
 export interface CaptionResult {
   imageId: string;
@@ -70,8 +88,14 @@ generic = false for an identifiable specific subject (a particular room type,
 dish, product, or project type) that would look wrong attached to a post
 about something else.`;
 
+/** The skips captionImage finds on the row's own merits and persists. */
+type FoundSkipReason = Exclude<
+  CaptionSkipReason,
+  "GONE" | "RETRIES_EXHAUSTED" | typeof CAPTION_IN_PROGRESS
+>;
+
 class PermanentCaptionSkip extends Error {
-  constructor(public reason: Exclude<CaptionSkipReason, "GONE">) {
+  constructor(public reason: FoundSkipReason) {
     super(`caption skipped: ${reason}`);
   }
 }
@@ -82,7 +106,9 @@ class PermanentCaptionSkip extends Error {
  * Throws on transient failures (network, Claude, DB) so the BullMQ worker
  * retries; returns ok:false with a reason for permanent no-input cases; a
  * row that vanished mid-flight is GONE, not an error. Already-captioned
- * rows are an ok noop, so re-enqueueing is always safe.
+ * rows are an ok noop, so re-enqueueing is always safe, and an image another
+ * run is captioning right now comes back IN_PROGRESS without being paid for
+ * twice.
  */
 export async function captionImage(imageId: string): Promise<CaptionResult> {
   const image = await prisma.profileImage.findUnique({
@@ -97,13 +123,22 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       category: true,
       captionedAt: true,
       captionSkipReason: true,
+      updatedAt: true,
       profile: { select: { name: true, category: true } },
     },
   });
 
   if (!image) return { imageId, ok: false, skipped: "GONE" };
   if (image.captionedAt) return { imageId, ok: true };
-  if (image.captionSkipReason) {
+  const exhaustedCutoff = new Date(Date.now() - RETRIES_EXHAUSTED_COOLDOWN_MS);
+  const exhaustedCooledDown =
+    image.captionSkipReason === CAPTION_RETRIES_EXHAUSTED &&
+    image.updatedAt < exhaustedCutoff;
+  if (
+    image.captionSkipReason &&
+    image.captionSkipReason !== CAPTION_IN_PROGRESS &&
+    !exhaustedCooledDown
+  ) {
     // Already found unusable — don't re-pull bytes or re-hit the CDN.
     return {
       imageId,
@@ -112,6 +147,62 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
     };
   }
 
+  // Claim the row before spending anything on it. Reading captionedAt
+  // and writing later let two runs (the worker, the onboarding pre-pass, a
+  // backfill) both pay for the same image; only the run whose claim lands
+  // fetches and calls Claude. A claim older than the lease is taken over.
+  const claim = await prisma.profileImage.updateMany({
+    where: {
+      id: imageId,
+      captionedAt: null,
+      OR: [
+        { captionSkipReason: null },
+        {
+          captionSkipReason: CAPTION_IN_PROGRESS,
+          updatedAt: { lt: new Date(Date.now() - CAPTION_CLAIM_LEASE_MS) },
+        },
+        // Given up on, but long enough ago to try again (an outage, say)
+        {
+          captionSkipReason: CAPTION_RETRIES_EXHAUSTED,
+          updatedAt: { lt: exhaustedCutoff },
+        },
+      ],
+    },
+    // updatedAt is the claim's timestamp, so set it here rather than rely
+    // on the implicit stamp.
+    data: { captionSkipReason: CAPTION_IN_PROGRESS, updatedAt: new Date() },
+  });
+  if (claim.count === 0) {
+    return { imageId, ok: false, skipped: CAPTION_IN_PROGRESS };
+  }
+
+  try {
+    return await captionClaimedImage(imageId, image);
+  } catch (err) {
+    // A transient failure hands the image back, so the BullMQ retry or the
+    // next sync can claim it now rather than after the lease. A failed
+    // hand-back only means waiting out the lease; the original error is the
+    // one worth surfacing.
+    await prisma.profileImage
+      .updateMany({
+        where: { id: imageId, captionSkipReason: CAPTION_IN_PROGRESS },
+        data: { captionSkipReason: null },
+      })
+      .catch(() => {});
+    throw err;
+  }
+}
+
+type ClaimedImage = VisionSource & {
+  category: string | null;
+  profile: { name: string; category: string | null };
+};
+
+/** captionImage's paid part: runs only under a claim this run holds. */
+async function captionClaimedImage(
+  imageId: string,
+  image: ClaimedImage
+): Promise<CaptionResult> {
   let input: { mediaType: string; base64: string };
   try {
     input = await resolveVisionInput(image);
@@ -170,6 +261,10 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
       // shortening it can silently switch caching off.
       cacheSystem: true,
       label: "image-caption",
+      // Every attempt must finish well inside CAPTION_CLAIM_LEASE_MS, or a
+      // second run takes the claim over and pays for the image again.
+      timeoutMs: 2 * 60 * 1000,
+      maxRetries: 1,
     });
   } catch (err) {
     // The API rejects images over 8,000px on a side with a 400 even when
@@ -187,30 +282,51 @@ export async function captionImage(imageId: string): Promise<CaptionResult> {
     throw err;
   }
 
-  try {
-    await prisma.profileImage.update({
+  // Conditional on the row still being uncaptioned, so a run that took over
+  // a lapsed claim and finished first keeps its caption. Writing it drops
+  // the claim. updateMany returns a count, never the row's image bytes.
+  const written = await prisma.profileImage.updateMany({
+    where: { id: imageId, captionedAt: null },
+    data: {
+      aiDescription: caption.description.slice(0, MAX_DESCRIPTION_CHARS),
+      aiTags: caption.tags
+        .slice(0, MAX_TAGS)
+        .map((t) => t.toLowerCase().slice(0, 80)),
+      aiGeneric: caption.generic,
+      captionedAt: new Date(),
+      captionSkipReason: null,
+    },
+  });
+  if (written.count === 0) {
+    // Either captioned by that other run, or deleted between caption and
+    // persist (Images page delete, GBP sync cleanup), in which case the
+    // caption has nowhere to live; that's fine.
+    const row = await prisma.profileImage.findUnique({
       where: { id: imageId },
-      data: {
-        aiDescription: caption.description.slice(0, MAX_DESCRIPTION_CHARS),
-        aiTags: caption.tags
-          .slice(0, MAX_TAGS)
-          .map((t) => t.toLowerCase().slice(0, 80)),
-        aiGeneric: caption.generic,
-        captionedAt: new Date(),
-      },
-      // Never return the row's multi-MB image bytes just to discard them.
       select: { id: true },
     });
-  } catch (err) {
-    // Deleted between caption and persist (Images page delete, GBP sync
-    // cleanup) — the caption has nowhere to live; that's fine.
-    if ((err as { code?: string })?.code === "P2025") {
-      return { imageId, ok: false, skipped: "GONE" };
-    }
-    throw err;
+    return row
+      ? { imageId, ok: true }
+      : { imageId, ok: false, skipped: "GONE" };
   }
 
   return { imageId, ok: true };
+}
+
+/**
+ * Record that the caption worker gave up on an image: every attempt it was
+ * allowed (MAX_CAPTION_ATTEMPTS, across queue jobs) failed. The marker keeps
+ * syncs, uploads and generation batches from re-enqueueing it, each of which
+ * would otherwise buy it a fresh set of billed attempts. A row that got
+ * captioned or skipped meanwhile is left as it is.
+ */
+export async function recordCaptionRetriesExhausted(
+  imageId: string
+): Promise<void> {
+  await prisma.profileImage.updateMany({
+    where: { id: imageId, ...awaitingCaption() },
+    data: { captionSkipReason: CAPTION_RETRIES_EXHAUSTED },
+  });
 }
 
 /** A 400 from the vision API because the image exceeds its pixel-dimension cap. */
@@ -227,12 +343,13 @@ function isDimensionRejection(err: unknown): boolean {
  * Record a permanent skip on the row so re-enqueue queries exclude it —
  * without this, every sync and generation batch would reprocess the image
  * forever. A GBP sync that refreshes the image's URL clears the marker
- * (a stale-URL skip may recover with the new URL). Throws on transient
- * persist failure so the job retries; P2025 means the row is gone.
+ * (a stale-URL skip may recover with the new URL). The reason replaces
+ * this run's caption claim. Throws on transient persist failure so the job
+ * retries; P2025 means the row is gone.
  */
 async function persistSkip(
   imageId: string,
-  reason: Exclude<CaptionSkipReason, "GONE">
+  reason: FoundSkipReason
 ): Promise<CaptionResult> {
   try {
     await prisma.profileImage.update({
@@ -297,12 +414,7 @@ export async function captionUncaptionedApproved(
 ): Promise<number> {
   try {
     const rows = await prisma.profileImage.findMany({
-      where: {
-        profileId,
-        status: "APPROVED",
-        captionedAt: null,
-        captionSkipReason: null,
-      },
+      where: { profileId, status: "APPROVED", ...awaitingCaption() },
       orderBy: { createdAt: "asc" },
       take: options.limit ?? 50,
       select: { id: true },
@@ -401,11 +513,13 @@ async function fetchVisionBytes(
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
-    // 429 is a rate-limit burst, not a verdict on the URL — it must stay
-    // transient, or a busy backfill would permanently poison rows (a
-    // persisted FETCH_DENIED only recovers if the URL changes). Other
-    // 4xx = stale/denied URL: skip until a sync refreshes it.
+    // 429 is a rate-limit burst and 408 a request the host timed out on,
+    // not verdicts on the URL — they must stay transient, or a busy backfill
+    // would permanently poison rows (a persisted FETCH_DENIED only recovers
+    // if the URL changes). Other 4xx = stale/denied URL: skip until a sync
+    // refreshes it.
     if (
+      response.status !== 408 &&
       response.status !== 429 &&
       response.status >= 400 &&
       response.status < 500

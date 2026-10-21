@@ -119,6 +119,31 @@ describe('generate() prompt caching', () => {
   });
 });
 
+describe('generate() request limits', () => {
+  // The SDK's own default is a 10-minute timeout with 2 retries, so one call
+  // can run ~30 minutes. A caller holding a lease shorter than that (the
+  // image captioner's claim) sets its own.
+  afterEach(() => vi.restoreAllMocks());
+
+  it('passes timeoutMs and maxRetries to the SDK request', async () => {
+    ok();
+    const parse = vi.spyOn(mod.anthropic.messages, 'parse');
+
+    await mod.generate({ ...base, system: 's', prompt: 'p', timeoutMs: 120_000, maxRetries: 1 });
+
+    expect(parse.mock.calls[0][1]).toEqual({ timeout: 120_000, maxRetries: 1 });
+  });
+
+  it('leaves the SDK defaults alone when none are given', async () => {
+    ok();
+    const parse = vi.spyOn(mod.anthropic.messages, 'parse');
+
+    await mod.generate({ ...base, system: 's', prompt: 'p' });
+
+    expect(parse.mock.calls[0][1]).toBeUndefined();
+  });
+});
+
 describe('Claude usage logging', () => {
   const usage = {
     input_tokens: 12,

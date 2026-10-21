@@ -3,6 +3,7 @@ import { generate } from "./claude";
 import { prisma } from "./prisma";
 import { ensureApprovedPool, type ApprovedPoolImage } from "./post-images";
 import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
+import { isAwaitingCaption } from "./caption-state";
 
 export interface PostForMatching {
   content: string;
@@ -133,7 +134,7 @@ export async function pickImagesForPostContents(
     // Self-heal: anything approved but uncaptioned gets queued so the next
     // batch can match it — except images already marked permanently
     // unusable. Queue problems never affect this batch.
-    if (pool.some((img) => !img.captionedAt && !img.captionSkipReason)) {
+    if (pool.some(isAwaitingCaption)) {
       await enqueueCaptionsForProfile(profileId).catch(() => {});
     }
 
