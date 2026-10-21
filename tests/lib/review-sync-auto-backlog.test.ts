@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
       count: vi.fn(),
+      findFirst: vi.fn(),
     },
     reviewResponse: { create: vi.fn() },
     profile: { update: vi.fn() },
@@ -67,8 +68,15 @@ function gbpReview(daysOld: number, id = 'r1') {
   };
 }
 
-function storedReviewCount(count: number) {
+/**
+ * What the profile held before this pass: nothing, or reviews whose oldest
+ * row was stored `firstStoredHoursAgo` hours ago.
+ */
+function storedReviewCount(count: number, firstStoredHoursAgo = 30 * 24) {
   mocks.prisma.review.count.mockResolvedValue(count);
+  mocks.prisma.review.findFirst.mockResolvedValue(
+    count === 0 ? null : { createdAt: new Date(Date.now() - firstStoredHoursAgo * 3_600_000) }
+  );
 }
 
 beforeEach(() => {
@@ -116,12 +124,45 @@ describe('syncProfileReviews AUTO mode on backlog reviews', () => {
 
     await syncProfileReviews({ ...autoProfile });
 
-    expect(mocks.prisma.review.count).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.review.findFirst).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.reviewResponse.create).toHaveBeenCalledTimes(2);
     for (const [arg] of mocks.prisma.reviewResponse.create.mock.calls) {
       expect(arg.data).toMatchObject({ status: 'DRAFTED', autoApproved: false });
     }
     expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
+  });
+
+  it('drafts on a pass that starts while the first sync is still storing the backlog', async () => {
+    // The onboarding sync and the 30-minute cron are separate workers. A
+    // backlog pass can run for tens of minutes, so a second pass that starts
+    // meanwhile sees stored reviews; it must still treat the profile as on
+    // its first sync rather than auto-publish the reviews the first pass
+    // hasn't reached yet.
+    storedReviewCount(25, 0.5);
+    mocks.fetchReviews.mockResolvedValue({
+      reviews: [gbpReview(3)],
+      nextPageToken: undefined,
+    });
+
+    await syncProfileReviews({ ...autoProfile });
+
+    expect(mocks.prisma.reviewResponse.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: 'DRAFTED', autoApproved: false }),
+    });
+    expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
+  });
+
+  it('counts the first sync from the oldest stored row, removed reviews included', async () => {
+    storedReviewCount(40);
+    mocks.fetchReviews.mockResolvedValue({ reviews: [gbpReview(1)], nextPageToken: undefined });
+
+    await syncProfileReviews({ ...autoProfile });
+
+    expect(mocks.prisma.review.findFirst).toHaveBeenCalledWith({
+      where: { profileId: 'p1' },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
   });
 
   it(`drafts instead of auto-publishing a review older than ${AUTO_REPLY_MAX_REVIEW_AGE_DAYS} days on a later sync`, async () => {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
       count: vi.fn(),
+      findFirst: vi.fn(),
     },
     reviewResponse: { create: vi.fn() },
     profile: { update: vi.fn() },
@@ -70,6 +71,8 @@ beforeEach(() => {
   mocks.prisma.review.updateMany.mockResolvedValue({ count: 0 });
   // Not the profile's first review sync.
   mocks.prisma.review.count.mockResolvedValue(12);
+  // An earlier sync stored this profile's first review a month ago.
+  mocks.prisma.review.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 30 * 86_400_000) });
   mocks.prisma.review.create.mockResolvedValue({
     id: 'rev1',
     reviewerName: 'Dana',

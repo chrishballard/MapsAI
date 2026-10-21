@@ -74,9 +74,15 @@ function approvedResponse(profile: {
   };
 }
 
+// The revert says why, so a person who approved it isn't left wondering
+// where their approval went.
 const REVERTED = {
   where: { id: 'resp1' },
-  data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
+  data: {
+    status: 'DRAFTED',
+    errorMessage: expect.stringMatching(/^Held before publishing: .*(offboarded|disconnected)/),
+    autoApproved: false,
+  },
 };
 
 beforeEach(() => {
@@ -122,5 +128,59 @@ describe('review publish worker on a profile the review sync no longer serves', 
       'accounts/1/locations/1/reviews/r1',
       'Thanks Dana!'
     );
+  });
+});
+
+describe('review publish worker and AUTO replies to old reviews', () => {
+  // The sync never AUTO-approves a reply to a review older than 30 days, but
+  // a job queued before that rule (in retry backoff, or re-queued when a
+  // removed review reappears) still reaches the worker.
+  function autoApproved(daysOld: number) {
+    const response = approvedResponse({ isConnected: true, isOnboarded: true, reviewsOnly: false });
+    return {
+      ...response,
+      autoApproved: true,
+      review: {
+        ...response.review,
+        reviewDate: new Date(Date.now() - daysOld * 86_400_000),
+        profile: { ...response.review.profile, reviewReplyMode5: 'AUTO' },
+      },
+    };
+  }
+
+  it('reverts an AUTO-approved reply to a review older than 30 days', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(autoApproved(31));
+
+    await mocks.processor!(job());
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
+      where: { id: 'resp1' },
+      data: {
+        status: 'DRAFTED',
+        errorMessage: expect.stringMatching(/older than 30 days/),
+        autoApproved: false,
+      },
+    });
+  });
+
+  it('publishes an AUTO-approved reply to a recent review', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(autoApproved(2));
+
+    await mocks.processor!(job());
+
+    expect(mocks.publishReviewReply).toHaveBeenCalled();
+  });
+
+  it('publishes a reply a person approved, however old the review', async () => {
+    const response = autoApproved(400);
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue({
+      ...response,
+      autoApproved: false,
+    });
+
+    await mocks.processor!(job());
+
+    expect(mocks.publishReviewReply).toHaveBeenCalled();
   });
 });

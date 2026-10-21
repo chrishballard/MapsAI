@@ -11,8 +11,9 @@ export async function GET() {
   const results: Record<string, unknown>[] = [];
 
   try {
-    // 1. Find profiles, as the review sync worker picks them: onboarded,
-    // or offboarded but marked reviewsOnly.
+    // 1. Find profiles the way the review sync worker does (onboarded, or
+    // offboarded but marked reviewsOnly), except that profiles with review
+    // management off are kept here so the debug output still shows them.
     const profiles = await prisma.profile.findMany({
       where: {
         isConnected: true,

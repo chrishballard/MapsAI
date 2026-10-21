@@ -90,3 +90,13 @@ export function ratingNotIgnoredFilter() {
     },
   };
 }
+
+/**
+ * AUTO mode publishes replies nobody reads, so it only applies to reviews
+ * that just came in. A review older than this when we first store it gets a
+ * draft for a person to approve instead, exactly as DRAFT mode does: that is
+ * the backlog of a newly connected profile, or an old review Google surfaces
+ * late. Without it, connecting a profile with years of unanswered reviews
+ * would publish a reply to every one of them in one pass.
+ */
+export const AUTO_REPLY_MAX_REVIEW_AGE_DAYS = 30;

@@ -6,6 +6,7 @@ import { normalizeReviewKey } from "../review-key";
 import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
 import { isHealthcareCategory } from "../healthcare";
 import {
+  AUTO_REPLY_MAX_REVIEW_AGE_DAYS,
   STAR_RATINGS,
   replyModeForRating,
   type StarReplyModes,
@@ -13,15 +14,19 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// AUTO_REPLY_MAX_REVIEW_AGE_DAYS lives with the reply modes so the publish
+// worker can apply it without importing the sync.
+export { AUTO_REPLY_MAX_REVIEW_AGE_DAYS };
+
 /**
- * AUTO mode publishes replies nobody reads, so it only applies to reviews
- * that just came in. A review older than this when we first store it gets a
- * draft for a person to approve instead, exactly as DRAFT mode does: that is
- * the backlog of a newly connected profile, or an old review Google surfaces
- * late. Without it, connecting a profile with years of unanswered reviews
- * would publish a reply to every one of them in one pass.
+ * How long after a profile's first review row is stored every sync still
+ * counts as its first. A backlog pass makes a Claude call per review and can
+ * run for tens of minutes, and the onboarding sync and the 30-minute cron are
+ * separate workers: a second pass starting meanwhile (or a retry of a first
+ * pass that failed partway) sees stored reviews, and without this would
+ * auto-publish the recent ones the first pass hadn't reached yet.
  */
-export const AUTO_REPLY_MAX_REVIEW_AGE_DAYS = 30;
+const FIRST_SYNC_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 interface ReviewSyncProfile extends StarReplyModes {
   id: string;
@@ -92,14 +97,23 @@ export async function syncProfileReviews(
   // The first sync stores a profile's whole backlog as new reviews, so AUTO
   // never publishes on it: every reply it drafts waits for a person. "First"
   // means nothing was stored for the profile before this pass (removed
-  // reviews count), decided once up front so page one's reviews don't turn
-  // page two into a later sync. Only asked when AUTO could apply at all.
+  // reviews count), or the first row was stored under FIRST_SYNC_WINDOW_MS
+  // ago. Decided once up front so page one's reviews don't turn page two
+  // into a later sync. Only asked when AUTO could apply at all.
   const canAutoPublish =
     !isHealthcareCategory(profile.category) &&
     STAR_RATINGS.some((stars) => replyModeForRating(profile, stars) === "AUTO");
-  const firstSync =
-    canAutoPublish &&
-    (await prisma.review.count({ where: { profileId: profile.id } })) === 0;
+  let firstSync = false;
+  if (canAutoPublish) {
+    const firstStored = await prisma.review.findFirst({
+      where: { profileId: profile.id },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    firstSync =
+      !firstStored ||
+      Date.now() - firstStored.createdAt.getTime() < FIRST_SYNC_WINDOW_MS;
+  }
   let heldForApproval = 0;
 
   do {
