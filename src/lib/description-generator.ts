@@ -7,6 +7,50 @@ const DescriptionSchema = z.object({
   description: z.string(),
 });
 
+// The two rules from the prompt below that a draft can be checked against
+// mechanically, and Google's own rules for the field: no links, no phone
+// numbers. Promotional words and ALL CAPS stay prompt-only, because "best
+// practices" and "HVAC" are fine and a check would refuse good drafts.
+const URL_PATTERN =
+  /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|biz|info|us|co|io)\b/i;
+// North American numbers: ten digits with an optional +1, or seven joined
+// by a dash or dot. Needs the separators in the right places, so a year
+// range ("1998-2024") or a ZIP code doesn't read as one. The seven-digit form
+// has the same shape as a range, so it is skipped after a "$" and before a
+// unit ("$150-1500", "800-3000 square feet", "100-1000 gallon"), and a space
+// doesn't count as its separator ("Highway 101 2024").
+const PHONE_PATTERN =
+  /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b|(?<![$\d.,-])\b\d{3}[.-]\d{4}\b(?!\s*(?:sq|square|feet|foot|ft|gal|gallons?|series|lbs?|pounds?|miles?|mi|km|units?|homes?|people)\b)/i;
+
+const RULE_CHECKS = [
+  { what: "a URL or web address", pattern: URL_PATTERN },
+  { what: "a phone number", pattern: PHONE_PATTERN },
+];
+
+/**
+ * The prompt rules a draft breaks, with the text that broke each. The
+ * business name is blanked out first: a name like "Gutters.com Pros" is the
+ * one domain-looking text the description is meant to carry.
+ */
+function ruleBreaks(
+  description: string,
+  businessName: string
+): { what: string; match: string }[] {
+  let checked = description;
+  const name = businessName.trim();
+  if (name) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    checked = checked.replace(new RegExp(escaped, "gi"), " ");
+  }
+
+  const found: { what: string; match: string }[] = [];
+  for (const { what, pattern } of RULE_CHECKS) {
+    const match = checked.match(pattern);
+    if (match) found.push({ what, match: match[0].trim() });
+  }
+  return found;
+}
+
 export async function generateDescription(profile: {
   name: string;
   category: string | null;
@@ -69,13 +113,27 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
 
   let description = await callClaude(messages);
 
-  // Retry up to 2 times with exact character count feedback
+  // Retry up to 2 times with exact character count feedback, and with what
+  // was wrong when the draft breaks a rule it was given
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (description.length >= 700 && description.length <= 750) break;
+    const lengthOk = description.length >= 700 && description.length <= 750;
+    const breaks = ruleBreaks(description, profile.name);
+    if (lengthOk && breaks.length === 0) break;
 
-    const feedback = description.length < 700
-      ? `That description is only ${description.length} characters. I need 720-745 characters. Please expand it with more detail about services, expertise, or service areas.`
-      : `That description is ${description.length} characters, exceeding the 750 limit. Please shorten it to exactly 720-745 characters while keeping the most important content.`;
+    const lengthFeedback = lengthOk
+      ? null
+      : description.length < 700
+        ? `That description is only ${description.length} characters. I need 720-745 characters. Please expand it with more detail about services, expertise, or service areas.`
+        : `That description is ${description.length} characters, exceeding the 750 limit. Please shorten it to exactly 720-745 characters while keeping the most important content.`;
+    const feedback = [
+      lengthFeedback,
+      ...breaks.map(
+        (b) =>
+          `The description includes ${b.what} ("${b.match}"), which the rules forbid. Remove it.`
+      ),
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     messages.push(
       { role: "assistant", content: JSON.stringify({ description }) },
@@ -87,6 +145,18 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
   // Deterministic fallback: if still over 750, truncate at last sentence boundary
   if (description.length > 750) {
     description = truncateToSentence(description, 750);
+  }
+
+  // A rule break has no safe deterministic fix (cutting a phone number out
+  // leaves a broken sentence), so refuse rather than hand the operator a
+  // draft that Google's rules forbid. Generating again is one click.
+  const remaining = ruleBreaks(description, profile.name);
+  if (remaining.length > 0) {
+    throw new Error(
+      `Generated description still includes ${remaining
+        .map((b) => b.what)
+        .join(" and ")} after retries`
+    );
   }
 
   return description;

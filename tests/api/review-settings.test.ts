@@ -147,4 +147,21 @@ describe('PATCH /api/reviews/settings', () => {
     expect(res.status).toBe(400);
     expect(mocks.prisma.profile.update).not.toHaveBeenCalled();
   });
+
+  it('404s only when the profile is gone, and lets any other failure through', async () => {
+    mocks.prisma.profile.update.mockRejectedValueOnce(
+      Object.assign(new Error('not found'), { code: 'P2025' })
+    );
+    const missing = await PATCH(
+      patchRequest({ profileId: 'gone', reviewsEnabled: false })
+    );
+    expect(missing.status).toBe(404);
+
+    // A dropped connection is not a missing profile: saying so would send
+    // the operator looking for a profile that is right there.
+    mocks.prisma.profile.update.mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      PATCH(patchRequest({ profileId: 'p1', reviewsEnabled: false }))
+    ).rejects.toThrow('db down');
+  });
 });

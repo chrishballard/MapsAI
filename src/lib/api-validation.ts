@@ -48,6 +48,56 @@ export async function parseBody<T extends z.ZodType>(
   return { data: result.data, error: null };
 }
 
+/**
+ * Query-string twin of parseBody. An empty value (`?status=`) counts as
+ * absent, which is how the list routes treated one before they validated.
+ *
+ *   const parsed = parseQuery(request, schema);
+ *   if (parsed.error) return parsed.error;
+ */
+export function parseQuery<T extends z.ZodType>(
+  request: Request,
+  schema: T
+):
+  | { data: z.output<T>; error: null }
+  | { data: null; error: NextResponse } {
+  const { searchParams } = new URL(request.url);
+  const query = Object.fromEntries(
+    [...searchParams.entries()].filter(([, value]) => value !== "")
+  );
+
+  const result = schema.safeParse(query);
+  if (!result.success) {
+    const details = result.error.issues.map(
+      (issue) => `${issue.path.join(".") || "query"}: ${issue.message}`
+    );
+    return {
+      data: null,
+      error: NextResponse.json(
+        { error: "Invalid query parameters", details },
+        { status: 400 }
+      ),
+    };
+  }
+
+  return { data: result.data, error: null };
+}
+
+/**
+ * `?limit=` on the list endpoints. Nothing in the app calls them (the
+ * dashboard pages query Prisma directly), so the default only has to be
+ * sensible for a person or script reading the API; the cap keeps one
+ * request from pulling every row a profile has ever had.
+ */
+export const DEFAULT_LIST_LIMIT = 100;
+export const MAX_LIST_LIMIT = 500;
+export const listLimitSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_LIST_LIMIT)
+  .default(DEFAULT_LIST_LIMIT);
+
 /** Non-empty cuid-ish identifier — length-bounded to keep junk out of queries. */
 export const idSchema = z.string().min(1).max(64);
 

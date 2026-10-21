@@ -148,3 +148,38 @@ describe('bulk approve (M6, M8)', () => {
     ).toBe(false);
   });
 });
+
+describe('approve while Redis is unreachable (M8)', () => {
+  // With Redis down the enqueue never settles (the queue connection waits
+  // out an outage), so without a deadline the rollback above never ran and
+  // the request hung.
+  it('puts the reply back to DRAFTED and answers 503 once the enqueue hangs past its deadline', async () => {
+    mocks.prisma.review.findUnique.mockResolvedValue({
+      id: 'rev1',
+      repliedExternally: false,
+      removedAt: null,
+      reviewerName: 'Dana',
+      response: { id: 'resp1', status: 'DRAFTED', content: 'Thanks Dana!' },
+      profile: { reviewsEnabled: true, category: 'Plumber', phone: null },
+    });
+    mocks.scheduleReviewPublish.mockImplementation(() => new Promise(() => {}));
+
+    vi.useFakeTimers();
+    try {
+      const pending = approveOne(
+        post('http://localhost/api/reviews/rev1/approve', { content: 'Thanks Dana!' }),
+        { params }
+      );
+      await vi.advanceTimersByTimeAsync(6_000);
+      const res = await pending;
+
+      expect(res.status).toBe(503);
+      expect(mocks.prisma.reviewResponse.updateMany).toHaveBeenLastCalledWith({
+        where: { id: 'resp1', status: 'APPROVED' },
+        data: { status: 'DRAFTED', autoApproved: false },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

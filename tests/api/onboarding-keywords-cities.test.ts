@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   return {
     tx,
     prisma: {
+      profile: { findUnique: vi.fn() },
       profileKeyword: { findMany: vi.fn() },
       profileCity: { findMany: vi.fn() },
       onboardingProgress: { findUnique: vi.fn() },
@@ -41,6 +42,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Re-install the passthrough cleared by clearAllMocks
   mocks.prisma.$transaction.mockImplementation(async (fn) => fn(mocks.tx));
+  // The routes 404 a profile that doesn't exist before writing anything.
+  mocks.prisma.profile.findUnique.mockResolvedValue({ id: 'p1' });
 });
 
 describe('POST /api/onboarding/keywords', () => {

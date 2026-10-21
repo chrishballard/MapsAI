@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
+import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
 import { idSchema, parseBody } from "@/lib/api-validation";
 import {
   REVIEWS_DISABLED_ERROR,
@@ -108,9 +109,11 @@ export async function POST(request: Request) {
     }
 
     try {
-      await scheduleReviewPublish(review.response.id, {
-        delayMs: approvedCount * STAGGER_MS,
-      });
+      await enqueueWithin(
+        scheduleReviewPublish(review.response.id, {
+          delayMs: approvedCount * STAGGER_MS,
+        })
+      );
     } catch (err) {
       // The queue is down. Put this reply back to DRAFTED (an APPROVED reply
       // with no job never publishes and can't be edited) and stop: the rest

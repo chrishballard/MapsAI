@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { idSchema, parseBody } from "@/lib/api-validation";
 import { MAX_REVIEW_INSTRUCTIONS_CHARS } from "@/lib/reviews-enabled";
 import { REVIEW_REPLY_MODES } from "@/lib/review-reply-mode";
+import { isPrismaError } from "@/lib/prisma-errors";
 
 const settingsSelect = {
   reviewsEnabled: true,
@@ -124,7 +125,12 @@ export async function PATCH(request: NextRequest) {
     });
 
     return NextResponse.json(updated);
-  } catch {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  } catch (err) {
+    // Only a missing row is "not found"; anything else is a real failure
+    // and must not send the operator looking for a profile that exists.
+    if (isPrismaError(err, "P2025")) {
+      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    }
+    throw err;
   }
 }

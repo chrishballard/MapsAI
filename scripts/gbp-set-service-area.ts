@@ -26,6 +26,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "dotenv";
+import {
+  assertKnownArgs,
+  CliArgError,
+  flagValue,
+  flagValues,
+  hasFlag,
+} from "./cli-args";
 
 // Same two-file load as gbp-probe-service-area.ts: the profiles live in the
 // Railway production DB, the repo .env carries the Google OAuth client, and
@@ -42,50 +49,48 @@ config({
 type Prisma = (typeof import("../src/lib/prisma"))["prisma"];
 let prisma: Prisma;
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
-const has = (name: string) => process.argv.includes(`--${name}`);
+const argv = process.argv.slice(2);
+const has = (name: string) => hasFlag(argv, name);
+
+const USAGE =
+  "usage: tsx scripts/gbp-set-service-area.ts --profile <id> [--add-city 'American Fork, UT'] [--add 'ChIJ...=City, ST, USA'] [--replace] [--write --yes]";
 
 /** Every --add value, in order. */
 function addedPlaces(): Array<{ placeId: string; placeName?: string }> {
-  const out: Array<{ placeId: string; placeName?: string }> = [];
-  process.argv.forEach((token, i) => {
-    if (token !== "--add") return;
-    const value = process.argv[i + 1];
-    if (!value) throw new Error("--add needs a value");
+  return flagValues(argv, "add").map((value) => {
     const eq = value.indexOf("=");
-    if (eq === -1) {
-      out.push({ placeId: value });
-    } else {
-      out.push({
-        placeId: value.slice(0, eq).trim(),
-        placeName: value.slice(eq + 1).trim() || undefined,
-      });
-    }
+    if (eq === -1) return { placeId: value };
+    return {
+      placeId: value.slice(0, eq).trim(),
+      placeName: value.slice(eq + 1).trim() || undefined,
+    };
   });
-  return out;
-}
-
-/** Every --add-city value, in order. */
-function cityQueries(): string[] {
-  const out: string[] = [];
-  process.argv.forEach((token, i) => {
-    if (token !== "--add-city") return;
-    const value = process.argv[i + 1];
-    if (!value) throw new Error("--add-city needs a value");
-    out.push(value);
-  });
-  return out;
 }
 
 async function main() {
-  const profileId = arg("profile");
+  // Every flag is read before anything is looked up or sent, so a bad
+  // command line stops here. A value flag never takes another flag as its
+  // value: `--add --write --yes` used to send the place id "--write". And
+  // nothing unknown is ignored: `--add=ChIJb` used to vanish from a replace.
+  let profileId: string | undefined;
+  let added: Array<{ placeId: string; placeName?: string }>;
+  let cityQueries: string[];
+  try {
+    assertKnownArgs(argv, {
+      valueFlags: ["profile", "add", "add-city"],
+      booleanFlags: ["replace", "write", "yes"],
+    });
+    profileId = flagValue(argv, "profile");
+    added = addedPlaces();
+    cityQueries = flagValues(argv, "add-city");
+  } catch (error) {
+    if (!(error instanceof CliArgError)) throw error;
+    console.error(error.message);
+    console.error(USAGE);
+    process.exit(1);
+  }
   if (!profileId) {
-    console.error(
-      "usage: tsx scripts/gbp-set-service-area.ts --profile <id> [--add-city 'American Fork, UT'] [--add 'ChIJ...=City, ST, USA'] [--replace] [--write --yes]"
-    );
+    console.error(USAGE);
     process.exit(1);
   }
 
@@ -116,8 +121,7 @@ async function main() {
   // Cities are resolved before anything is sent, and one bad lookup stops
   // the run: half a service area is worse than none, and a --replace with a
   // city missing would silently drop the rest.
-  const added = addedPlaces();
-  for (const query of cityQueries()) {
+  for (const query of cityQueries) {
     const outcome = await resolveAreaPlaceId(query);
     if (!outcome.ok) {
       console.error(`\nCould not resolve "${query}": ${outcome.error}`);

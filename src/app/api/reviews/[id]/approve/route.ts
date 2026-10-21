@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
+import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
 import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
@@ -137,11 +138,12 @@ export async function POST(
     );
   }
 
-  // Queue for publishing. If that fails the reply goes back to DRAFTED: an
+  // Queue for publishing. If that fails (or doesn't answer: with Redis down
+  // the enqueue hangs rather than throws) the reply goes back to DRAFTED: an
   // APPROVED reply with no job never publishes, and only drafts can be
   // edited, so leaving it approved stranded it.
   try {
-    await scheduleReviewPublish(review.response.id);
+    await enqueueWithin(scheduleReviewPublish(review.response.id));
   } catch (err) {
     console.warn(
       "Failed to queue review response for publishing (Redis may be unavailable):",

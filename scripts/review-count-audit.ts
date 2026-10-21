@@ -86,10 +86,49 @@ async function plan() {
   await prisma.$disconnect();
 }
 
+const USAGE =
+  "usage: npx tsx scripts/review-count-audit.ts [apiSampleSize] [nameFilter] | --plan";
+
+function usageError(message: string): never {
+  console.error(message);
+  console.error(USAGE);
+  process.exit(1);
+}
+
+/**
+ * [apiSampleSize] [nameFilter], or --plan on its own. Anything past those is
+ * an error rather than ignored: an unquoted `0 Badger Gutters` used to filter
+ * on "badger" and drop the rest, and a name in the sample-size slot became
+ * NaN and quietly audited every profile with no API sample.
+ */
+function parseArgs(
+  argv: string[]
+): { plan: true } | { plan: false; limit: number; nameFilter?: string } {
+  if (argv[0] === "--plan") {
+    if (argv.length > 1) {
+      usageError(`unexpected argument: ${argv[1]}. --plan takes no arguments`);
+    }
+    return { plan: true };
+  }
+  const [rawLimit, nameFilter, ...extra] = argv;
+  if (extra.length > 0) {
+    usageError(
+      `unexpected argument: ${extra[0]}. A name filter with spaces must be quoted: review-count-audit.ts 0 "Badger Gutters"`
+    );
+  }
+  const limit = Number(rawLimit ?? 0);
+  if (!Number.isInteger(limit) || limit < 0) {
+    usageError(
+      `apiSampleSize must be a whole number of profiles, not "${rawLimit}" (0 filters by name with no API calls)`
+    );
+  }
+  return { plan: false, limit, nameFilter: nameFilter?.toLowerCase() };
+}
+
 async function main() {
-  if (process.argv[2] === "--plan") return plan();
-  const limit = Number(process.argv[2] ?? 0);
-  const nameFilter = process.argv[3]?.toLowerCase();
+  const args = parseArgs(process.argv.slice(2));
+  if (args.plan) return plan();
+  const { limit, nameFilter } = args;
   const profiles = await prisma.profile.findMany({
     where: { reviewsEnabled: true, accountResourceName: { not: null } },
     select: {
