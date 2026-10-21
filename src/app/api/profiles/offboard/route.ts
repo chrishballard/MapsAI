@@ -21,9 +21,12 @@ export async function POST(request: Request) {
   });
 
   await prisma.$transaction([
+    // Offboarding ends everything, review sync included (Chris,
+    // 2026-10-21): a profile that should keep its reviews syncing is marked
+    // reviewsOnly again afterwards.
     prisma.profile.update({
       where: { id: body.profileId },
-      data: { isOnboarded: false },
+      data: { isOnboarded: false, reviewsOnly: false },
     }),
     prisma.post.updateMany({
       where: { profileId: body.profileId, status: "SCHEDULED" },

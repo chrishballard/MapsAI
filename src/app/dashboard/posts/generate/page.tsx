@@ -35,7 +35,8 @@ export default function GeneratePostsPage() {
   useEffect(() => {
     async function fetchProfiles() {
       try {
-        const res = await fetch("/api/profiles");
+        // Onboarded profiles only: reviews-only ones get no AI posts.
+        const res = await fetch("/api/profiles?scope=posts");
         if (!res.ok) throw new Error("Failed to fetch profiles");
         const data = await res.json();
         setProfiles(data.profiles);
