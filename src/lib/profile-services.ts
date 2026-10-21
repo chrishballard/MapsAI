@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import {
   fetchCurrentServices,
-  fetchStructuredServices,
+  fetchServiceTypeCatalog,
   fetchCategoryId,
   pushServicesToGBP,
+  type ServiceTypeCatalog,
 } from "@/lib/google-business-info";
 import { MAX_SERVICE_DESCRIPTION_LENGTH } from "@/lib/gbp-limits";
 import { isNonEnglishLanguageCode } from "@/lib/copy-language";
@@ -13,6 +14,11 @@ export interface ProfileServiceInput {
   description?: string;
   isStructured: boolean;
   isApproved?: boolean;
+  /**
+   * Google's service type id, when the caller knows it (the row was picked
+   * from Google's catalog). Absent leaves whatever id the row already has.
+   */
+  serviceTypeId?: string | null;
 }
 
 interface GBPServiceItem {
@@ -40,6 +46,9 @@ interface GBPServiceItem {
  * resurrect a deselected service on Google. Callers that save a partial list
  * (the optimization suggestions panel approves one service at a time) must
  * NOT set it.
+ *
+ * A serviceTypeId in the input is written; a save without one never clears
+ * the id an earlier push recorded, since the push matches on it first.
  */
 export async function saveProfileServices(
   profileId: string,
@@ -69,6 +78,7 @@ export async function saveProfileServices(
           description: service.description || null,
           isStructured: service.isStructured,
           isApproved: service.isApproved ?? false,
+          serviceTypeId: service.serviceTypeId || null,
         },
         update: {
           description: service.description || null,
@@ -76,6 +86,9 @@ export async function saveProfileServices(
           isApproved: service.isApproved ?? false,
           isPushed: false,
           pushedAt: null,
+          ...(service.serviceTypeId
+            ? { serviceTypeId: service.serviceTypeId }
+            : {}),
         },
       });
     }
@@ -108,6 +121,10 @@ export type PushApprovedServicesResult =
  * the live list and other approved services. After a successful push each
  * row records the id it went out as (null for free-form), so the next push
  * finds the type whatever language Google names it in.
+ *
+ * Nothing is sent when two approved rows would go out as the same item (one
+ * description would be lost), or when a replace would drop a live structured
+ * service on a degraded catalog read (see ServiceTypeCatalog).
  */
 export async function pushApprovedServices(
   profileId: string,
@@ -171,15 +188,15 @@ export async function pushApprovedServices(
   // GBP service list, so proceeding on a falsely-empty read could wipe
   // real services.
   let currentGBP: { serviceItems: unknown[] };
-  let structuredServices: Awaited<ReturnType<typeof fetchStructuredServices>>;
+  let catalog: ServiceTypeCatalog;
   let categoryId: string | null;
   try {
-    [currentGBP, structuredServices, categoryId] = await Promise.all([
+    [currentGBP, catalog, categoryId] = await Promise.all([
       fetchCurrentServices({
         googleAccountId: profile.googleAccountId,
         locationName: profile.locationName,
       }),
-      fetchStructuredServices({
+      fetchServiceTypeCatalog({
         googleAccountId: profile.googleAccountId,
         locationName: profile.locationName,
       }),
@@ -201,30 +218,47 @@ export async function pushApprovedServices(
     };
   }
 
+  const structuredServices = catalog.serviceTypes;
+  // Every id the catalog read found, named or not
+  const catalogTypeIds = [
+    ...structuredServices.map((s) => s.serviceTypeId),
+    ...catalog.unresolvedTypeIds,
+  ];
+
   // Build displayName -> serviceTypeId lookup (case-insensitive)
   const typeIdMap = new Map<string, string>();
   for (const s of structuredServices) {
     typeIdMap.set(s.displayName.toLowerCase(), s.serviceTypeId);
   }
-  // Stored ids the push will send: the category's catalog, plus in merge
-  // mode any structured item the location already carries (a type from an
-  // additional category). Replace mode does not re-send the live list, so a
-  // live-only id would be new traffic Google might reject.
-  const validTypeIds = new Set(structuredServices.map((s) => s.serviceTypeId));
+  // Stored ids the push will send: the ids the catalog read found, plus in
+  // merge mode any structured item the location already carries (a type from
+  // an additional category). Replace mode does not re-send the live list, so
+  // a live-only id would be new traffic Google might reject.
+  const validTypeIds = new Set(catalogTypeIds);
   if (merge) {
     for (const item of currentGBP.serviceItems as GBPServiceItem[]) {
       const id = item.structuredServiceItem?.serviceTypeId;
       if (id) validTypeIds.add(id);
     }
   }
-  // English profiles keep matching by display name alone, as they always have
-  const typeIdBySlug = isNonEnglishLanguageCode(profile.googleLanguageCode)
-    ? new Map(
-        structuredServices
-          .filter((s) => typeof s.serviceTypeId === "string" && s.serviceTypeId)
-          .map((s) => [typeIdSlug(s.serviceTypeId), s.serviceTypeId])
-      )
-    : undefined;
+  const typeIdBySlug = typeIdSlugMap(profile.googleLanguageCode, catalogTypeIds);
+
+  // Row id -> the structured type it is pushed as (null = free-form)
+  const matches = new Map<string, ReturnType<typeof resolveServiceTypeId>>();
+  for (const service of approvedServices) {
+    matches.set(
+      service.id,
+      resolveServiceTypeId(service, typeIdMap, validTypeIds, typeIdBySlug)
+    );
+  }
+
+  // Two approved rows that go out as the same item collapse into one: Google
+  // keeps one description and the other is lost, while both rows would be
+  // stamped pushed. Refuse before anything is sent.
+  const collision = describeCollisions(approvedServices, matches);
+  if (collision) {
+    return { success: false, error: collision, status: 400 };
+  }
 
   // Pre-push snapshot for manual recovery
   console.log(
@@ -246,14 +280,10 @@ export async function pushApprovedServices(
     if (name) seenFreeFormNames.add(name.toLowerCase());
   }
 
-  // Row id -> the serviceTypeId it is pushed as (null = free-form)
-  const resolvedTypeIds = new Map<string, string | null>();
-
   for (const service of approvedServices) {
     const nameKey = service.serviceName.toLowerCase();
-    const match = resolveServiceTypeId(service, typeIdMap, validTypeIds, typeIdBySlug);
+    const match = matches.get(service.id) ?? null;
     const serviceTypeId = match?.serviceTypeId ?? null;
-    resolvedTypeIds.set(service.id, serviceTypeId);
 
     if (serviceTypeId) {
       const newItem: GBPServiceItem = {
@@ -309,6 +339,36 @@ export async function pushApprovedServices(
     }
   }
 
+  if (!merge && catalog.degraded) {
+    // Replace drops every live item it does not send. On a degraded read a
+    // live structured service missing from the list may be one the push
+    // failed to match rather than one the user deselected, and dropping it
+    // would swap a structured service for a custom one. Refuse instead.
+    const outgoing = new Set(
+      serviceItems
+        .map((item) => item.structuredServiceItem?.serviceTypeId)
+        .filter((id): id is string => !!id)
+    );
+    const dropped = [
+      ...new Set(
+        (currentGBP.serviceItems as GBPServiceItem[])
+          .map((item) => item.structuredServiceItem?.serviceTypeId)
+          .filter((id): id is string => !!id && !outgoing.has(id))
+      ),
+    ];
+    if (dropped.length > 0) {
+      console.error(
+        `[SERVICE_PUSH] Refused replace on a degraded catalog read for ${profileId}; would drop:`,
+        dropped
+      );
+      return {
+        success: false,
+        error: `Google did not return this category's full service list, so replacing the live services could drop ${dropped.length} structured service${dropped.length === 1 ? "" : "s"} already on the profile (${dropped.join(", ")}). Nothing was pushed. Push from re-optimization instead: it keeps the live services.`,
+        status: 502,
+      };
+    }
+  }
+
   console.log(
     "[SERVICE_PUSH] Sending to GBP:",
     JSON.stringify(serviceItems, null, 2)
@@ -329,28 +389,27 @@ export async function pushApprovedServices(
     };
   }
 
-  await prisma.profileService.updateMany({
-    where: { profileId, isApproved: true },
-    data: { isPushed: true, pushedAt: new Date() },
-  });
-
-  // Record what each row went out as. Best-effort: the push already landed,
-  // and a row left unrecorded just resolves by display name next time.
-  for (const service of approvedServices) {
-    const serviceTypeId = resolvedTypeIds.get(service.id) ?? null;
-    if (serviceTypeId === (service.serviceTypeId ?? null)) continue;
-    try {
-      await prisma.profileService.update({
-        where: { id: service.id },
-        data: { serviceTypeId },
-      });
-    } catch (error: unknown) {
-      console.error(
-        `[SERVICE_PUSH] Could not record serviceTypeId for ${service.id}:`,
-        error instanceof Error ? error.message : error
-      );
-    }
-  }
+  // Record what went out in one transaction: the pushed stamp on exactly the
+  // rows that were sent (a row approved while the push ran was not), and the
+  // id each row went out as (null for free-form), written where it changed.
+  // updateMany throughout, so a row deleted mid-push cannot fail the rest.
+  const pushedAt = new Date();
+  await prisma.$transaction([
+    prisma.profileService.updateMany({
+      where: { id: { in: approvedServices.map((s) => s.id) } },
+      data: { isPushed: true, pushedAt },
+    }),
+    ...approvedServices.flatMap((service) => {
+      const serviceTypeId = matches.get(service.id)?.serviceTypeId ?? null;
+      if (serviceTypeId === (service.serviceTypeId ?? null)) return [];
+      return [
+        prisma.profileService.updateMany({
+          where: { id: service.id },
+          data: { serviceTypeId },
+        }),
+      ];
+    }),
+  ]);
 
   return { success: true, pushedCount: approvedServices.length };
 }
@@ -382,6 +441,49 @@ export function resolveServiceTypeId(
   const bySlug = typeIdBySlug?.get(slugKey(service.serviceName));
   if (bySlug) return { serviceTypeId: bySlug, via: "typeIdSlug" };
   return null;
+}
+
+/**
+ * typeId slug -> typeId, for resolveServiceTypeId's last step. Undefined on
+ * an English profile, which keeps matching by display name alone, as it
+ * always has.
+ */
+export function typeIdSlugMap(
+  googleLanguageCode: string | null | undefined,
+  serviceTypeIds: Iterable<string | null | undefined>
+): Map<string, string> | undefined {
+  if (!isNonEnglishLanguageCode(googleLanguageCode)) return undefined;
+  const bySlug = new Map<string, string>();
+  for (const id of serviceTypeIds) {
+    if (typeof id === "string" && id) bySlug.set(typeIdSlug(id), id);
+  }
+  return bySlug;
+}
+
+/**
+ * Names the approved rows that would go out as one item (the same service
+ * type, or custom names equal but for case), or null when there are none.
+ */
+function describeCollisions(
+  services: Array<{ id: string; serviceName: string }>,
+  matches: Map<string, { serviceTypeId: string } | null>
+): string | null {
+  const rowsByItem = new Map<string, { label: string; names: string[] }>();
+  for (const service of services) {
+    const typeId = matches.get(service.id)?.serviceTypeId;
+    const key = typeId
+      ? `type:${typeId}`
+      : `custom:${service.serviceName.toLowerCase()}`;
+    const label = typeId ? `service type ${typeId}` : "the same custom service";
+    const entry = rowsByItem.get(key) ?? { label, names: [] };
+    entry.names.push(`"${service.serviceName}"`);
+    rowsByItem.set(key, entry);
+  }
+  const collisions = [...rowsByItem.values()].filter((e) => e.names.length > 1);
+  if (collisions.length === 0) return null;
+  return `These approved services would go out to Google as one service, so only one description would be published: ${collisions
+    .map((e) => `${e.names.join(" and ")} (${e.label})`)
+    .join("; ")}. Unapprove or remove all but one of each and push again.`;
 }
 
 /** "job_type_id:move_out_cleaning" -> "move out cleaning" */

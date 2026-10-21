@@ -12,7 +12,8 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
-    profileService: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+    profileService: { findMany: vi.fn(), updateMany: vi.fn() },
+    $transaction: vi.fn(),
   },
   fetchCurrentServices: vi.fn(),
   fetchStructuredServices: vi.fn(),
@@ -24,6 +25,13 @@ vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
 vi.mock('@/lib/google-business-info', () => ({
   fetchCurrentServices: mocks.fetchCurrentServices,
   fetchStructuredServices: mocks.fetchStructuredServices,
+  // These tests read a healthy catalog; profile-services-push-safety covers
+  // a degraded one
+  fetchServiceTypeCatalog: async (params: unknown) => ({
+    serviceTypes: await mocks.fetchStructuredServices(params),
+    unresolvedTypeIds: [],
+    degraded: false,
+  }),
   fetchCategoryId: mocks.fetchCategoryId,
   pushServicesToGBP: mocks.pushServicesToGBP,
 }));
@@ -75,10 +83,9 @@ function pushedItems(): Array<Record<string, unknown>> {
 /** serviceTypeId writes the push made, as { rowId: serviceTypeId }. */
 function idWrites(): Record<string, string | null> {
   return Object.fromEntries(
-    mocks.prisma.profileService.update.mock.calls.map(([args]) => [
-      args.where.id,
-      args.data.serviceTypeId,
-    ])
+    mocks.prisma.profileService.updateMany.mock.calls
+      .filter(([args]) => 'serviceTypeId' in args.data)
+      .map(([args]) => [args.where.id, args.data.serviceTypeId])
   );
 }
 
@@ -90,7 +97,7 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.profile.findUnique.mockResolvedValue(profile('es-419'));
   mocks.prisma.profileService.updateMany.mockResolvedValue({ count: 1 });
-  mocks.prisma.profileService.update.mockResolvedValue({});
+  mocks.prisma.$transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
   mocks.fetchCurrentServices.mockResolvedValue({ serviceItems: [] });
   mocks.fetchStructuredServices.mockResolvedValue(spanishCatalog);
   mocks.fetchCategoryId.mockResolvedValue('categories/gcid:house_cleaning_service');
@@ -373,7 +380,8 @@ describe('pushApprovedServices on an English profile with no stored ids', () => 
     const result = await pushApprovedServices('p1');
 
     expect(result.success).toBe(false);
-    expect(mocks.prisma.profileService.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.profileService.updateMany).not.toHaveBeenCalled();
   });
 });
 

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     profileService: { findMany: vi.fn(), updateMany: vi.fn() },
+    $transaction: vi.fn(),
   },
   fetchCurrentServices: vi.fn(),
   fetchStructuredServices: vi.fn(),
@@ -20,6 +21,11 @@ vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
 vi.mock('@/lib/google-business-info', () => ({
   fetchCurrentServices: mocks.fetchCurrentServices,
   fetchStructuredServices: mocks.fetchStructuredServices,
+  fetchServiceTypeCatalog: async (params: unknown) => ({
+    serviceTypes: await mocks.fetchStructuredServices(params),
+    unresolvedTypeIds: [],
+    degraded: false,
+  }),
   fetchCategoryId: mocks.fetchCategoryId,
   pushServicesToGBP: mocks.pushServicesToGBP,
 }));
@@ -50,6 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.prisma.profile.findUnique.mockResolvedValue(profile);
   mocks.prisma.profileService.updateMany.mockResolvedValue({ count: 1 });
+  mocks.prisma.$transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
   mocks.fetchCurrentServices.mockResolvedValue({ serviceItems: [] });
   mocks.fetchStructuredServices.mockResolvedValue([]);
   mocks.fetchCategoryId.mockResolvedValue('categories/gcid:plumber');

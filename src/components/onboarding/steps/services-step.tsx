@@ -208,6 +208,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             description: s.description,
             isStructured: s.isStructured,
             isApproved: false,
+            serviceTypeId: serviceTypeIdMap.current.get(s.serviceName),
           })),
         });
         setSaveWarning(null);
@@ -284,6 +285,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
           description: s.description,
           isStructured: s.isStructured,
           isApproved: s.isApproved,
+          serviceTypeId: serviceTypeIdMap.current.get(s.serviceName),
         })),
       });
 
@@ -329,6 +331,7 @@ export function ServicesStep({ profileId, onComplete }: ServicesStepProps) {
             description: s.description,
             isStructured: s.isStructured,
             isApproved: s.isApproved,
+            serviceTypeId: serviceTypeIdMap.current.get(s.serviceName),
           })),
         });
         setSaveWarning(null);

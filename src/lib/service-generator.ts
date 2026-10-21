@@ -3,6 +3,7 @@ import { generate } from "./claude";
 import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 import { MAX_SERVICE_DESCRIPTION_LENGTH } from "./gbp-limits";
 import { US_ENGLISH_RULE } from "./copy-language";
+import { serviceNameKey } from "./service-names";
 
 const ServiceDescriptionSchema = z.object({
   services: z.array(
@@ -33,23 +34,6 @@ export class ServiceGenerationIncompleteError extends Error {
   }
 }
 
-/**
- * Matching key tolerant of Claude's name drift: casing, whitespace,
- * punctuation ("Kitchen & Bath" vs "kitchen and bath", curly apostrophes),
- * and diacritics. Letters in any script are preserved — stripping to ASCII
- * would collapse non-Latin names to "" and dedupe would destroy the list.
- */
-function nameKey(name: string): string {
-  const normalized = name
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-  // A name made purely of symbols still needs a non-empty, distinct key
-  return normalized || name.toLowerCase().trim();
-}
 
 /** Cut an overlong description at the last word boundary within the limit. */
 export function clampDescription(text: string): string {
@@ -145,14 +129,14 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
   const outputs = parsed.services.filter((s) => s.description.trim() !== "");
   const outputByKey = new Map<string, string>();
   for (const s of outputs) {
-    outputByKey.set(nameKey(s.serviceName), s.description);
+    outputByKey.set(serviceNameKey(s.serviceName), s.description);
   }
 
   const matched = new Map<string, string>();
   const consumedKeys = new Set<string>();
   const unmatchedInputs: string[] = [];
   for (const name of serviceNames) {
-    const key = nameKey(name);
+    const key = serviceNameKey(name);
     const description = outputByKey.get(key);
     if (description !== undefined) {
       matched.set(key, description);
@@ -168,10 +152,10 @@ ${PASTED_CONTENT_SYSTEM_NOTE}`;
   // text), so those go to the retry pass instead.
   if (unmatchedInputs.length === 1 && outputs.length === serviceNames.length) {
     const unconsumedOutputs = outputs.filter(
-      (s) => !consumedKeys.has(nameKey(s.serviceName))
+      (s) => !consumedKeys.has(serviceNameKey(s.serviceName))
     );
     if (unconsumedOutputs.length === 1) {
-      matched.set(nameKey(unmatchedInputs[0]), unconsumedOutputs[0].description);
+      matched.set(serviceNameKey(unmatchedInputs[0]), unconsumedOutputs[0].description);
     }
   }
 
@@ -208,7 +192,7 @@ export async function generateServiceDescriptions(params: {
   const canonicalNames: string[] = [];
   const seen = new Set<string>();
   for (const name of serviceNames) {
-    const key = nameKey(name);
+    const key = serviceNameKey(name);
     if (seen.has(key)) continue;
     seen.add(key);
     canonicalNames.push(name);
@@ -244,7 +228,7 @@ export async function generateServiceDescriptions(params: {
   await runPass(canonicalNames);
 
   // One retry for anything a batch dropped or a failed batch lost
-  const missing = canonicalNames.filter((n) => !descriptions.has(nameKey(n)));
+  const missing = canonicalNames.filter((n) => !descriptions.has(serviceNameKey(n)));
   if (missing.length > 0) {
     await runPass(missing);
   }
@@ -256,7 +240,7 @@ export async function generateServiceDescriptions(params: {
   }
 
   const stillMissing = canonicalNames.filter(
-    (n) => !descriptions.has(nameKey(n))
+    (n) => !descriptions.has(serviceNameKey(n))
   );
   if (stillMissing.length > 0) {
     throw new ServiceGenerationIncompleteError(stillMissing);
@@ -264,6 +248,6 @@ export async function generateServiceDescriptions(params: {
 
   return canonicalNames.map((serviceName) => ({
     serviceName,
-    description: clampDescription(descriptions.get(nameKey(serviceName))!),
+    description: clampDescription(descriptions.get(serviceNameKey(serviceName))!),
   }));
 }

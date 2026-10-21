@@ -1,6 +1,7 @@
 import { createGoogleClient } from "./google";
 import { describeGoogleError } from "./google-errors";
 import { MAX_SERVICE_AREA_PLACES } from "./gbp-limits";
+import { isNonEnglishLanguageCode } from "./copy-language";
 
 export interface GBPWriteResult {
   success: boolean;
@@ -287,9 +288,51 @@ export async function pushDescriptionToGBP(
 
 // --- Service functions ---
 
-interface StructuredServiceInfo {
+export interface StructuredServiceInfo {
   serviceTypeId: string;
   displayName: string;
+}
+
+/**
+ * The structured service types a location can push, as Google names them.
+ *
+ * `degraded` is true unless the list is the location's own category catalog
+ * with every type named: a fallback answered, or some types came back with no
+ * display name. A push that replaces the live list cannot tell a deselected
+ * structured service from one it failed to match on such a read, so it must
+ * not drop live structured items on the strength of it.
+ */
+export interface ServiceTypeCatalog {
+  /** Types Google gave a display name for. */
+  serviceTypes: StructuredServiceInfo[];
+  /** Type ids Google gave no display name for. Never turned into a name. */
+  unresolvedTypeIds: string[];
+  degraded: boolean;
+}
+
+/** Split Google's service types into named ones and bare ids. */
+function splitServiceTypes(
+  types: Array<{ serviceTypeId?: string | null; displayName?: string | null }>
+): Omit<ServiceTypeCatalog, "degraded"> {
+  const serviceTypes: StructuredServiceInfo[] = [];
+  const unnamed = new Set<string>();
+  for (const type of types) {
+    // A type with no id cannot be pushed as anything
+    if (!type.serviceTypeId) continue;
+    if (type.displayName?.trim()) {
+      serviceTypes.push({
+        serviceTypeId: type.serviceTypeId,
+        displayName: type.displayName,
+      });
+    } else {
+      unnamed.add(type.serviceTypeId);
+    }
+  }
+  const named = new Set(serviceTypes.map((s) => s.serviceTypeId));
+  return {
+    serviceTypes,
+    unresolvedTypeIds: [...unnamed].filter((id) => !named.has(id)),
+  };
 }
 
 function titleCase(str: string): string {
@@ -309,40 +352,60 @@ export async function fetchCategoryId(params: {
   return data.categories?.primaryCategory?.name ?? null;
 }
 
+/**
+ * The named service types only: what the services pages offer to pick from
+ * and what saved titles are matched against. A type Google gives no display
+ * name for is left out rather than named after its id.
+ */
 export async function fetchStructuredServices(params: {
   googleAccountId: string;
   locationName: string;
 }): Promise<StructuredServiceInfo[]> {
+  return (await fetchServiceTypeCatalog(params)).serviceTypes;
+}
+
+/**
+ * The location's service type catalog, from its primary category. Throws if
+ * the location itself cannot be read, so a push aborts rather than act on a
+ * falsely empty list.
+ */
+export async function fetchServiceTypeCatalog(params: {
+  googleAccountId: string;
+  locationName: string;
+}): Promise<ServiceTypeCatalog> {
   const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-  // First: get the location's primary category
+  // First: get the location's primary category (and its language, which
+  // decides whether batchGet's English names below can be trusted)
   const locationResponse = await oauth2Client.request<{
+    languageCode?: string;
     categories?: {
       primaryCategory?: {
         name?: string;
         displayName?: string;
         serviceTypes?: Array<{
-          serviceTypeId: string;
-          displayName: string;
+          serviceTypeId?: string;
+          displayName?: string;
         }>;
       };
     };
   }>({
-    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=categories`,
+    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=categories,languageCode`,
     method: "GET",
   });
 
   const primaryCategory = locationResponse.data.categories?.primaryCategory;
+  const languageCode = locationResponse.data.languageCode;
 
-  // If category has serviceTypes directly, use those
-  if (primaryCategory?.serviceTypes && primaryCategory.serviceTypes.length > 0) {
-    return primaryCategory.serviceTypes.map((st) => ({
-      serviceTypeId: st.serviceTypeId,
-      displayName: st.displayName,
-    }));
+  // If category has serviceTypes directly, use those. Google names them in
+  // the location's own language.
+  const fromLocation = splitServiceTypes(primaryCategory?.serviceTypes ?? []);
+  if (fromLocation.serviceTypes.length > 0 || fromLocation.unresolvedTypeIds.length > 0) {
+    return { ...fromLocation, degraded: fromLocation.unresolvedTypeIds.length > 0 };
   }
 
-  // Fallback: try to get service types from categories batchGet
+  // Fallback: try to get service types from categories batchGet. Only the
+  // FULL view carries them; the default BASIC view is names only.
   if (primaryCategory?.name) {
     try {
       const catResponse = await oauth2Client.request<{
@@ -350,32 +413,39 @@ export async function fetchStructuredServices(params: {
           name: string;
           displayName: string;
           serviceTypes?: Array<{
-            serviceTypeId: string;
-            displayName: string;
+            serviceTypeId?: string;
+            displayName?: string;
           }>;
         }>;
       }>({
-        url: `${BUSINESS_INFO_BASE}/categories:batchGet?names=${encodeURIComponent(primaryCategory.name)}&languageCode=en`,
+        url: `${BUSINESS_INFO_BASE}/categories:batchGet?names=${encodeURIComponent(primaryCategory.name)}&languageCode=en&view=FULL`,
         method: "GET",
       });
 
-      const category = catResponse.data.categories?.[0];
-      if (category?.serviceTypes && category.serviceTypes.length > 0) {
-        return category.serviceTypes.map((st) => ({
-          serviceTypeId: st.serviceTypeId,
-          displayName: st.displayName,
-        }));
+      const fromBatchGet = splitServiceTypes(
+        catResponse.data.categories?.[0]?.serviceTypes ?? []
+      );
+      if (fromBatchGet.serviceTypes.length > 0 || fromBatchGet.unresolvedTypeIds.length > 0) {
+        // English names: the profile's own on an English profile, but on any
+        // other (or one whose language Google didn't say) not the ones the
+        // saved titles were picked from
+        const english = !!languageCode && !isNonEnglishLanguageCode(languageCode);
+        return {
+          ...fromBatchGet,
+          degraded: !english || fromBatchGet.unresolvedTypeIds.length > 0,
+        };
       }
     } catch {
       // batchGet failed, continue to fallback
     }
   }
 
-  // Final fallback: read currently set services
+  // Final fallback: the structured types the location already carries. The
+  // live list holds ids only, so none of them has a name.
   const response = await oauth2Client.request<{
     serviceItems?: Array<{
       structuredServiceItem?: {
-        serviceTypeId: string;
+        serviceTypeId?: string;
         description?: string;
       };
       freeFormServiceItem?: unknown;
@@ -385,19 +455,13 @@ export async function fetchStructuredServices(params: {
     method: "GET",
   });
 
-  const serviceItems = response.data.serviceItems || [];
+  const liveTypeIds = new Set<string>();
+  for (const item of response.data.serviceItems ?? []) {
+    const id = item.structuredServiceItem?.serviceTypeId;
+    if (id) liveTypeIds.add(id);
+  }
 
-  return serviceItems
-    .filter((item) => item.structuredServiceItem)
-    .map((item) => {
-      const rawId = item.structuredServiceItem!.serviceTypeId;
-      const lastSegment = rawId.includes("/") ? rawId.split("/").pop()! : rawId;
-      const displayName = lastSegment.replace(/_/g, " ");
-      return {
-        serviceTypeId: rawId,
-        displayName,
-      };
-    });
+  return { serviceTypes: [], unresolvedTypeIds: [...liveTypeIds], degraded: true };
 }
 
 export async function fetchCurrentServices(params: {

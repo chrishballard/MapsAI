@@ -6,7 +6,12 @@ import {
   generateServiceDescriptions,
   ServiceGenerationIncompleteError,
 } from "@/lib/service-generator";
-import { saveProfileServices } from "@/lib/profile-services";
+import { serviceNameKey } from "@/lib/service-names";
+import {
+  resolveServiceTypeId,
+  saveProfileServices,
+  typeIdSlugMap,
+} from "@/lib/profile-services";
 import { z } from "zod";
 import { idSchema, parseBody, serviceNamesSchema } from "@/lib/api-validation";
 
@@ -98,6 +103,24 @@ export async function POST(request: NextRequest) {
   const profile = await requireProfile(profileId);
   if (profile instanceof NextResponse) return profile;
 
+  // Rows are keyed by name and the generator matches names ignoring case
+  // and punctuation, so a name listed twice would come back as one service
+  // (one row silently missing) or fail the save below
+  const spellingsByName = new Map<string, string[]>();
+  for (const name of serviceNames) {
+    const key = serviceNameKey(name);
+    spellingsByName.set(key, [...(spellingsByName.get(key) ?? []), name]);
+  }
+  const duplicates = [...spellingsByName.values()]
+    .filter((spellings) => spellings.length > 1)
+    .map((spellings) => [...new Set(spellings)].join(" / "));
+  if (duplicates.length > 0) {
+    return NextResponse.json(
+      { error: `Each service can only be listed once: ${duplicates.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
   try {
     const [keywordRecords, cityRecords, structuredServices, existingServices] =
       await Promise.all([
@@ -115,7 +138,7 @@ export async function POST(request: NextRequest) {
         }),
         prisma.profileService.findMany({
           where: { profileId },
-          select: { serviceName: true, serviceTypeId: true },
+          select: { id: true, serviceName: true, serviceTypeId: true },
         }),
       ]);
 
@@ -130,27 +153,42 @@ export async function POST(request: NextRequest) {
 
     // A service is structured only if GBP has a matching serviceTypeId;
     // everything else must be pushed as a free-form item. The replace below
-    // deletes every row, so a surviving name keeps the id it already had
-    // (on a non-English profile an English title only resolves through it;
-    // the push checks the id is still valid). Other names get the catalog's
-    // id by display name.
+    // deletes every row, so a surviving name (compared case-insensitively, as
+    // the push does) keeps the id it already had: on a non-English profile an
+    // English title only resolves through it, and an id from an additional
+    // category is not in this catalog at all (the push checks it is still
+    // valid). Other names resolve the way the push resolves them.
     const typeIdByDisplayName = new Map(
       structuredServices.map((s) => [s.displayName.toLowerCase(), s.serviceTypeId])
     );
     const catalogTypeIds = new Set(structuredServices.map((s) => s.serviceTypeId));
-    const storedTypeIds = new Map(
-      existingServices.map((s) => [s.serviceName, s.serviceTypeId])
-    );
+    const storedTypeIds = new Map<string, string>();
+    for (const s of existingServices) {
+      const key = s.serviceName.toLowerCase();
+      if (s.serviceTypeId && !storedTypeIds.has(key)) {
+        storedTypeIds.set(key, s.serviceTypeId);
+      }
+    }
+    const keptTypeIds = new Set([...catalogTypeIds, ...storedTypeIds.values()]);
+    const typeIdBySlug = typeIdSlugMap(profile.googleLanguageCode, catalogTypeIds);
 
-    // Save generated services to DB (replace full set, matching onboarding pattern)
+    // Save generated services to DB (replace full set, matching onboarding
+    // pattern). The editor pre-checks every saved service and sends every one
+    // still checked, so a saved row left out is one the user unchecked.
     const savedServices = await prisma.$transaction(async (tx) => {
       await tx.profileService.deleteMany({ where: { profileId } });
       await tx.profileService.createMany({
         data: result.map((s) => {
           const serviceTypeId =
-            storedTypeIds.get(s.serviceName) ??
-            typeIdByDisplayName.get(s.serviceName.toLowerCase()) ??
-            null;
+            resolveServiceTypeId(
+              {
+                serviceName: s.serviceName,
+                serviceTypeId: storedTypeIds.get(s.serviceName.toLowerCase()),
+              },
+              typeIdByDisplayName,
+              keptTypeIds,
+              typeIdBySlug
+            )?.serviceTypeId ?? null;
           return {
             profileId,
             serviceName: s.serviceName,
@@ -202,6 +240,8 @@ export async function PUT(request: NextRequest) {
             description: z.string().max(1000).optional(),
             isStructured: z.boolean(),
             isApproved: z.boolean().optional(),
+            // Google's type id, when the row was picked from its catalog
+            serviceTypeId: z.string().max(200).nullish(),
           })
         )
         .min(1)

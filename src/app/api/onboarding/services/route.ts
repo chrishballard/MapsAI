@@ -81,6 +81,8 @@ const saveServicesSchema = z.object({
         description: z.string().max(1000).optional(),
         isStructured: z.boolean(),
         isApproved: z.boolean().optional(),
+        // Google's type id, when the row was picked from its catalog
+        serviceTypeId: z.string().max(200).nullish(),
       })
     )
     .min(1)

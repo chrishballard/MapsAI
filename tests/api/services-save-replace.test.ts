@@ -89,3 +89,21 @@ describe('services save replace wiring', () => {
     });
   });
 });
+
+describe('services save service type ids', () => {
+  const withId = [
+    { ...services[0], serviceTypeId: 'job_type_id:drain_cleaning' },
+  ];
+
+  it('onboarding POST passes the id the wizard picked from Google through', async () => {
+    const res = await onboardingSavePOST(request({ profileId: 'p1', services: withId }));
+    expect(res.status).toBe(200);
+    expect(mocks.saveProfileServices).toHaveBeenCalledWith('p1', withId, { replace: true });
+  });
+
+  it('reoptimize PUT passes it through too', async () => {
+    const res = await reoptimizeSavePUT(request({ profileId: 'p1', services: withId }));
+    expect(res.status).toBe(200);
+    expect(mocks.saveProfileServices).toHaveBeenCalledWith('p1', withId, { replace: false });
+  });
+});
