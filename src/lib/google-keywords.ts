@@ -6,16 +6,34 @@ interface KeywordResult {
   impressions: number;
 }
 
-export async function fetchSearchKeywords(
+/**
+ * One keyword's monthly impressions as Google reports them: an exact
+ * `value`, or for low-volume keywords only a `threshold` ("fewer than N").
+ * Exactly one of the two is set.
+ */
+export interface KeywordCount {
+  keyword: string;
+  value: number | null;
+  threshold: number | null;
+}
+
+function parseCount(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const n = parseInt(raw, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Every keyword Google lists for the range, exact and threshold-only. */
+export async function fetchSearchKeywordCounts(
   googleAccountId: string,
   locationId: string,
   startMonth: Date,
   endMonth: Date
-): Promise<KeywordResult[]> {
+): Promise<KeywordCount[]> {
   const auth = await createGoogleClient(googleAccountId);
   const bpp = google.businessprofileperformance({ version: "v1", auth });
 
-  const keywords: KeywordResult[] = [];
+  const counts: KeywordCount[] = [];
   let pageToken: string | undefined;
 
   do {
@@ -30,28 +48,43 @@ export async function fetchSearchKeywords(
         pageToken,
       });
 
-    const results = response.data.searchKeywordsCounts ?? [];
-
-    for (const entry of results) {
+    for (const entry of response.data.searchKeywordsCounts ?? []) {
       const keyword = entry.searchKeyword ?? "";
-      // insightsValue carries either `value` (the exact count) or only
-      // `threshold` (Google's "fewer than N" for low-volume keywords). A
-      // threshold is an upper bound, not a count, and
-      // MonthlyKeyword.impressions has no way to say "below N": storing N
-      // ranked every long-tail keyword at the threshold, and storing 0 would
-      // print a false "0 impressions" in reports. So only exact values are
-      // kept; a keyword too small for Google to count is left out.
-      const value = entry.insightsValue?.value;
-      if (!keyword || value == null) continue;
-
-      const impressions = parseInt(value, 10);
-      if (Number.isNaN(impressions)) continue;
-
-      keywords.push({ keyword, impressions });
+      if (!keyword) continue;
+      const value = parseCount(entry.insightsValue?.value);
+      const threshold = value === null ? parseCount(entry.insightsValue?.threshold) : null;
+      if (value === null && threshold === null) continue;
+      counts.push({ keyword, value, threshold });
     }
 
     pageToken = response.data.nextPageToken ?? undefined;
   } while (pageToken);
 
-  return keywords;
+  return counts;
+}
+
+/**
+ * The keywords with an exact count. insightsValue carries either `value`
+ * (the exact count) or only `threshold` (Google's "fewer than N" for
+ * low-volume keywords). A threshold is an upper bound, not a count, and
+ * MonthlyKeyword.impressions has no way to say "below N": storing N ranked
+ * every long-tail keyword at the threshold, and storing 0 would print a false
+ * "0 impressions" in reports. So only exact values are kept; a keyword too
+ * small for Google to count is left out.
+ */
+export async function fetchSearchKeywords(
+  googleAccountId: string,
+  locationId: string,
+  startMonth: Date,
+  endMonth: Date
+): Promise<KeywordResult[]> {
+  const counts = await fetchSearchKeywordCounts(
+    googleAccountId,
+    locationId,
+    startMonth,
+    endMonth
+  );
+  return counts.flatMap((c) =>
+    c.value === null ? [] : [{ keyword: c.keyword, impressions: c.value }]
+  );
 }
