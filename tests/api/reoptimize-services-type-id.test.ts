@@ -33,7 +33,11 @@ vi.mock('@/lib/service-generator', () => ({
   generateServiceDescriptions: mocks.generateServiceDescriptions,
   ServiceGenerationIncompleteError: class extends Error {},
 }));
-vi.mock('@/lib/profile-services', () => ({ saveProfileServices: vi.fn() }));
+// The route resolves ids with the push's own resolveServiceTypeId
+vi.mock('@/lib/profile-services', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/profile-services')>()),
+  saveProfileServices: vi.fn(),
+}));
 
 const { POST } = await import('@/app/api/reoptimize/services/route');
 
@@ -88,5 +92,81 @@ describe('reoptimize services POST service type ids', () => {
       expect.objectContaining({ serviceName: 'Limpieza de alfombras', serviceTypeId: CARPET, isStructured: true }),
       expect.objectContaining({ serviceName: 'Move-out cleaning', serviceTypeId: null, isStructured: false }),
     ]);
+  });
+});
+
+describe('reoptimize services POST id resolution', () => {
+  it('finds the type by its id slug on a non-English profile, as the push does', async () => {
+    mocks.requireProfile.mockResolvedValue({
+      id: 'p1',
+      name: 'Bees Friends Cleaners',
+      category: 'Servicio de limpieza',
+      address: 'Portland, ME',
+      googleAccountId: 'ga1',
+      locationName: 'locations/123',
+      googleLanguageCode: 'es-419',
+    });
+    mocks.prisma.profileService.findMany.mockResolvedValue([]);
+
+    const res = await POST(request(['Carpet Cleaning']));
+    expect(res.status).toBe(200);
+
+    const rows = mocks.tx.profileService.createMany.mock.calls[0][0].data;
+    expect(rows).toEqual([
+      expect.objectContaining({ serviceName: 'Carpet Cleaning', serviceTypeId: CARPET, isStructured: true }),
+    ]);
+  });
+
+  it('keeps a stored id when the regenerated name differs only in case', async () => {
+    mocks.requireProfile.mockResolvedValue({
+      id: 'p1',
+      name: 'Bees Friends Cleaners',
+      category: 'House cleaning service',
+      address: 'Portland, ME',
+      googleAccountId: 'ga1',
+      locationName: 'locations/123',
+      googleLanguageCode: 'en-US',
+    });
+
+    const res = await POST(request(['Mattress Cleaning']));
+    expect(res.status).toBe(200);
+
+    const rows = mocks.tx.profileService.createMany.mock.calls[0][0].data;
+    expect(rows).toEqual([
+      expect.objectContaining({ serviceName: 'Mattress Cleaning', serviceTypeId: MATTRESS, isStructured: true }),
+    ]);
+  });
+});
+
+describe('reoptimize services POST saved rows', () => {
+  it('replaces only the rows it regenerated, leaving the rest of the saved set alone', async () => {
+    mocks.prisma.profileService.findMany.mockResolvedValue([
+      { id: 'r1', serviceName: 'Mattress cleaning', serviceTypeId: MATTRESS },
+      { id: 'r2', serviceName: 'Window washing', serviceTypeId: null },
+    ]);
+
+    const res = await POST(request(['Mattress Cleaning']));
+    expect(res.status).toBe(200);
+
+    expect(mocks.tx.profileService.deleteMany).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.profileService.deleteMany).toHaveBeenCalledWith({
+      where: {
+        profileId: 'cmppohric00ns17pa9poqsdry',
+        OR: [{ id: { in: ['r1'] } }, { serviceName: { in: ['Mattress Cleaning'] } }],
+      },
+    });
+  });
+
+  it.each([
+    [['Drain cleaning', 'Drain cleaning']],
+    [['Drain cleaning', 'DRAIN CLEANING']],
+  ])('answers 400, not 500, when a name is listed twice (%j)', async (names) => {
+    const res = await POST(request(names));
+    expect(res.status).toBe(400);
+
+    const body = await res.json();
+    expect(body.error).toContain('Drain cleaning');
+    expect(mocks.generateServiceDescriptions).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 });

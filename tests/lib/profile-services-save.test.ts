@@ -62,3 +62,28 @@ describe('saveProfileServices replace semantics', () => {
     expect(mocks.tx.profileService.upsert).toHaveBeenCalledTimes(1);
   });
 });
+
+// The push matches a row by the service type id it stored before its display
+// name, so a save that knows the id (the wizard picked the row from Google's
+// catalog) must keep it. A save that does not know it must never clear an id
+// an earlier push recorded.
+describe('saveProfileServices service type ids', () => {
+  it('writes the id it is given on create and on update', async () => {
+    await saveProfileServices('p1', [
+      { ...services[0], serviceTypeId: 'job_type_id:drain_cleaning' },
+    ]);
+
+    const args = mocks.tx.profileService.upsert.mock.calls[0][0];
+    expect(args.create.serviceTypeId).toBe('job_type_id:drain_cleaning');
+    expect(args.update.serviceTypeId).toBe('job_type_id:drain_cleaning');
+  });
+
+  it('leaves a stored id alone when the save does not carry one', async () => {
+    await saveProfileServices('p1', [services[0], { ...services[1], serviceTypeId: null }]);
+
+    for (const [args] of mocks.tx.profileService.upsert.mock.calls) {
+      expect(args.create.serviceTypeId).toBeNull();
+      expect(args.update).not.toHaveProperty('serviceTypeId');
+    }
+  });
+});
