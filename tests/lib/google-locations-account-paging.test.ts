@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   upsert: vi.fn(),
   update: vi.fn(),
   updateMany: vi.fn(),
+  findMany: vi.fn(),
 }));
 
 vi.mock('googleapis', () => ({
@@ -26,7 +27,12 @@ vi.mock('@/lib/google-business-info', () => ({
 }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    profile: { upsert: mocks.upsert, update: mocks.update, updateMany: mocks.updateMany },
+    profile: {
+      upsert: mocks.upsert,
+      update: mocks.update,
+      updateMany: mocks.updateMany,
+      findMany: mocks.findMany,
+    },
   },
 }));
 
@@ -51,6 +57,7 @@ beforeEach(() => {
     id: `p-${create.locationName}`,
     ...create,
   }));
+  mocks.findMany.mockResolvedValue([]);
 });
 
 describe('syncLocationsForAccount account paging', () => {
@@ -63,9 +70,13 @@ describe('syncLocationsForAccount account paging', () => {
       expect.objectContaining({ parent: 'accounts/21' })
     );
     expect(synced.map((p) => p.locationName)).toEqual(['locations/miami']);
-    expect(mocks.updateMany).toHaveBeenCalledWith(
+    // The disconnect sweep only looks at profiles this sync did not list.
+    expect(mocks.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { googleAccountId: 'ga1', id: { notIn: ['p-locations/miami'] } },
+        where: expect.objectContaining({
+          googleAccountId: 'ga1',
+          id: { notIn: ['p-locations/miami'] },
+        }),
       })
     );
   });

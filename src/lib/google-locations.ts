@@ -54,7 +54,10 @@ async function syncGoogleProfileState(params: {
       data: {
         googleDescription: state.description,
         googleServiceItems: state.serviceItems as never,
-        googleLanguageCode: state.languageCode,
+        // A read without languageCode says nothing about the language, so it
+        // must not erase a stored "es-419" (that value is what warns before
+        // a service push on a non-English profile).
+        ...(state.languageCode ? { googleLanguageCode: state.languageCode } : {}),
         googleProfileSyncedAt: new Date(),
       },
     });
@@ -98,11 +101,16 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   } while (accountsPageToken);
 
   const syncedProfiles = [];
+  // Location groups that answered with no locations at all. An empty answer
+  // proves nothing about the profiles stored under that group, so the sweep
+  // below leaves them alone.
+  const emptyAccounts = new Set<string>();
 
   for (const account of accounts) {
     if (!account.name) continue;
 
     let nextPageToken: string | undefined;
+    const syncedBefore = syncedProfiles.length;
 
     do {
       const locationsRes = await mybusinessbusinessinformation.accounts.locations.list({
@@ -161,16 +169,65 @@ export async function syncLocationsForAccount(googleAccountId: string) {
         syncedProfiles.push(profile);
       }
     } while (nextPageToken);
+
+    if (syncedProfiles.length === syncedBefore) emptyAccounts.add(account.name);
   }
 
-  // Mark profiles not in this sync as disconnected
-  await prisma.profile.updateMany({
+  // Mark profiles not in this sync as disconnected. The publish worker then
+  // demotes their due posts to DRAFT, so only a listing that actually came
+  // back may disconnect anything. A failed page already threw above, before
+  // this point. Google answering with nothing is not proof either: an empty
+  // listing for the whole login, or for the group a profile sits under,
+  // doesn't by itself disconnect the profiles it would have listed.
+  const missing = await prisma.profile.findMany({
     where: {
       googleAccountId,
+      isConnected: true,
       id: { notIn: syncedProfiles.map((p) => p.id) },
     },
-    data: { isConnected: false },
+    select: { id: true, accountResourceName: true, locationName: true },
   });
+
+  const emptyListing = syncedProfiles.length === 0;
+  const unproven = missing.filter(
+    (p) =>
+      emptyListing ||
+      (p.accountResourceName && emptyAccounts.has(p.accountResourceName))
+  );
+  const gone = missing.filter((p) => !unproven.includes(p)).map((p) => p.id);
+
+  // Kept forever, though, a client who took their only location out of the
+  // agency's group stayed "connected" and kept getting AI posts that could
+  // never publish. So each one is read directly: Google answering 404 (gone)
+  // or 403 (not this login's to read any more) disconnects it; any other
+  // answer keeps it as it was.
+  for (const profile of unproven) {
+    try {
+      await mybusinessbusinessinformation.locations.get({
+        name: profile.locationName,
+        readMask: "name",
+      });
+      console.warn(
+        `[location-sync] ${profile.locationName} wasn't listed for ${googleAccountId} but still reads; keeping it connected`
+      );
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404 || status === 403) {
+        gone.push(profile.id);
+      } else {
+        console.warn(
+          `[location-sync] ${profile.locationName} wasn't listed and couldn't be checked (${status ?? "no status"}); keeping it connected`
+        );
+      }
+    }
+  }
+
+  if (gone.length > 0) {
+    await prisma.profile.updateMany({
+      where: { googleAccountId, id: { in: gone } },
+      data: { isConnected: false },
+    });
+  }
 
   return syncedProfiles;
 }

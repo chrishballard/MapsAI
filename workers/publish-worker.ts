@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { createGBPPost, listGBPPosts, GBPLocalPost } from "../src/lib/google-posts";
 import { resolvePostImageSourceUrl } from "../src/lib/image-urls";
+import { googleErrorFields, googleErrorSubjects } from "../src/lib/google-errors";
 import { prisma } from "../src/lib/prisma";
 import { PostType } from "../src/generated/prisma/client";
 
@@ -18,11 +19,21 @@ const POST_TYPE_TO_GBP: Record<PostType, "STANDARD" | "EVENT" | "OFFER"> = {
 interface PostWithProfile {
   id: string;
   content: string;
+  createdAt?: Date | null;
   profile: {
     googleAccountId: string;
     accountResourceName: string | null;
     locationName: string;
   };
+}
+
+/**
+ * Summary text for comparison only. Google can hand a summary back with
+ * \n where we stored \r\n, or without our trailing whitespace; the same
+ * words in the same order are the same post.
+ */
+function normalizeSummary(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -39,7 +50,18 @@ async function findLiveMatchingPost(
     accountResourceName: post.profile.accountResourceName!,
     locationName: post.profile.locationName,
   });
-  return livePosts.find((live) => live.summary === post.content);
+  const content = normalizeSummary(post.content);
+  // Only a live post created after our row can be an earlier attempt of
+  // ours. An older one that happens to say the same thing is someone else's,
+  // and taking it for ours would mark this post published unsent.
+  const notBefore = post.createdAt?.getTime();
+  return livePosts.find((live) => {
+    if (typeof live.summary !== "string") return false;
+    if (normalizeSummary(live.summary) !== content) return false;
+    const created =
+      typeof live.createTime === "string" ? Date.parse(live.createTime) : NaN;
+    return notBefore === undefined || Number.isNaN(created) || created >= notBefore;
+  });
 }
 
 async function markPublished(
@@ -100,11 +122,8 @@ function resolvePostMedia(post: {
 }
 
 /**
- * Google rejected the request itself (HTTP 400 INVALID_ARGUMENT). When a
- * photo was attached, the photo is by far the most likely culprit
- * (unfetchable sourceUrl, unsupported content) — worth detaching so the
- * retry can publish text-only. Non-400s (429/5xx/network) are transient and
- * must retry unchanged, photo included.
+ * Google rejected the request itself (HTTP 400 INVALID_ARGUMENT). Non-400s
+ * (429/5xx/network) are transient and must retry unchanged, photo included.
  */
 function isBadRequestError(err: unknown): boolean {
   const e = err as {
@@ -117,6 +136,28 @@ function isBadRequestError(err: unknown): boolean {
     e?.status ??
     (typeof e?.code === "number" ? e.code : undefined);
   return status === 400;
+}
+
+// How Google points at the photo when that is what it rejected: the field
+// path (media[0].source_url, sourceUrl) or the rule (image fetch failed).
+const MEDIA_ERROR_PATTERN = /media|photo|image|source_?url/i;
+
+/**
+ * Whether a 400 is plausibly about the attached photo (unfetchable
+ * sourceUrl, unsupported content), so detaching it lets the retry publish
+ * text-only. Only when Google names the fields it rejected and none of them
+ * is the photo (summary too long, a bad call-to-action URL) is the photo
+ * kept: dropping it then would only lose it. With no field named (a bare
+ * "Request contains an invalid argument.", or only the generic ErrorInfo
+ * and message every error carries), the photo stays the likeliest culprit.
+ */
+function badRequestConcernsMedia(err: unknown): boolean {
+  const subjects = googleErrorSubjects(err);
+  const message = err instanceof Error ? err.message : "";
+  if ([...subjects, message].some((s) => MEDIA_ERROR_PATTERN.test(s))) {
+    return true;
+  }
+  return googleErrorFields(err).length === 0;
 }
 
 /** Clock slack between a delayed job firing and the post's scheduledAt. */
@@ -262,13 +303,14 @@ export const worker = new Worker<PublishJobData>(
             : undefined,
         });
       } catch (err) {
-        // Google rejected the request while a photo was attached: detach it
-        // with a note, then rethrow. The normal BullMQ retry publishes
-        // text-only through the same claim/dedupe/limiter machinery — never
-        // a second GBP write inside this job (the queue limiter is sized
-        // for one write per job, and an unchecked second create could
-        // duplicate a post that actually committed before the error).
-        if (mediaUrl && isBadRequestError(err)) {
+        // Google rejected the photo: detach it with a note, then rethrow.
+        // The normal BullMQ retry publishes text-only through the same
+        // claim/dedupe/limiter machinery — never a second GBP write inside
+        // this job (the queue limiter is sized for one write per job, and an
+        // unchecked second create could duplicate a post that actually
+        // committed before the error). A 400 about something else rethrows
+        // with the photo still attached.
+        if (mediaUrl && isBadRequestError(err) && badRequestConcernsMedia(err)) {
           const reason = err instanceof Error ? err.message : String(err);
           console.warn(
             `Post ${postId}: request with photo rejected (${reason}), detaching the image for the retry`

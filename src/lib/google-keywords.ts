@@ -34,14 +34,20 @@ export async function fetchSearchKeywords(
 
     for (const entry of results) {
       const keyword = entry.searchKeyword ?? "";
-      // insightsValue can have `value` (exact) or `threshold` (capped)
-      const impressions =
-        parseInt(entry.insightsValue?.value ?? "0", 10) ||
-        parseInt(entry.insightsValue?.threshold ?? "0", 10);
+      // insightsValue carries either `value` (the exact count) or only
+      // `threshold` (Google's "fewer than N" for low-volume keywords). A
+      // threshold is an upper bound, not a count, and
+      // MonthlyKeyword.impressions has no way to say "below N": storing N
+      // ranked every long-tail keyword at the threshold, and storing 0 would
+      // print a false "0 impressions" in reports. So only exact values are
+      // kept; a keyword too small for Google to count is left out.
+      const value = entry.insightsValue?.value;
+      if (!keyword || value == null) continue;
 
-      if (keyword) {
-        keywords.push({ keyword, impressions });
-      }
+      const impressions = parseInt(value, 10);
+      if (Number.isNaN(impressions)) continue;
+
+      keywords.push({ keyword, impressions });
     }
 
     pageToken = response.data.nextPageToken ?? undefined;
