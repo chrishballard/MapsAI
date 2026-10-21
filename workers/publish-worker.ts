@@ -2,7 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { createGBPPost, listGBPPosts, GBPLocalPost } from "../src/lib/google-posts";
 import { resolvePostImageSourceUrl } from "../src/lib/image-urls";
-import { googleErrorSubjects } from "../src/lib/google-errors";
+import { googleErrorFields, googleErrorSubjects } from "../src/lib/google-errors";
 import { prisma } from "../src/lib/prisma";
 import { PostType } from "../src/generated/prisma/client";
 
@@ -19,6 +19,7 @@ const POST_TYPE_TO_GBP: Record<PostType, "STANDARD" | "EVENT" | "OFFER"> = {
 interface PostWithProfile {
   id: string;
   content: string;
+  createdAt?: Date | null;
   profile: {
     googleAccountId: string;
     accountResourceName: string | null;
@@ -50,11 +51,17 @@ async function findLiveMatchingPost(
     locationName: post.profile.locationName,
   });
   const content = normalizeSummary(post.content);
-  return livePosts.find(
-    (live) =>
-      typeof live.summary === "string" &&
-      normalizeSummary(live.summary) === content
-  );
+  // Only a live post created after our row can be an earlier attempt of
+  // ours. An older one that happens to say the same thing is someone else's,
+  // and taking it for ours would mark this post published unsent.
+  const notBefore = post.createdAt?.getTime();
+  return livePosts.find((live) => {
+    if (typeof live.summary !== "string") return false;
+    if (normalizeSummary(live.summary) !== content) return false;
+    const created =
+      typeof live.createTime === "string" ? Date.parse(live.createTime) : NaN;
+    return notBefore === undefined || Number.isNaN(created) || created >= notBefore;
+  });
 }
 
 async function markPublished(
@@ -138,10 +145,11 @@ const MEDIA_ERROR_PATTERN = /media|photo|image|source_?url/i;
 /**
  * Whether a 400 is plausibly about the attached photo (unfetchable
  * sourceUrl, unsupported content), so detaching it lets the retry publish
- * text-only. When Google names what it rejected and none of it is the photo
- * (summary too long, a bad call-to-action URL), the photo is fine and
- * dropping it would only lose it. With nothing to go on (a bare "Request
- * contains an invalid argument."), the photo stays the likeliest culprit.
+ * text-only. Only when Google names the fields it rejected and none of them
+ * is the photo (summary too long, a bad call-to-action URL) is the photo
+ * kept: dropping it then would only lose it. With no field named (a bare
+ * "Request contains an invalid argument.", or only the generic ErrorInfo
+ * and message every error carries), the photo stays the likeliest culprit.
  */
 function badRequestConcernsMedia(err: unknown): boolean {
   const subjects = googleErrorSubjects(err);
@@ -149,7 +157,7 @@ function badRequestConcernsMedia(err: unknown): boolean {
   if ([...subjects, message].some((s) => MEDIA_ERROR_PATTERN.test(s))) {
     return true;
   }
-  return subjects.length === 0;
+  return googleErrorFields(err).length === 0;
 }
 
 /** Clock slack between a delayed job firing and the post's scheduledAt. */

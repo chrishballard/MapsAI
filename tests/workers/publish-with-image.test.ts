@@ -223,6 +223,46 @@ describe('publish worker with images', () => {
     expect(detach).toBeTruthy();
   });
 
+  it('detaches the image when the 400 carries only generic details', async () => {
+    // An ErrorInfo naming the method and a LocalizedMessage repeating the
+    // headline say nothing about which field was wrong, so the photo is
+    // still the likeliest cause and must not be kept for three failed tries.
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
+      makePost({ image: GBP_IMAGE })
+    );
+    mocks.createGBPPost.mockRejectedValue(
+      badRequest('Request contains an invalid argument.', {
+        error: {
+          code: 400,
+          message: 'Request contains an invalid argument.',
+          status: 'INVALID_ARGUMENT',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'INVALID_ARGUMENT',
+              metadata: {
+                service: 'mybusiness.googleapis.com',
+                method: 'google.mybusiness.v4.LocalPosts.CreateLocalPost',
+              },
+            },
+            {
+              '@type': 'type.googleapis.com/google.rpc.LocalizedMessage',
+              locale: 'en-US',
+              message: 'Request contains an invalid argument.',
+            },
+          ],
+        },
+      })
+    );
+
+    await expect(run()).rejects.toThrow('invalid argument');
+
+    const detach = mocks.prisma.post.update.mock.calls.find(
+      ([arg]) => (arg as { data: { imageId?: null } }).data.imageId === null
+    );
+    expect(detach).toBeTruthy();
+  });
+
   it('keeps the image when the 400 names only a text field', async () => {
     mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
       makePost({ image: GBP_IMAGE })

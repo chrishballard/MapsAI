@@ -178,34 +178,50 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   // back may disconnect anything. A failed page already threw above, before
   // this point. Google answering with nothing is not proof either: an empty
   // listing for the whole login, or for the group a profile sits under,
-  // keeps those profiles as they were until a sync that does list.
+  // doesn't by itself disconnect the profiles it would have listed.
   const missing = await prisma.profile.findMany({
     where: {
       googleAccountId,
       isConnected: true,
       id: { notIn: syncedProfiles.map((p) => p.id) },
     },
-    select: { id: true, accountResourceName: true },
+    select: { id: true, accountResourceName: true, locationName: true },
   });
 
-  if (missing.length > 0 && syncedProfiles.length === 0) {
-    console.warn(
-      `[location-sync] Google listed no locations for ${googleAccountId}; keeping its ${missing.length} connected profile(s) as they are`
-    );
-    return syncedProfiles;
-  }
-
-  const kept = missing.filter(
-    (p) => p.accountResourceName && emptyAccounts.has(p.accountResourceName)
+  const emptyListing = syncedProfiles.length === 0;
+  const unproven = missing.filter(
+    (p) =>
+      emptyListing ||
+      (p.accountResourceName && emptyAccounts.has(p.accountResourceName))
   );
-  if (kept.length > 0) {
-    console.warn(
-      `[location-sync] ${[...new Set(kept.map((p) => p.accountResourceName))].join(", ")} listed no locations; keeping ${kept.length} connected profile(s) under them as they are`
-    );
+  const gone = missing.filter((p) => !unproven.includes(p)).map((p) => p.id);
+
+  // Kept forever, though, a client who took their only location out of the
+  // agency's group stayed "connected" and kept getting AI posts that could
+  // never publish. So each one is read directly: Google answering 404 (gone)
+  // or 403 (not this login's to read any more) disconnects it; any other
+  // answer keeps it as it was.
+  for (const profile of unproven) {
+    try {
+      await mybusinessbusinessinformation.locations.get({
+        name: profile.locationName,
+        readMask: "name",
+      });
+      console.warn(
+        `[location-sync] ${profile.locationName} wasn't listed for ${googleAccountId} but still reads; keeping it connected`
+      );
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404 || status === 403) {
+        gone.push(profile.id);
+      } else {
+        console.warn(
+          `[location-sync] ${profile.locationName} wasn't listed and couldn't be checked (${status ?? "no status"}); keeping it connected`
+        );
+      }
+    }
   }
 
-  const keptIds = new Set(kept.map((p) => p.id));
-  const gone = missing.filter((p) => !keptIds.has(p.id)).map((p) => p.id);
   if (gone.length > 0) {
     await prisma.profile.updateMany({
       where: { googleAccountId, id: { in: gone } },

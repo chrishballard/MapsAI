@@ -22,6 +22,7 @@ export interface GBPLocalPost {
   name: string;
   summary?: string;
   topicType?: string;
+  createTime?: string;
   [key: string]: unknown;
 }
 
@@ -39,7 +40,8 @@ const LIST_POSTS_MAX_PAGES = 5;
  * List the live posts on a location (newest first, up to
  * LIST_POSTS_MAX_PAGES pages of 100). Used as a pre-publish safety check so
  * a retried job never creates a duplicate of a post that already made it to
- * Google. A failed page throws, so the caller never checks a partial list.
+ * Google. A failed page throws rather than return a partial list; past the
+ * page cap the oldest posts are simply not read.
  */
 export async function listGBPPosts(
   params: ListGBPPostsParams

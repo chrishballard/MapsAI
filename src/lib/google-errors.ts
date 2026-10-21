@@ -202,6 +202,30 @@ export function googleErrorSubjects(error: unknown): string[] {
 }
 
 /**
+ * Just the request fields a Google error names as wrong
+ * (`fieldViolations[].field`, v4 `errorDetails[].field`). Unlike
+ * googleErrorSubjects this leaves out reasons, metadata and messages, which
+ * Google fills in on every error ("INVALID_ARGUMENT", the method name, the
+ * headline again), so they say nothing about which field was rejected.
+ */
+export function googleErrorFields(error: unknown): string[] {
+  const details = errorBody(error)?.details;
+  if (!Array.isArray(details)) return [];
+
+  const fields: unknown[] = [];
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") continue;
+    for (const v of Array.isArray(detail.fieldViolations) ? detail.fieldViolations : []) {
+      fields.push(v?.field);
+    }
+    for (const e of Array.isArray(detail.errorDetails) ? detail.errorDetails : []) {
+      fields.push(e?.field);
+    }
+  }
+  return fields.filter((f): f is string => typeof f === "string" && f.length > 0);
+}
+
+/**
  * Whether a described error is Google refusing further calls for now.
  *
  * Matches the text describeGoogleError produces, which for a 429 is the

@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   accountsList: vi.fn(),
   locationsList: vi.fn(),
+  locationsGet: vi.fn(),
   upsert: vi.fn(),
   update: vi.fn(),
   updateMany: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('googleapis', () => ({
     mybusinessaccountmanagement: () => ({ accounts: { list: mocks.accountsList } }),
     mybusinessbusinessinformation: () => ({
       accounts: { locations: { list: mocks.locationsList } },
+      locations: { get: mocks.locationsGet },
     }),
   },
 }));
@@ -70,7 +72,13 @@ beforeEach(() => {
     ...create,
   }));
   mocks.updateMany.mockResolvedValue({ count: 0 });
+  // A direct read of a kept profile's location finds it, by default.
+  mocks.locationsGet.mockImplementation(async ({ name }: { name: string }) => ({ data: { name } }));
 });
+
+function googleError(status: number) {
+  return Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+}
 
 describe('syncLocationsForAccount disconnect sweep', () => {
   it('disconnects a profile Google stopped listing when the listing came back', async () => {
@@ -142,5 +150,67 @@ describe('syncLocationsForAccount disconnect sweep', () => {
     await expect(syncLocationsForAccount('ga1')).rejects.toThrow('backend error');
 
     expect(disconnectedIds()).toEqual([]);
+  });
+
+  describe('profiles kept because their listing came back empty', () => {
+    // An empty listing proves nothing, but keeping those profiles forever
+    // meant a client who took their only location out of the agency's group
+    // stayed "connected" and kept getting AI posts that could never publish.
+    // So each kept profile's own location is read directly: Google saying it
+    // is gone (404) or not ours to read (403) disconnects it.
+    beforeEach(() => {
+      listing({ 'accounts/1': ['locations/kept'], 'accounts/2': [] });
+    });
+
+    it.each([404, 403])('disconnects one whose location read answers %i', async (status) => {
+      mocks.findMany.mockResolvedValue([
+        { id: 'p-left', accountResourceName: 'accounts/2', locationName: 'locations/left' },
+      ]);
+      mocks.locationsGet.mockRejectedValue(googleError(status));
+
+      await syncLocationsForAccount('ga1');
+
+      expect(mocks.locationsGet).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'locations/left' })
+      );
+      expect(disconnectedIds()).toEqual(['p-left']);
+    });
+
+    it('keeps one whose location Google still returns', async () => {
+      mocks.findMany.mockResolvedValue([
+        { id: 'p-here', accountResourceName: 'accounts/2', locationName: 'locations/here' },
+      ]);
+
+      await syncLocationsForAccount('ga1');
+
+      expect(disconnectedIds()).toEqual([]);
+    });
+
+    it('keeps one when the read fails for any other reason', async () => {
+      mocks.findMany.mockResolvedValue([
+        { id: 'p-here', accountResourceName: 'accounts/2', locationName: 'locations/here' },
+      ]);
+      mocks.locationsGet.mockRejectedValue(googleError(503));
+
+      await syncLocationsForAccount('ga1');
+
+      expect(disconnectedIds()).toEqual([]);
+    });
+
+    it('checks the same way when the whole login listed nothing', async () => {
+      listing({});
+      mocks.findMany.mockResolvedValue([
+        { id: 'p-left', accountResourceName: 'accounts/2', locationName: 'locations/left' },
+        { id: 'p-here', accountResourceName: 'accounts/3', locationName: 'locations/here' },
+      ]);
+      mocks.locationsGet.mockImplementation(async ({ name }: { name: string }) => {
+        if (name === 'locations/left') throw googleError(404);
+        return { data: { name } };
+      });
+
+      await syncLocationsForAccount('ga1');
+
+      expect(disconnectedIds()).toEqual(['p-left']);
+    });
   });
 });

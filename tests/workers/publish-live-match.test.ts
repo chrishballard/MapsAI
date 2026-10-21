@@ -115,4 +115,44 @@ describe('publish worker live-post match', () => {
 
     expect(mocks.createGBPPost).toHaveBeenCalledTimes(1);
   });
+
+  it('does not count an identical live post from before this post existed', async () => {
+    // The check now reads up to 500 live posts. Only one created after our
+    // row can be an earlier attempt of ours; an old post that happens to say
+    // the same thing is someone else's, and treating it as ours would mark
+    // this post published without it ever going out.
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue({
+      ...makePost('Fresh look for fall. Call us today!'),
+      createdAt: new Date('2026-10-01T12:00:00Z'),
+    });
+    mocks.listGBPPosts.mockResolvedValue([
+      {
+        name: LIVE_NAME,
+        summary: 'Fresh look for fall. Call us today!',
+        createTime: '2025-10-03T17:00:00Z',
+      },
+    ]);
+
+    await run();
+
+    expect(mocks.createGBPPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('still counts an identical live post created after this post', async () => {
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue({
+      ...makePost('Fresh look for fall. Call us today!'),
+      createdAt: new Date('2026-10-01T12:00:00Z'),
+    });
+    mocks.listGBPPosts.mockResolvedValue([
+      {
+        name: LIVE_NAME,
+        summary: 'Fresh look for fall. Call us today!',
+        createTime: '2026-10-08T17:00:03Z',
+      },
+    ]);
+
+    await run();
+
+    expect(mocks.createGBPPost).not.toHaveBeenCalled();
+  });
 });
