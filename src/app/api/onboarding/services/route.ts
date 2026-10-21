@@ -97,6 +97,20 @@ export async function POST(request: NextRequest) {
   if (parsed.error) return parsed.error;
   const { profileId, services } = parsed.data;
 
+  // Look the profile up first: for a missing one the insert below would
+  // break its foreign key and answer 500 instead of 404.
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true },
+  });
+
+  if (!profile) {
+    return NextResponse.json(
+      { error: "Profile not found" },
+      { status: 404 }
+    );
+  }
+
   // The wizard always sends its complete list — deselected services must be
   // removed or their stale approved rows get pushed back to Google
   const updatedServices = await saveProfileServices(profileId, services, {

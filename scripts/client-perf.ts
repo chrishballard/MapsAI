@@ -52,7 +52,9 @@ async function resolveProfile(arg: string, isId: boolean) {
 
 /**
  * Positional name plus --id/--list in any order. --id consumes the following
- * argument; anything else that is not a flag is the (optional) name.
+ * argument; the one argument that is not a flag is the (optional) name. A
+ * second one is an error, not ignored: an unquoted `Badger Gutters` used to
+ * look up every profile matching "Badger".
  */
 function parseArgs(argv: string[]): { list: boolean; id: string | null; name: string | null } {
   let list = false;
@@ -78,6 +80,11 @@ function parseArgs(argv: string[]): { list: boolean; id: string | null; name: st
       process.exit(1);
     } else if (name === null) {
       name = arg;
+    } else {
+      console.error(
+        `unexpected argument: ${arg}. A client name with spaces must be quoted: client-perf.ts "Badger Gutters"`
+      );
+      process.exit(1);
     }
   }
 

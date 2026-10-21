@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { confirmsGoogleAccount } from "@/lib/google-account-confirm";
 
 export function DisconnectButton({
   accountId,
@@ -14,11 +15,14 @@ export function DisconnectButton({
   const router = useRouter();
 
   async function handleDisconnect() {
-    if (
-      !confirm(
-        `Disconnect ${email}? This will remove all associated profiles and their data.`
-      )
-    ) {
+    // A typed confirmation, not an OK button: this deletes every profile
+    // under the login. The route checks the typed email too.
+    const typed = prompt(
+      `Disconnecting ${email} permanently deletes every profile under it and all of their RankMaps history: posts, reviews and replies, metrics, reports and photos. Nothing changes on Google.\n\nType ${email} to confirm.`
+    );
+    if (typed === null) return;
+    if (!confirmsGoogleAccount(typed, email)) {
+      alert("That doesn't match the account's email. Nothing was disconnected.");
       return;
     }
 
@@ -26,11 +30,14 @@ export function DisconnectButton({
     try {
       const res = await fetch(`/api/google-accounts/${accountId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmEmail: typed }),
       });
       if (res.ok) {
         router.refresh();
       } else {
-        alert("Failed to disconnect account.");
+        const data = await res.json().catch(() => null);
+        alert(data?.error || "Failed to disconnect account.");
       }
     } catch {
       alert("Request failed.");

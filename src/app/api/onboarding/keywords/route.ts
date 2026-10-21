@@ -48,6 +48,20 @@ export async function POST(request: Request) {
     );
   }
 
+  // Look the profile up first: for a missing one the insert below would
+  // break its foreign key and answer 500 instead of 404.
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true },
+  });
+
+  if (!profile) {
+    return NextResponse.json(
+      { error: "Profile not found" },
+      { status: 404 }
+    );
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     await tx.profileKeyword.deleteMany({ where: { profileId } });
     await tx.profileKeyword.createMany({

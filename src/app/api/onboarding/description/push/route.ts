@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pushDescriptionToGBP } from "@/lib/google-business-info";
+import { saveProfileDescription } from "@/lib/profile-description";
 import { z } from "zod";
 import {
   descriptionContentSchema,
@@ -37,31 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Step 1: Save/upsert to DB with isApproved: true
-  const existing = await prisma.profileDescription.findFirst({
-    where: { profileId },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  let savedRecord;
-  if (existing) {
-    savedRecord = await prisma.profileDescription.update({
-      where: { id: existing.id },
-      data: {
-        content,
-        isApproved: true,
-        isPushed: false,
-        pushedAt: null,
-      },
-    });
-  } else {
-    savedRecord = await prisma.profileDescription.create({
-      data: {
-        profileId,
-        content,
-        isApproved: true,
-      },
-    });
-  }
+  const savedRecord = await saveProfileDescription(profileId, content, true);
 
   // Step 2: Push to GBP
   const pushResult = await pushDescriptionToGBP({

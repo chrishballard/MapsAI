@@ -46,16 +46,15 @@ import {
   pushServicesToGBP,
   type GBPWriteResult,
 } from "../src/lib/google-business-info";
+import { CliArgError, flagValue, nonNegativeNumberFlag } from "./cli-args";
 
 type Outcome =
   | { kind: "pass"; label: string }
   | { kind: "fail"; label: string; error: string }
   | { kind: "skip"; label: string; why: string };
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
+const USAGE =
+  "usage: tsx scripts/gbp-validate-writes.ts --profile <profileId> [--delay <ms>]";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -74,12 +73,25 @@ async function check(
 }
 
 async function main() {
-  const profileId = arg("profile");
-  if (!profileId) {
-    console.error("usage: tsx scripts/gbp-validate-writes.ts --profile <profileId>");
+  // A --delay that isn't a number used to become NaN, which setTimeout reads
+  // as no delay at all, so the run fired every check back to back into the
+  // rate limit. Bad flags stop the run before anything is looked up.
+  const argv = process.argv.slice(2);
+  let profileId: string | undefined;
+  let delay: number;
+  try {
+    profileId = flagValue(argv, "profile");
+    delay = nonNegativeNumberFlag(argv, "delay", 8000);
+  } catch (error) {
+    if (!(error instanceof CliArgError)) throw error;
+    console.error(error.message);
+    console.error(USAGE);
     process.exit(1);
   }
-  const delay = Number(arg("delay") ?? 8000);
+  if (!profileId) {
+    console.error(USAGE);
+    process.exit(1);
+  }
 
   const profile = await prisma.profile.findUniqueOrThrow({
     where: { id: profileId },

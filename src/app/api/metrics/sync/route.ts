@@ -22,17 +22,28 @@ export async function POST(request: Request) {
   }
   const days = Math.min(Math.max(parsedDays, 1), 365);
 
+  // Trigger immediate sync with requested window. If the job can't be
+  // queued (Redis down) no sync is coming, so say so rather than telling the
+  // operator one is on its way.
   try {
-    // Trigger immediate sync with requested window
     await metricsSyncQueue.add("manual-sync", { days }, { delay: 0 });
-
-    // Ensure daily scheduler is active
-    await initMetricsSyncScheduler();
   } catch (err) {
-    console.warn(
-      "Failed to trigger metrics sync (Redis may be unavailable):",
+    console.error(
+      "Failed to queue metrics sync (Redis may be unavailable):",
       err
     );
+    return NextResponse.json(
+      { error: "Metrics sync could not be started. Please try again in a minute." },
+      { status: 503 }
+    );
+  }
+
+  // Ensure daily scheduler is active. The manual sync above is already
+  // queued, so a failure here doesn't change the answer.
+  try {
+    await initMetricsSyncScheduler();
+  } catch (err) {
+    console.warn("Failed to refresh the metrics sync scheduler:", err);
   }
 
   return NextResponse.json({ message: `Metrics sync triggered (${days} days)` });

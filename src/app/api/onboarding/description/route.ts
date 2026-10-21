@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fetchCurrentDescription } from "@/lib/google-business-info";
+import { saveProfileDescription } from "@/lib/profile-description";
 import {
   descriptionContentSchema,
   idSchema,
@@ -83,31 +84,25 @@ export async function POST(request: NextRequest) {
   if (parsed.error) return parsed.error;
   const { profileId, content, isApproved } = parsed.data;
 
-  const existing = await prisma.profileDescription.findFirst({
-    where: { profileId },
-    orderBy: { updatedAt: "desc" },
+  // Look the profile up first: for a missing one the insert below would
+  // break its foreign key and answer 500 instead of 404.
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true },
   });
 
-  let description;
-  if (existing) {
-    description = await prisma.profileDescription.update({
-      where: { id: existing.id },
-      data: {
-        content,
-        isApproved: isApproved ?? false,
-        isPushed: false,
-        pushedAt: null,
-      },
-    });
-  } else {
-    description = await prisma.profileDescription.create({
-      data: {
-        profileId,
-        content,
-        isApproved: isApproved ?? false,
-      },
-    });
+  if (!profile) {
+    return NextResponse.json(
+      { error: "Profile not found" },
+      { status: 404 }
+    );
   }
+
+  const description = await saveProfileDescription(
+    profileId,
+    content,
+    isApproved ?? false
+  );
 
   return NextResponse.json({ description });
 }

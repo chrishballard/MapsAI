@@ -7,6 +7,7 @@ import {
   parseBody,
   profileIdBodySchema,
 } from "@/lib/api-validation";
+import { isPrismaError } from "@/lib/prisma-errors";
 
 export async function GET(request: NextRequest) {
   const unauthorized = await requireSession();
@@ -71,7 +72,12 @@ export async function PATCH(request: NextRequest) {
   if (completedSteps !== undefined) data.completedSteps = completedSteps;
   if (isComplete !== undefined) {
     data.isComplete = isComplete;
-    if (isComplete) data.completedAt = new Date();
+    // completedAt follows isComplete both ways. The wizard sends
+    // isComplete: false on every step change, including when someone
+    // re-opens a finished profile and steps back through it; that marks it
+    // not complete again, and a completion date left behind would say
+    // otherwise.
+    data.completedAt = isComplete ? new Date() : null;
   }
 
   try {
@@ -80,10 +86,14 @@ export async function PATCH(request: NextRequest) {
       data,
     });
     return NextResponse.json({ progress });
-  } catch {
-    return NextResponse.json(
-      { error: "No onboarding progress found for this profile" },
-      { status: 404 }
-    );
+  } catch (err) {
+    // Only a missing row is "not found"; anything else is a real failure.
+    if (isPrismaError(err, "P2025")) {
+      return NextResponse.json(
+        { error: "No onboarding progress found for this profile" },
+        { status: 404 }
+      );
+    }
+    throw err;
   }
 }
