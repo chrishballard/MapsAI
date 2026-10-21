@@ -1,0 +1,79 @@
+name: Security Review
+
+# Claude reviews every PR's diff for vulnerabilities, comments inline on what it
+# finds, and fails the check when anything is found. The review steps are in
+# .github/security-review/review.md (the /security-review prompt) and this repo's
+# own risks in .github/security-review/scan-instructions.txt.
+#
+# Runs on Chris's Claude plan: the repo secret CLAUDE_CODE_OAUTH_TOKEN comes from
+# `claude setup-token` and lasts a year. Usage counts against the plan's limits.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # inline review comments
+
+concurrency:
+  # A new push replaces a review still running on the same PR.
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  security-review:
+    # Same-repo, non-draft PRs only. A fork PR gets no secrets, and the reviewer
+    # is not hardened against prompt injection from untrusted code.
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # Pinned to a commit: this action receives the plan token.
+      - uses: anthropics/claude-code-action@a5a423f75c251dcbff8a74e99f83b2cb03c72bfa # v1.0.256
+        id: review
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD COMMIT: ${{ github.event.pull_request.head.sha }}
+
+            Run a security review of this pull request by following
+            .github/security-review/review.md exactly.
+
+            To list the comments already on the diff, run exactly:
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments --paginate
+          claude_args: |
+            --model claude-sonnet-5-5
+            --allowedTools "Read,Glob,Grep,LS,Task,Agent,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
+            --json-schema '{"type":"object","properties":{"summary":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer"},"severity":{"type":"string","enum":["HIGH","MEDIUM"]},"category":{"type":"string"},"description":{"type":"string"},"exploit_scenario":{"type":"string"},"recommendation":{"type":"string"},"confidence":{"type":"integer"}},"required":["file","line","severity","category","description","recommendation"]}}},"required":["summary","findings"]}'
+
+      # Fail on any finding, so a merge on green CI stops for it. Also fails when
+      # the review never returned a result (plan limit reached, expired token).
+      - name: Fail on findings
+        if: always()
+        env:
+          RESULT: ${{ steps.review.outputs.structured_output }}
+        run: |
+          if [ -z "$RESULT" ] || ! printf '%s' "$RESULT" | jq -e '.findings | type == "array"' >/dev/null 2>&1; then
+            echo "::error::Security review returned no result. Check the review step's log (plan usage limit, expired CLAUDE_CODE_OAUTH_TOKEN)."
+            exit 1
+          fi
+          n=$(printf '%s' "$RESULT" | jq '.findings | length')
+          {
+            echo "## Security review: $n finding(s)"
+            printf '%s' "$RESULT" | jq -r '.summary'
+            echo
+            printf '%s' "$RESULT" | jq -r '.findings[] | "- **\(.severity)** `\(.file):\(.line)` \(.category): \(.description | gsub("\\s+"; " ")) Fix: \(.recommendation | gsub("\\s+"; " "))"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt 0 ]; then
+            printf '%s' "$RESULT" | jq -r '.findings[] | "::error file=\(.file),line=\(.line)::[\(.severity)] \(.description | gsub("%"; "%25") | gsub("\\s+"; " "))"'
+            exit 1
+          fi
+          echo "No findings."
