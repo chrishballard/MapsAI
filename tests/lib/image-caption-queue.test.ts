@@ -74,6 +74,55 @@ describe('enqueueImageCaption', () => {
     expect(remove).toHaveBeenCalled();
   });
 
+  it('carries the attempts a failed job spent into its replacement', async () => {
+    // Each attempt can be a billed Claude call. Without the carry-over every
+    // sync and generation batch bought a fresh 3 attempts, forever; the
+    // worker caps the running total (MAX_CAPTION_ATTEMPTS).
+    mocks.queueGetJob.mockResolvedValue({
+      getState: async () => 'failed',
+      remove: vi.fn().mockResolvedValue(undefined),
+      attemptsMade: 3,
+      data: { imageId: 'img1' },
+    });
+
+    await enqueueImageCaption('img1');
+
+    expect(mocks.queueAdd).toHaveBeenCalledWith(
+      'caption-img1',
+      { imageId: 'img1', priorAttempts: 3 },
+      { jobId: 'caption-img1' }
+    );
+  });
+
+  it('keeps counting across replacements', async () => {
+    mocks.queueGetJob.mockResolvedValue({
+      getState: async () => 'failed',
+      remove: vi.fn().mockResolvedValue(undefined),
+      attemptsMade: 3,
+      data: { imageId: 'img1', priorAttempts: 3 },
+    });
+
+    await enqueueImageCaption('img1');
+
+    expect(mocks.queueAdd.mock.calls[0][1]).toEqual({
+      imageId: 'img1',
+      priorAttempts: 6,
+    });
+  });
+
+  it('starts from zero after a completed job (it did not fail)', async () => {
+    mocks.queueGetJob.mockResolvedValue({
+      getState: async () => 'completed',
+      remove: vi.fn().mockResolvedValue(undefined),
+      attemptsMade: 1,
+      data: { imageId: 'img1', priorAttempts: 3 },
+    });
+
+    await enqueueImageCaption('img1');
+
+    expect(mocks.queueAdd.mock.calls[0][1]).toEqual({ imageId: 'img1' });
+  });
+
   it('leaves pending jobs alone so they still dedupe', async () => {
     const remove = vi.fn();
     mocks.queueGetJob.mockResolvedValue({
@@ -114,8 +163,9 @@ describe('enqueueCaptionsForProfile', () => {
           profileId: 'p1',
           status: 'APPROVED',
           captionedAt: null,
-          // Permanently skipped images must never be re-enqueued.
-          captionSkipReason: null,
+          // Permanently skipped images must never be re-enqueued. A claimed
+          // one is, so a claim whose run died doesn't hide it for good.
+          OR: [{ captionSkipReason: null }, { captionSkipReason: 'IN_PROGRESS' }],
         },
       })
     );

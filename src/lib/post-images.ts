@@ -87,13 +87,15 @@ export async function markImagesUsed(imageIds: string[]): Promise<void> {
   }
 
   const now = new Date();
+  // updateMany, not update: an image deleted since it was picked (Images
+  // page delete, GBP sync cleanup) then matches nothing instead of throwing
+  // P2025, which rolled back every other image's count with it. It also
+  // returns only a count, never the row's multi-MB image bytes.
   await prisma.$transaction(
     [...counts.entries()].map(([id, uses]) =>
-      prisma.profileImage.update({
+      prisma.profileImage.updateMany({
         where: { id },
         data: { timesUsed: { increment: uses }, lastUsedAt: now },
-        // Never return the row's multi-MB image bytes just to discard them.
-        select: { id: true },
       })
     )
   );

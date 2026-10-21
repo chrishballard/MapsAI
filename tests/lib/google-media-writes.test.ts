@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   createGoogleClient: vi.fn(),
   prisma: {
     profile: { findUnique: vi.fn() },
-    profileImage: { findFirst: vi.fn() },
+    profileImage: { findFirst: vi.fn(), updateMany: vi.fn() },
   },
 }));
 
@@ -142,6 +142,7 @@ describe('pushLibraryImageToGBP', () => {
       googleUrl: null,
       thumbnailUrl: null,
     });
+    mocks.prisma.profileImage.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it('resolves the v4 parent and the image public URL from two ids', async () => {
@@ -168,6 +169,49 @@ describe('pushLibraryImageToGBP', () => {
 
     await pushLibraryImageToGBP({ profileId: 'p1', imageId: 'img1', category: 'COVER' });
     expect(sent().data.sourceUrl).toBe('https://lh3.googleusercontent.com/m1');
+  });
+
+  it('records the media name Google returned on the library row, so the next sync matches it', async () => {
+    // Without it the next sync imports Google's copy as a second APPROVED
+    // row and the same photo rotates through posts twice.
+    const result = await pushLibraryImageToGBP({
+      profileId: 'p1',
+      imageId: 'img1',
+      category: 'ADDITIONAL',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.prisma.profileImage.updateMany).toHaveBeenCalledWith({
+      where: { id: 'img1', googleMediaName: null },
+      data: { googleMediaName: result.mediaName },
+    });
+  });
+
+  it('still reports success when recording the name fails (the photo is already live)', async () => {
+    // A failure here must not invite a retry that uploads the photo twice.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.prisma.profileImage.updateMany.mockRejectedValue(new Error('db down'));
+
+    const result = await pushLibraryImageToGBP({
+      profileId: 'p1',
+      imageId: 'img1',
+      category: 'ADDITIONAL',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('records nothing when the upload fails', async () => {
+    mocks.request.mockRejectedValue(new Error('boom'));
+
+    const result = await pushLibraryImageToGBP({
+      profileId: 'p1',
+      imageId: 'img1',
+      category: 'ADDITIONAL',
+    });
+
+    expect(result.success).toBe(false);
+    expect(mocks.prisma.profileImage.updateMany).not.toHaveBeenCalled();
   });
 
   it('fails cleanly when the profile has no accountResourceName', async () => {

@@ -1,9 +1,13 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
 import { prisma } from "../prisma";
+import { AWAITING_CAPTION } from "../caption-state";
 
 export interface ImageCaptionJobData {
   imageId: string;
+  /** Attempts earlier jobs for this image already spent (and failed). The
+   *  worker stops at MAX_CAPTION_ATTEMPTS across all of them. */
+  priorAttempts?: number;
 }
 
 export const imageCaptionQueue = new Queue<ImageCaptionJobData>(
@@ -37,9 +41,17 @@ export async function enqueueImageCaption(imageId: string): Promise<void> {
   // expires. Clear completed/failed records; pending jobs (delayed/waiting/
   // active, including retries awaiting backoff) still dedupe as intended.
   const existing = await imageCaptionQueue.getJob(jobId);
+  let priorAttempts = 0;
   if (existing) {
     const state = await existing.getState();
     if (state === "completed" || state === "failed") {
+      // A failed record's attempts move into its replacement. Each one may
+      // have been a billed Claude call, and without the carry-over every
+      // sync, upload and generation batch bought the image 3 more, forever.
+      if (state === "failed") {
+        priorAttempts =
+          (existing.data?.priorAttempts ?? 0) + (existing.attemptsMade ?? 0);
+      }
       await existing.remove().catch(() => {
         // Lost a race with retention cleanup or another enqueuer — either
         // way the record is gone or being handled; the add() below decides.
@@ -47,7 +59,11 @@ export async function enqueueImageCaption(imageId: string): Promise<void> {
     }
   }
 
-  await imageCaptionQueue.add(jobId, { imageId }, { jobId });
+  await imageCaptionQueue.add(
+    jobId,
+    priorAttempts > 0 ? { imageId, priorAttempts } : { imageId },
+    { jobId }
+  );
 }
 
 /**
@@ -65,11 +81,10 @@ export async function enqueueCaptionsForProfile(
       where: {
         profileId,
         status: "APPROVED",
-        captionedAt: null,
         // Permanently skipped images (no usable input) must never be
         // re-enqueued — without this they'd be reprocessed on every sync
         // and every generation batch, forever.
-        captionSkipReason: null,
+        ...AWAITING_CAPTION,
       },
       select: { id: true },
     });

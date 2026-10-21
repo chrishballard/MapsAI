@@ -52,6 +52,9 @@ beforeEach(() => {
     }),
   });
   mocks.prisma.profileImage.findMany.mockResolvedValue([]);
+  mocks.prisma.profileImage.createMany.mockImplementation(
+    ({ data }: { data: unknown[] }) => ({ count: data.length })
+  );
   mocks.enqueueCaptionsForProfile.mockResolvedValue(1);
 });
 
@@ -86,6 +89,7 @@ describe('syncProfileMediaToLibrary caption hook', () => {
     mocks.prisma.profileImage.findMany.mockResolvedValue([
       {
         id: 'row1',
+        source: 'GBP',
         googleMediaName: 'accounts/1/locations/2/media/m1',
         googleUrl: 'https://lh3.googleusercontent.com/old',
         thumbnailUrl: null,

@@ -9,7 +9,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
   prisma: {
-    profileImage: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    profileImage: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
   },
   fetch: vi.fn(),
 }));
@@ -18,8 +23,12 @@ vi.mock('@/lib/claude', () => ({ generate: mocks.generate }));
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
 vi.stubGlobal('fetch', mocks.fetch);
 
-const { captionImage, captionImages, captionUncaptionedApproved } =
-  await import('@/lib/image-captioner');
+const {
+  captionImage,
+  captionImages,
+  captionUncaptionedApproved,
+  recordCaptionRetriesExhausted,
+} = await import('@/lib/image-captioner');
 // Not mocked: the captioner's `instanceof` check needs the real class.
 const { ClaudeRefusalError } = await import('@/lib/claude-refusal');
 
@@ -66,7 +75,19 @@ beforeEach(() => {
     generic: false,
   });
   mocks.prisma.profileImage.update.mockResolvedValue({ id: 'img1' });
+  mocks.prisma.profileImage.updateMany.mockResolvedValue({ count: 1 });
 });
+
+/** Every captionSkipReason captionImage wrote, through either write path. */
+function writtenSkipReasons(): unknown[] {
+  return [
+    ...mocks.prisma.profileImage.update.mock.calls,
+    ...mocks.prisma.profileImage.updateMany.mock.calls,
+  ]
+    .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+    .filter((data) => 'captionSkipReason' in data)
+    .map((data) => data.captionSkipReason);
+}
 
 describe('captionImage input selection', () => {
   it('prefers thumbData (always JPEG) over data and googleUrl', async () => {
@@ -347,13 +368,13 @@ describe('captionImage permanent skips (no Claude call, captionedAt untouched)',
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 
-  it('GONE when the row vanishes between caption and persist (P2025)', async () => {
-    mocks.prisma.profileImage.findUnique.mockResolvedValue(
-      imageRow({ thumbData: new Uint8Array([1]) })
-    );
-    mocks.prisma.profileImage.update.mockRejectedValue(
-      Object.assign(new Error('Record not found'), { code: 'P2025' })
-    );
+  it('GONE when the row vanishes between caption and persist', async () => {
+    mocks.prisma.profileImage.findUnique
+      .mockResolvedValueOnce(imageRow({ thumbData: new Uint8Array([1]) }))
+      .mockResolvedValueOnce(null);
+    mocks.prisma.profileImage.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockResolvedValueOnce({ count: 0 }); // write: the row is gone
 
     const result = await captionImage('img1');
 
@@ -392,6 +413,27 @@ describe('captionImage transient failures (throw so BullMQ retries)', () => {
     expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
   });
 
+  it('treats a 408 from the image host as transient (the host timed out, the URL is fine)', async () => {
+    // A persisted FETCH_DENIED only recovers when a sync hands the row a new
+    // URL, so a slow CDN response must not land there.
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.fetch.mockResolvedValue(fetchResponse({ ok: false, status: 408 }));
+
+    await expect(captionImage('img1')).rejects.toThrow('HTTP 408');
+    expect(writtenSkipReasons()).not.toContain('FETCH_DENIED');
+  });
+
+  it('still records FETCH_DENIED for a 403 (a stale or revoked URL)', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.fetch.mockResolvedValue(fetchResponse({ ok: false, status: 403 }));
+
+    expect(await captionImage('img1')).toMatchObject({ ok: false, skipped: 'FETCH_DENIED' });
+  });
+
   it('throws when the Claude call fails', async () => {
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
       imageRow({ thumbData: new Uint8Array([1]) })
@@ -401,11 +443,13 @@ describe('captionImage transient failures (throw so BullMQ retries)', () => {
     await expect(captionImage('img1')).rejects.toThrow('rate limited');
   });
 
-  it('throws when the persist fails for a non-P2025 reason', async () => {
+  it('throws when the caption write fails', async () => {
     mocks.prisma.profileImage.findUnique.mockResolvedValue(
       imageRow({ thumbData: new Uint8Array([1]) })
     );
-    mocks.prisma.profileImage.update.mockRejectedValue(new Error('db down'));
+    mocks.prisma.profileImage.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockRejectedValueOnce(new Error('db down'));
 
     await expect(captionImage('img1')).rejects.toThrow('db down');
   });
@@ -425,14 +469,14 @@ describe('captionImage persistence', () => {
     const result = await captionImage('img1');
 
     expect(result.ok).toBe(true);
-    const arg = mocks.prisma.profileImage.update.mock.calls[0][0];
-    expect(arg.where).toEqual({ id: 'img1' });
+    // calls[0] is the claim. updateMany returns a count, never the row's
+    // multi-MB image bytes.
+    const arg = mocks.prisma.profileImage.updateMany.mock.calls[1][0];
+    expect(arg.where).toEqual({ id: 'img1', captionedAt: null });
     expect(arg.data.aiDescription).toBe('X'.repeat(300));
     expect(arg.data.aiTags).toEqual(['kitchen', 'remodel', 'cabinets', 'island', 'white']);
     expect(arg.data.aiGeneric).toBe(false);
     expect(arg.data.captionedAt).toBeInstanceOf(Date);
-    // Never return the row's multi-MB image bytes just to discard them.
-    expect(arg.select).toEqual({ id: true });
   });
 
   it('does not constrain lengths on the wire — the slices are the enforcement', async () => {
@@ -464,6 +508,127 @@ describe('captionImage persistence', () => {
     expect(result.ok).toBe(true);
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('captionImage claim (two runs never both pay for one image)', () => {
+  // The worker, the onboarding pre-pass and a backfill can all reach the
+  // same image at once. Only the run whose claim lands fetches and calls
+  // Claude; the caption write is conditional too.
+
+  it('claims the row before fetching the photo or calling Claude', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    const order: string[] = [];
+    mocks.prisma.profileImage.updateMany.mockImplementation(async () => {
+      order.push('updateMany');
+      return { count: 1 };
+    });
+    mocks.fetch.mockImplementation(async () => {
+      order.push('fetch');
+      return fetchResponse();
+    });
+
+    await captionImage('img1');
+
+    const claim = mocks.prisma.profileImage.updateMany.mock.calls[0][0];
+    expect(claim.where).toMatchObject({ id: 'img1', captionedAt: null });
+    // Unclaimed, or claimed by a run that died long enough ago.
+    expect(claim.where.OR).toEqual([
+      { captionSkipReason: null },
+      { captionSkipReason: 'IN_PROGRESS', updatedAt: { lt: expect.any(Date) } },
+    ]);
+    expect(claim.data).toMatchObject({ captionSkipReason: 'IN_PROGRESS' });
+    expect(order[0]).toBe('updateMany');
+    expect(order).toContain('fetch');
+  });
+
+  it('leaves the image to the run already captioning it: no fetch, no Claude call', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ googleUrl: 'https://lh3.googleusercontent.com/photo' })
+    );
+    mocks.prisma.profileImage.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const result = await captionImage('img1');
+
+    expect(result).toMatchObject({ ok: false, skipped: 'IN_PROGRESS' });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+  });
+
+  it('takes over a claim left by a run that died (the claim query decides whether it lapsed)', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]), captionSkipReason: 'IN_PROGRESS' })
+    );
+
+    const result = await captionImage('img1');
+
+    expect(result.ok).toBe(true);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the caption only onto a still-uncaptioned row, dropping the claim with it', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+
+    await captionImage('img1');
+
+    const write = mocks.prisma.profileImage.updateMany.mock.calls[1][0];
+    expect(write.where).toEqual({ id: 'img1', captionedAt: null });
+    expect(write.data).toMatchObject({
+      captionedAt: expect.any(Date),
+      captionSkipReason: null,
+    });
+    expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the caption a run that took over first already wrote', async () => {
+    mocks.prisma.profileImage.findUnique
+      .mockResolvedValueOnce(imageRow({ thumbData: new Uint8Array([1]) }))
+      .mockResolvedValueOnce({ id: 'img1' });
+    mocks.prisma.profileImage.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockResolvedValueOnce({ count: 0 }); // write: already captioned
+
+    expect(await captionImage('img1')).toEqual({ imageId: 'img1', ok: true });
+  });
+
+  it('hands the claim back when captioning fails transiently, so the retry can take it', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+    mocks.generate.mockRejectedValue(new Error('rate limited'));
+
+    await expect(captionImage('img1')).rejects.toThrow('rate limited');
+    expect(mocks.prisma.profileImage.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'img1', captionSkipReason: 'IN_PROGRESS' },
+      data: { captionSkipReason: null },
+    });
+  });
+
+  it('a failed hand-back never hides the original error', async () => {
+    mocks.prisma.profileImage.findUnique.mockResolvedValue(
+      imageRow({ thumbData: new Uint8Array([1]) })
+    );
+    mocks.generate.mockRejectedValue(new Error('rate limited'));
+    mocks.prisma.profileImage.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim
+      .mockRejectedValueOnce(new Error('db down')); // release
+
+    await expect(captionImage('img1')).rejects.toThrow('rate limited');
+  });
+});
+
+describe('recordCaptionRetriesExhausted', () => {
+  it('marks a still-uncaptioned image RETRIES_EXHAUSTED, which every re-enqueue query skips', async () => {
+    await recordCaptionRetriesExhausted('img1');
+
+    const arg = mocks.prisma.profileImage.updateMany.mock.calls[0][0];
+    expect(arg.where).toMatchObject({ id: 'img1', captionedAt: null });
+    expect(arg.data).toEqual({ captionSkipReason: 'RETRIES_EXHAUSTED' });
   });
 });
 
@@ -507,7 +672,7 @@ describe('captionUncaptionedApproved (bounded pre-pass)', () => {
       profileId: 'p1',
       status: 'APPROVED',
       captionedAt: null,
-      captionSkipReason: null,
+      OR: [{ captionSkipReason: null }, { captionSkipReason: 'IN_PROGRESS' }],
     });
     expect(query.take).toBe(10);
   });

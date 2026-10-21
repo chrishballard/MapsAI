@@ -39,6 +39,13 @@ sync that refreshes the image's URL clears the skip so it retries). They
 stay uncaptioned — treated as "unknown" and never blind-attached once the
 profile has captions.
 
+A run claims the row (`captionSkipReason = IN_PROGRESS`) before it fetches
+or calls Claude, so the worker, the pre-pass and a backfill never pay twice
+for one image; a claim older than 15 minutes belongs to a run that died and
+is taken over. A trigger that replaces a failed queue job carries its spent
+attempts into the new one, and once an image has failed 6 attempts in all
+the worker records `RETRIES_EXHAUSTED` instead of retrying again.
+
 `scripts/backfill-image-captions.ts` captions existing libraries
 (`--dry-run` is fully inert: no writes, no Claude calls — prints counts and
 estimated spend).

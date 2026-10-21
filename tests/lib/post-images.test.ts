@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    profileImage: { findMany: vi.fn(), update: vi.fn() },
+    profileImage: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     profile: { findUnique: vi.fn() },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
   },
@@ -117,21 +117,48 @@ describe('markImagesUsed', () => {
   it('increments per-image use counts, deduping repeats, without returning image bytes', async () => {
     await markImagesUsed(['img1', 'img2', 'img1']);
 
-    expect(mocks.prisma.profileImage.update).toHaveBeenCalledTimes(2);
-    const calls = mocks.prisma.profileImage.update.mock.calls.map((call) => {
+    // updateMany returns only a count, never the row's image bytes.
+    expect(mocks.prisma.profileImage.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.profileImage.updateMany).toHaveBeenCalledTimes(2);
+    const calls = mocks.prisma.profileImage.updateMany.mock.calls.map((call) => {
       const arg = call[0] as {
         where: { id: string };
         data: { timesUsed: { increment: number } };
-        select: unknown;
       };
-      return {
-        id: arg.where.id,
-        inc: arg.data.timesUsed.increment,
-        select: arg.select,
-      };
+      return { id: arg.where.id, inc: arg.data.timesUsed.increment };
     });
-    expect(calls).toContainEqual({ id: 'img1', inc: 2, select: { id: true } });
-    expect(calls).toContainEqual({ id: 'img2', inc: 1, select: { id: true } });
+    expect(calls).toContainEqual({ id: 'img1', inc: 2 });
+    expect(calls).toContainEqual({ id: 'img2', inc: 1 });
+  });
+
+  it('still records the surviving images when one was deleted mid-flight', async () => {
+    // Prisma's own semantics: update throws P2025 on a missing row, which
+    // rolls back the whole transaction; updateMany just matches nothing.
+    const live = new Set(['img1']);
+    mocks.prisma.profileImage.update.mockImplementation(
+      async ({ where }: { where: { id: string } }) => {
+        if (!live.has(where.id)) {
+          throw Object.assign(new Error('Record not found'), { code: 'P2025' });
+        }
+        return { id: where.id };
+      }
+    );
+    mocks.prisma.profileImage.updateMany.mockImplementation(
+      async ({ where }: { where: { id: string } }) => ({
+        count: live.has(where.id) ? 1 : 0,
+      })
+    );
+    mocks.prisma.$transaction.mockImplementationOnce(async (ops: unknown[]) =>
+      Promise.all(ops)
+    );
+
+    await expect(markImagesUsed(['img1', 'gone'])).resolves.toBeUndefined();
+    expect(mocks.prisma.profileImage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'img1' },
+        data: expect.objectContaining({ timesUsed: { increment: 1 } }),
+      })
+    );
   });
 
   it('does nothing for an empty list', async () => {
