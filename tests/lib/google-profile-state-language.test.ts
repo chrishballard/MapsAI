@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   upsert: vi.fn(),
   update: vi.fn(),
   updateMany: vi.fn(),
+  findMany: vi.fn(),
 }));
 
 vi.mock('@/lib/google', () => ({
@@ -27,7 +28,12 @@ vi.mock('googleapis', () => ({
 }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    profile: { upsert: mocks.upsert, update: mocks.update, updateMany: mocks.updateMany },
+    profile: {
+      upsert: mocks.upsert,
+      update: mocks.update,
+      updateMany: mocks.updateMany,
+      findMany: mocks.findMany,
+    },
   },
 }));
 
@@ -52,6 +58,7 @@ beforeEach(() => {
     id: 'p1',
     ...create,
   }));
+  mocks.findMany.mockResolvedValue([]);
 });
 
 describe('fetchGoogleProfileState language', () => {
@@ -90,6 +97,21 @@ describe('syncLocationsForAccount language', () => {
         data: expect.objectContaining({ googleLanguageCode: 'es-419' }),
       })
     );
+  });
+
+  it('keeps the stored language when Google sends none', async () => {
+    // A read that omits languageCode says nothing about the language; writing
+    // null would erase a stored es-419 and drop the non-English guard.
+    mocks.request.mockResolvedValue({
+      data: { profile: { description: 'Limpieza profesional.' }, serviceItems: [] },
+    });
+
+    await syncLocationsForAccount('ga1');
+
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    const { data } = mocks.update.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data).not.toHaveProperty('googleLanguageCode');
+    expect(data).toMatchObject({ googleDescription: 'Limpieza profesional.' });
   });
 });
 

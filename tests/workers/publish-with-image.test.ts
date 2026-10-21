@@ -3,9 +3,10 @@ import type { Job } from 'bullmq';
 
 // Publishing with images: the worker resolves the attached library image to
 // a public sourceUrl and sends it as post media. On an image rejection
-// (HTTP 400 with a photo attached) it detaches the image with a persisted
-// note and rethrows, so the normal BullMQ retry publishes text-only — never
-// a second GBP write inside the same job.
+// (HTTP 400 with a photo attached, unless Google's details name only a
+// non-photo field) it detaches the image with a persisted note and rethrows,
+// so the normal BullMQ retry publishes text-only — never a second GBP write
+// inside the same job.
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -52,11 +53,11 @@ const GBP_IMAGE = {
   status: 'APPROVED',
 };
 
-function badRequest(message: string) {
+function badRequest(message: string, data?: unknown) {
   const err = new Error(message) as Error & {
-    response: { status: number };
+    response: { status: number; data?: unknown };
   };
-  err.response = { status: 400 };
+  err.response = { status: 400, data };
   return err;
 }
 
@@ -165,7 +166,7 @@ describe('publish worker with images', () => {
     expect(publishedUpdate()?.errorMessage).toMatch(/no longer approved/);
   });
 
-  it('detaches the image and rethrows on an HTTP 400 so the retry goes text-only', async () => {
+  it('detaches the image and rethrows on a bare HTTP 400 so the retry goes text-only', async () => {
     mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
       makePost({ image: GBP_IMAGE })
     );
@@ -190,6 +191,108 @@ describe('publish worker with images', () => {
     // Claim released so BullMQ can retry.
     const release = mocks.prisma.post.updateMany.mock.calls.at(-1)![0];
     expect(release.data.status).toBe('SCHEDULED');
+  });
+
+  it('detaches the image when the 400 names the photo field', async () => {
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
+      makePost({ image: GBP_IMAGE })
+    );
+    mocks.createGBPPost.mockRejectedValue(
+      badRequest('Request contains an invalid argument.', {
+        error: {
+          code: 400,
+          message: 'Request contains an invalid argument.',
+          status: 'INVALID_ARGUMENT',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.BadRequest',
+              fieldViolations: [
+                { field: 'media[0].source_url', description: 'Fetching image failed.' },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    await expect(run()).rejects.toThrow('invalid argument');
+
+    const detach = mocks.prisma.post.update.mock.calls.find(
+      ([arg]) => (arg as { data: { imageId?: null } }).data.imageId === null
+    );
+    expect(detach).toBeTruthy();
+  });
+
+  it('keeps the image when the 400 names only a text field', async () => {
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
+      makePost({ image: GBP_IMAGE })
+    );
+    mocks.createGBPPost.mockRejectedValue(
+      badRequest('Request contains an invalid argument.', {
+        error: {
+          code: 400,
+          message: 'Request contains an invalid argument.',
+          status: 'INVALID_ARGUMENT',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.mybusiness.v4.ValidationError',
+              errorDetails: [
+                {
+                  code: 3,
+                  field: 'summary',
+                  message: 'Text too long',
+                  // Google echoes our text back; a summary that mentions
+                  // photos must not be read as a photo problem.
+                  value: 'See the photos of our new image gallery',
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    await expect(run()).rejects.toThrow('invalid argument');
+
+    expect(mocks.createGBPPost).toHaveBeenCalledTimes(1);
+    const detach = mocks.prisma.post.update.mock.calls.find(
+      ([arg]) => (arg as { data: { imageId?: null } }).data.imageId === null
+    );
+    expect(detach).toBeUndefined();
+
+    // Claim still released so BullMQ retries, photo included.
+    const release = mocks.prisma.post.updateMany.mock.calls.at(-1)![0];
+    expect(release.data.status).toBe('SCHEDULED');
+  });
+
+  it('keeps the image when a BadRequest violation names the call-to-action URL', async () => {
+    mocks.prisma.post.findUniqueOrThrow.mockResolvedValue(
+      makePost({ image: GBP_IMAGE })
+    );
+    mocks.createGBPPost.mockRejectedValue(
+      badRequest('Request contains an invalid argument.', {
+        error: {
+          code: 400,
+          message: 'Request contains an invalid argument.',
+          status: 'INVALID_ARGUMENT',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.BadRequest',
+              fieldViolations: [
+                { field: 'call_to_action.url', description: 'Invalid URL' },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    await expect(run()).rejects.toThrow('invalid argument');
+
+    const detach = mocks.prisma.post.update.mock.calls.find(
+      ([arg]) => (arg as { data: { imageId?: null } }).data.imageId === null
+    );
+    expect(detach).toBeUndefined();
   });
 
   it('keeps the image on transient (non-400) failures so the retry can still publish it', async () => {

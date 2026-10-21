@@ -59,7 +59,9 @@ async function main() {
         data: {
           googleDescription: state.description,
           googleServiceItems: state.serviceItems as never,
-          googleLanguageCode: state.languageCode,
+          // No languageCode in the read: keep the stored one (see
+          // syncGoogleProfileState in src/lib/google-locations.ts).
+          ...(state.languageCode ? { googleLanguageCode: state.languageCode } : {}),
           googleProfileSyncedAt: new Date(),
         },
       });

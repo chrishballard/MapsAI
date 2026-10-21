@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { createGBPPost, listGBPPosts, GBPLocalPost } from "../src/lib/google-posts";
 import { resolvePostImageSourceUrl } from "../src/lib/image-urls";
+import { googleErrorSubjects } from "../src/lib/google-errors";
 import { prisma } from "../src/lib/prisma";
 import { PostType } from "../src/generated/prisma/client";
 
@@ -26,6 +27,15 @@ interface PostWithProfile {
 }
 
 /**
+ * Summary text for comparison only. Google can hand a summary back with
+ * \n where we stored \r\n, or without our trailing whitespace; the same
+ * words in the same order are the same post.
+ */
+function normalizeSummary(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Safety check: fetch the live posts from Google and look for one whose
  * summary matches our content. If a previous attempt created the post but
  * crashed before recording it, this finds it — so we never publish twice.
@@ -39,7 +49,12 @@ async function findLiveMatchingPost(
     accountResourceName: post.profile.accountResourceName!,
     locationName: post.profile.locationName,
   });
-  return livePosts.find((live) => live.summary === post.content);
+  const content = normalizeSummary(post.content);
+  return livePosts.find(
+    (live) =>
+      typeof live.summary === "string" &&
+      normalizeSummary(live.summary) === content
+  );
 }
 
 async function markPublished(
@@ -100,11 +115,8 @@ function resolvePostMedia(post: {
 }
 
 /**
- * Google rejected the request itself (HTTP 400 INVALID_ARGUMENT). When a
- * photo was attached, the photo is by far the most likely culprit
- * (unfetchable sourceUrl, unsupported content) — worth detaching so the
- * retry can publish text-only. Non-400s (429/5xx/network) are transient and
- * must retry unchanged, photo included.
+ * Google rejected the request itself (HTTP 400 INVALID_ARGUMENT). Non-400s
+ * (429/5xx/network) are transient and must retry unchanged, photo included.
  */
 function isBadRequestError(err: unknown): boolean {
   const e = err as {
@@ -117,6 +129,27 @@ function isBadRequestError(err: unknown): boolean {
     e?.status ??
     (typeof e?.code === "number" ? e.code : undefined);
   return status === 400;
+}
+
+// How Google points at the photo when that is what it rejected: the field
+// path (media[0].source_url, sourceUrl) or the rule (image fetch failed).
+const MEDIA_ERROR_PATTERN = /media|photo|image|source_?url/i;
+
+/**
+ * Whether a 400 is plausibly about the attached photo (unfetchable
+ * sourceUrl, unsupported content), so detaching it lets the retry publish
+ * text-only. When Google names what it rejected and none of it is the photo
+ * (summary too long, a bad call-to-action URL), the photo is fine and
+ * dropping it would only lose it. With nothing to go on (a bare "Request
+ * contains an invalid argument."), the photo stays the likeliest culprit.
+ */
+function badRequestConcernsMedia(err: unknown): boolean {
+  const subjects = googleErrorSubjects(err);
+  const message = err instanceof Error ? err.message : "";
+  if ([...subjects, message].some((s) => MEDIA_ERROR_PATTERN.test(s))) {
+    return true;
+  }
+  return subjects.length === 0;
 }
 
 /** Clock slack between a delayed job firing and the post's scheduledAt. */
@@ -262,13 +295,14 @@ export const worker = new Worker<PublishJobData>(
             : undefined,
         });
       } catch (err) {
-        // Google rejected the request while a photo was attached: detach it
-        // with a note, then rethrow. The normal BullMQ retry publishes
-        // text-only through the same claim/dedupe/limiter machinery — never
-        // a second GBP write inside this job (the queue limiter is sized
-        // for one write per job, and an unchecked second create could
-        // duplicate a post that actually committed before the error).
-        if (mediaUrl && isBadRequestError(err)) {
+        // Google rejected the photo: detach it with a note, then rethrow.
+        // The normal BullMQ retry publishes text-only through the same
+        // claim/dedupe/limiter machinery — never a second GBP write inside
+        // this job (the queue limiter is sized for one write per job, and an
+        // unchecked second create could duplicate a post that actually
+        // committed before the error). A 400 about something else rethrows
+        // with the photo still attached.
+        if (mediaUrl && isBadRequestError(err) && badRequestConcernsMedia(err)) {
           const reason = err instanceof Error ? err.message : String(err);
           console.warn(
             `Post ${postId}: request with photo rejected (${reason}), detaching the image for the retry`

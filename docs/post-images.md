@@ -93,9 +93,13 @@ fetch (one GBP write per job — the queue limiter is sized for that):
 When Google rejects the request while a photo is attached (HTTP 400), the
 worker **detaches** the image, records `Image skipped: <reason>` in
 `errorMessage`, and rethrows — the normal BullMQ retry then publishes
-text-only through the same claim/dedupe/limiter machinery. Non-400 errors
-(429/5xx/network) retry unchanged, photo included. `Post.mediaUrl` is a
-publish-time record of what actually went out, never an input.
+text-only through the same claim/dedupe/limiter machinery. The exception is a
+400 whose error details name what Google rejected and none of it is the photo
+(e.g. `summary` or `call_to_action.url`): that rethrows with the photo still
+attached. A bare 400 with no details still detaches, since the photo is the
+likeliest cause. Non-400 errors (429/5xx/network) retry unchanged, photo
+included. `Post.mediaUrl` is a publish-time record of what actually went out,
+never an input.
 
 ## Upload constraints
 

@@ -54,7 +54,10 @@ async function syncGoogleProfileState(params: {
       data: {
         googleDescription: state.description,
         googleServiceItems: state.serviceItems as never,
-        googleLanguageCode: state.languageCode,
+        // A read without languageCode says nothing about the language, so it
+        // must not erase a stored "es-419" (that value is what warns before
+        // a service push on a non-English profile).
+        ...(state.languageCode ? { googleLanguageCode: state.languageCode } : {}),
         googleProfileSyncedAt: new Date(),
       },
     });
@@ -98,11 +101,16 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   } while (accountsPageToken);
 
   const syncedProfiles = [];
+  // Location groups that answered with no locations at all. An empty answer
+  // proves nothing about the profiles stored under that group, so the sweep
+  // below leaves them alone.
+  const emptyAccounts = new Set<string>();
 
   for (const account of accounts) {
     if (!account.name) continue;
 
     let nextPageToken: string | undefined;
+    const syncedBefore = syncedProfiles.length;
 
     do {
       const locationsRes = await mybusinessbusinessinformation.accounts.locations.list({
@@ -161,16 +169,49 @@ export async function syncLocationsForAccount(googleAccountId: string) {
         syncedProfiles.push(profile);
       }
     } while (nextPageToken);
+
+    if (syncedProfiles.length === syncedBefore) emptyAccounts.add(account.name);
   }
 
-  // Mark profiles not in this sync as disconnected
-  await prisma.profile.updateMany({
+  // Mark profiles not in this sync as disconnected. The publish worker then
+  // demotes their due posts to DRAFT, so only a listing that actually came
+  // back may disconnect anything. A failed page already threw above, before
+  // this point. Google answering with nothing is not proof either: an empty
+  // listing for the whole login, or for the group a profile sits under,
+  // keeps those profiles as they were until a sync that does list.
+  const missing = await prisma.profile.findMany({
     where: {
       googleAccountId,
+      isConnected: true,
       id: { notIn: syncedProfiles.map((p) => p.id) },
     },
-    data: { isConnected: false },
+    select: { id: true, accountResourceName: true },
   });
+
+  if (missing.length > 0 && syncedProfiles.length === 0) {
+    console.warn(
+      `[location-sync] Google listed no locations for ${googleAccountId}; keeping its ${missing.length} connected profile(s) as they are`
+    );
+    return syncedProfiles;
+  }
+
+  const kept = missing.filter(
+    (p) => p.accountResourceName && emptyAccounts.has(p.accountResourceName)
+  );
+  if (kept.length > 0) {
+    console.warn(
+      `[location-sync] ${[...new Set(kept.map((p) => p.accountResourceName))].join(", ")} listed no locations; keeping ${kept.length} connected profile(s) under them as they are`
+    );
+  }
+
+  const keptIds = new Set(kept.map((p) => p.id));
+  const gone = missing.filter((p) => !keptIds.has(p.id)).map((p) => p.id);
+  if (gone.length > 0) {
+    await prisma.profile.updateMany({
+      where: { googleAccountId, id: { in: gone } },
+      data: { isConnected: false },
+    });
+  }
 
   return syncedProfiles;
 }

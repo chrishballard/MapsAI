@@ -21,6 +21,10 @@ interface ErrorDetail {
   reason?: string;
   domain?: string;
   metadata?: Record<string, string>;
+  message?: string;
+  // The v4 API (local posts) reports bad fields as a ValidationError with
+  // errorDetails rather than BadRequest.fieldViolations.
+  errorDetails?: { field?: string; message?: string; value?: string }[];
 }
 
 interface GoogleApiErrorBody {
@@ -163,6 +167,38 @@ export function readFailure<T>(
     };
   }
   return { ok: false, error: describeGoogleError(error, fallback) };
+}
+
+/**
+ * What a failed Google call says it rejected, as plain strings: field paths
+ * and rule descriptions (BadRequest.fieldViolations, or the v4 API's
+ * ValidationError.errorDetails), ErrorInfo reasons and metadata, and any
+ * per-detail message. Never an echoed `value`, which is our own text coming
+ * back. Empty when the error carries no details, as a bare 400 ("Request
+ * contains an invalid argument.") does.
+ *
+ * Read defensively: this runs inside error handlers, where throwing on an
+ * odd body would replace Google's error with our own.
+ */
+export function googleErrorSubjects(error: unknown): string[] {
+  const details = errorBody(error)?.details;
+  if (!Array.isArray(details)) return [];
+
+  const subjects: unknown[] = [];
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") continue;
+    subjects.push(detail.reason, detail.message);
+    if (detail.metadata && typeof detail.metadata === "object") {
+      subjects.push(...Object.values(detail.metadata));
+    }
+    for (const v of Array.isArray(detail.fieldViolations) ? detail.fieldViolations : []) {
+      subjects.push(v?.field, v?.description);
+    }
+    for (const e of Array.isArray(detail.errorDetails) ? detail.errorDetails : []) {
+      subjects.push(e?.field, e?.message);
+    }
+  }
+  return subjects.filter((s): s is string => typeof s === "string" && s.length > 0);
 }
 
 /**

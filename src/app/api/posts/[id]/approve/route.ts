@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateScheduleDates } from "@/lib/scheduling";
 import { schedulePostPublish } from "@/lib/queue/publish-queue";
+import { formatDateISO } from "@/lib/dates";
 
 export async function POST(
   request: Request,
@@ -25,15 +26,36 @@ export async function POST(
     );
   }
 
+  // Skip days this profile already has a scheduled post on, as bulk approve
+  // does — never two posts on one day.
+  const existingScheduled = await prisma.post.findMany({
+    where: {
+      profileId: post.profileId,
+      status: "SCHEDULED",
+      scheduledAt: { not: null },
+    },
+    select: { scheduledAt: true },
+  });
+  const takenDates = new Set(
+    existingScheduled
+      .filter((p) => p.scheduledAt)
+      .map((p) => formatDateISO(p.scheduledAt!))
+  );
+
   // Calculate next available schedule date
   const now = new Date();
-  let scheduleDates = calculateScheduleDates(1, now.getMonth(), now.getFullYear());
+  let scheduleDates = calculateScheduleDates(
+    1,
+    now.getMonth(),
+    now.getFullYear(),
+    takenDates
+  );
 
-  // If no future Tuesdays this month, try next month
+  // If no free weekday is left this month, try next month
   if (scheduleDates.length === 0) {
     const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
     const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
-    scheduleDates = calculateScheduleDates(1, nextMonth, nextYear);
+    scheduleDates = calculateScheduleDates(1, nextMonth, nextYear, takenDates);
   }
 
   if (scheduleDates.length === 0) {
