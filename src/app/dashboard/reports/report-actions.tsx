@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { sendJson } from "@/lib/fetch-json";
+import { formatMonthISO, getMonthStart } from "@/lib/dates";
 
 interface Profile {
   id: string;
@@ -15,8 +16,10 @@ interface GenerateFormProps {
 
 export function GenerateForm({ profiles }: GenerateFormProps) {
   const [profileId, setProfileId] = useState<string>("");
+  // Last complete month (UTC): the month in progress would compare
+  // month-to-date against a whole month. It can still be picked.
   const [month, setMonth] = useState<string>(
-    new Date().toISOString().substring(0, 7) // YYYY-MM
+    formatMonthISO(getMonthStart(new Date(), -1)) // YYYY-MM
   );
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);

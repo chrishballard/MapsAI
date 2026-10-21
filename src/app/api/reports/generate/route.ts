@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateReport } from "@/lib/pdf/report-generator";
-import { getMonthStart } from "@/lib/dates";
+import { getMonthStart, formatMonthISO } from "@/lib/dates";
 import { z } from "zod";
 import { idSchema, monthStringSchema, parseBody } from "@/lib/api-validation";
 
@@ -20,10 +20,12 @@ export async function POST(request: NextRequest) {
   const { profileId, month: monthStr } = parsed.data;
 
   try {
-    // Parse month or default to current month
+    // Parse month or default to the last complete month (UTC). The month in
+    // progress would compare month-to-date against a whole month; it can
+    // still be asked for, and the PDF labels it partial.
     const month = monthStr
       ? new Date(monthStr + "-01T00:00:00Z")
-      : getMonthStart();
+      : getMonthStart(new Date(), -1);
 
     let profiles: Array<{ id: string; name: string }>;
 
@@ -61,19 +63,26 @@ export async function POST(request: NextRequest) {
         // Generate PDF to verify it works (on-demand generation on download)
         await generateReport(profile.id, month);
 
-        // Find existing or create new Report record
-        let report = await prisma.report.findFirst({
-          where: { profileId: profile.id, month },
-        });
-
-        if (!report) {
-          report = await prisma.report.create({
+        // Find existing or create new Report record. Report has no unique
+        // on (profileId, month), so two concurrent requests could both miss
+        // the find and create twins. The advisory lock serialises them per
+        // profile and month and releases with the transaction. $executeRaw,
+        // not $queryRaw: the lock function returns void, which Prisma cannot
+        // deserialize as a result column.
+        const lockKey = `report:${profile.id}:${formatMonthISO(month)}`;
+        const report = await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+          const existing = await tx.report.findFirst({
+            where: { profileId: profile.id, month },
+          });
+          if (existing) return existing;
+          return tx.report.create({
             data: {
               profileId: profile.id,
               month,
             },
           });
-        }
+        });
 
         results.push({
           profileId: profile.id,

@@ -188,6 +188,9 @@ export interface ReportData {
   address: string | null;
   category: string | null;
   month: string; // "March 2026"
+  // Set when the month hasn't ended ("Oct 21, 2026"): the header says the
+  // month is partial and the month-over-month comparison is left out.
+  partialMonthAsOf: string | null;
   currentMetrics: {
     totalImpressions: number;
     websiteClicks: number;
@@ -435,10 +438,16 @@ export function DashboardReportDocument({
 }
 
 export function ReportDocument({ data }: { data: ReportData }) {
-  const impChange = formatChange(data.currentMetrics.totalImpressions, data.previousMetrics.totalImpressions);
-  const clickChange = formatChange(data.currentMetrics.websiteClicks, data.previousMetrics.websiteClicks);
-  const callChange = formatChange(data.currentMetrics.callClicks, data.previousMetrics.callClicks);
-  const dirChange = formatChange(data.currentMetrics.directionRequests, data.previousMetrics.directionRequests);
+  // Month-to-date against a whole previous month always reads as a drop, so
+  // a partial month makes no comparison.
+  const change = (current: number, previous: number) =>
+    data.partialMonthAsOf
+      ? { text: "Month in progress", style: styles.changeNeutral }
+      : formatChange(current, previous);
+  const impChange = change(data.currentMetrics.totalImpressions, data.previousMetrics.totalImpressions);
+  const clickChange = change(data.currentMetrics.websiteClicks, data.previousMetrics.websiteClicks);
+  const callChange = change(data.currentMetrics.callClicks, data.previousMetrics.callClicks);
+  const dirChange = change(data.currentMetrics.directionRequests, data.previousMetrics.directionRequests);
 
   return (
     <Document>
@@ -450,6 +459,9 @@ export function ReportDocument({ data }: { data: ReportData }) {
           {data.category && <Text style={styles.subtitle}>{data.category}</Text>}
           <Text style={styles.reportTitle}>
             Performance Report - {data.month}
+            {data.partialMonthAsOf
+              ? ` (partial month, as of ${data.partialMonthAsOf})`
+              : null}
           </Text>
         </View>
 

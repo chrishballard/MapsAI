@@ -23,20 +23,6 @@ const METRIC_TO_FIELD: Record<string, string> = {
   BUSINESS_CONVERSATIONS: "conversations",
 };
 
-interface DateValue {
-  year: number;
-  month: number;
-  day: number;
-}
-
-function toDateValue(date: Date): DateValue {
-  return {
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-  };
-}
-
 function dateValueToString(dv: { year?: number | null; month?: number | null; day?: number | null }): string {
   const y = dv.year ?? 2000;
   const m = String(dv.month ?? 1).padStart(2, "0");
@@ -53,15 +39,18 @@ export async function fetchDailyMetrics(
   const auth = await createGoogleClient(googleAccountId);
   const bpp = google.businessprofileperformance({ version: "v1", auth });
 
+  // Calendar days in UTC, the same days DailyMetric rows are stored under
+  // (parseMetricsResponse keys them at UTC midnight). Callers pass UTC
+  // midnights; local getters read those as the previous day west of UTC.
   const response = await bpp.locations.fetchMultiDailyMetricsTimeSeries({
     location: `locations/${locationId}`,
     dailyMetrics: [...DAILY_METRICS],
-    "dailyRange.startDate.year": startDate.getFullYear(),
-    "dailyRange.startDate.month": startDate.getMonth() + 1,
-    "dailyRange.startDate.day": startDate.getDate(),
-    "dailyRange.endDate.year": endDate.getFullYear(),
-    "dailyRange.endDate.month": endDate.getMonth() + 1,
-    "dailyRange.endDate.day": endDate.getDate(),
+    "dailyRange.startDate.year": startDate.getUTCFullYear(),
+    "dailyRange.startDate.month": startDate.getUTCMonth() + 1,
+    "dailyRange.startDate.day": startDate.getUTCDate(),
+    "dailyRange.endDate.year": endDate.getUTCFullYear(),
+    "dailyRange.endDate.month": endDate.getUTCMonth() + 1,
+    "dailyRange.endDate.day": endDate.getUTCDate(),
   });
 
   return response.data;
