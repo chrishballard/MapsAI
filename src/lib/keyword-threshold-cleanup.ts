@@ -20,9 +20,20 @@ export interface StoredKeywordRow {
   impressions: number;
 }
 
+/** A row to delete, with the count it must still hold when it's deleted. */
+export interface PlannedDelete {
+  id: string;
+  impressions: number;
+}
+
 export interface ThresholdCleanupPlan {
   deleteIds: string[];
-  /** Stored rows Google didn't list for the month, so left as they are. */
+  rows: PlannedDelete[];
+  /**
+   * Stored rows left as they are because there was nothing reliable to
+   * check them against: Google didn't list the keyword for the month, or
+   * listed it more than once.
+   */
   unverified: number;
 }
 
@@ -30,25 +41,55 @@ export function planThresholdCleanup(
   stored: StoredKeywordRow[],
   google: KeywordCount[]
 ): ThresholdCleanupPlan {
-  const byKeyword = new Map(google.map((c) => [c.keyword, c]));
-  const deleteIds: string[] = [];
+  const byKeyword = new Map<string, KeywordCount>();
+  const listedTwice = new Set<string>();
+  for (const c of google) {
+    if (byKeyword.has(c.keyword)) listedTwice.add(c.keyword);
+    byKeyword.set(c.keyword, c);
+  }
+
+  const rows: PlannedDelete[] = [];
   let unverified = 0;
   for (const row of stored) {
     const count = byKeyword.get(row.keyword);
-    if (!count) {
+    if (!count || listedTwice.has(row.keyword)) {
       unverified++;
       continue;
     }
     if (count.value === null && count.threshold === row.impressions) {
-      deleteIds.push(row.id);
+      rows.push({ id: row.id, impressions: row.impressions });
     }
   }
-  return { deleteIds, unverified };
+  return { deleteIds: rows.map((r) => r.id), rows, unverified };
 }
 
-/** The exact statement the cleanup runs, for a person to read first. */
-export function renderDeleteSql(ids: string[]): string {
-  if (ids.length === 0) return "-- nothing to delete";
-  const list = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
-  return `DELETE FROM "MonthlyKeyword" WHERE "id" IN (${list});`;
+/**
+ * Planned rows grouped by the count each must still hold. Apply deletes a
+ * group with `impressions = <that count>` in the where, so a row the daily
+ * sync rewrote with a real count after the plan (Google's late data for the
+ * last three months) is not deleted, and the count check rolls back.
+ */
+export function deleteGroups(
+  rows: PlannedDelete[]
+): Array<{ impressions: number; ids: string[] }> {
+  const groups = new Map<number, string[]>();
+  for (const row of rows) {
+    groups.set(row.impressions, [...(groups.get(row.impressions) ?? []), row.id]);
+  }
+  return [...groups].map(([impressions, ids]) => ({ impressions, ids }));
+}
+
+/**
+ * The statements the cleanup runs, for a person to read first. Display
+ * only: apply runs them through Prisma in one transaction with a count
+ * check, which pasting these into psql would not.
+ */
+export function renderDeleteSql(rows: PlannedDelete[]): string {
+  if (rows.length === 0) return "-- nothing to delete";
+  return deleteGroups(rows)
+    .map(({ impressions, ids }) => {
+      const list = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
+      return `DELETE FROM "MonthlyKeyword" WHERE "impressions" = ${impressions} AND "id" IN (${list});`;
+    })
+    .join("\n");
 }

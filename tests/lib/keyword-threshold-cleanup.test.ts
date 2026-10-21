@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  deleteGroups,
   planThresholdCleanup,
   renderDeleteSql,
 } from '@/lib/keyword-threshold-cleanup';
@@ -28,6 +29,21 @@ describe('planThresholdCleanup', () => {
     ]);
 
     expect(plan.deleteIds).toEqual(['k2']);
+    // Each planned row carries the value it was planned at, so apply can
+    // refuse a row the sync has since rewritten with a real count.
+    expect(plan.rows).toEqual([{ id: 'k2', impressions: 15 }]);
+  });
+
+  it('treats a keyword Google lists twice for the month as unverified', () => {
+    const plan = planThresholdCleanup(
+      [{ id: 'k2', keyword: 'gutter guards near me', impressions: 15 }],
+      [
+        { keyword: 'gutter guards near me', value: 15, threshold: null },
+        { keyword: 'gutter guards near me', value: null, threshold: 15 },
+      ]
+    );
+    expect(plan.deleteIds).toEqual([]);
+    expect(plan.unverified).toBe(1);
   });
 
   it('leaves a row alone when its stored count is not the threshold', () => {
@@ -49,10 +65,25 @@ describe('planThresholdCleanup', () => {
   });
 });
 
+describe('deleteGroups', () => {
+  it('groups planned rows by the value they must still hold', () => {
+    expect(
+      deleteGroups([
+        { id: 'a', impressions: 15 },
+        { id: 'b', impressions: 15 },
+        { id: 'c', impressions: 10 },
+      ])
+    ).toEqual([
+      { impressions: 15, ids: ['a', 'b'] },
+      { impressions: 10, ids: ['c'] },
+    ]);
+  });
+});
+
 describe('renderDeleteSql', () => {
-  it('names every id, quoted, in one statement', () => {
-    expect(renderDeleteSql(['k2', "o'k"])).toBe(
-      `DELETE FROM "MonthlyKeyword" WHERE "id" IN ('k2', 'o''k');`
+  it('names every id, quoted, with the value each must still hold', () => {
+    expect(renderDeleteSql([{ id: 'k2', impressions: 15 }, { id: "o'k", impressions: 15 }])).toBe(
+      `DELETE FROM "MonthlyKeyword" WHERE "impressions" = 15 AND "id" IN ('k2', 'o''k');`
     );
   });
 
