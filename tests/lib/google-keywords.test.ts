@@ -19,7 +19,7 @@ vi.mock('googleapis', () => ({
 }));
 vi.mock('@/lib/google', () => ({ createGoogleClient: vi.fn().mockResolvedValue({}) }));
 
-const { fetchSearchKeywords } = await import('@/lib/google-keywords');
+const { fetchSearchKeywords, fetchSearchKeywordCounts } = await import('@/lib/google-keywords');
 
 const MONTH = new Date(Date.UTC(2026, 8, 1));
 
@@ -62,5 +62,26 @@ describe('fetchSearchKeywords', () => {
     const keywords = await fetchSearchKeywords('ga1', '123', MONTH, MONTH);
 
     expect(keywords.map((k) => k.keyword)).toEqual(['a', 'b']);
+  });
+});
+
+describe('fetchSearchKeywordCounts', () => {
+  // The keyword threshold cleanup needs to see the threshold-only keywords
+  // the sync now leaves out, to find the rows an older sync stored them as.
+  it('returns exact values and thresholds both, each marked for what it is', async () => {
+    mocks.monthlyList.mockResolvedValue({
+      data: {
+        searchKeywordsCounts: [
+          { searchKeyword: 'gutter cleaning', insightsValue: { value: '240' } },
+          { searchKeyword: 'gutter guards near me', insightsValue: { threshold: '15' } },
+          { searchKeyword: '', insightsValue: { value: '3' } },
+        ],
+      },
+    });
+
+    expect(await fetchSearchKeywordCounts('ga1', '123', MONTH, MONTH)).toEqual([
+      { keyword: 'gutter cleaning', value: 240, threshold: null },
+      { keyword: 'gutter guards near me', value: null, threshold: 15 },
+    ]);
   });
 });
