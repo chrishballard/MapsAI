@@ -363,7 +363,7 @@ export async function pushApprovedServices(
       );
       return {
         success: false,
-        error: `Google did not return this category's full service list, so replacing the live services could drop ${dropped.length} structured service${dropped.length === 1 ? "" : "s"} already on the profile (${dropped.join(", ")}). Nothing was pushed. Try again later, or push from re-optimization, which keeps the live services.`,
+        error: `Google did not return this category's full service list, so replacing the live services could drop ${dropped.length} structured service${dropped.length === 1 ? "" : "s"} already on the profile (${dropped.join(", ")}). Nothing was pushed. Push from re-optimization instead: it keeps the live services.`,
         status: 502,
       };
     }

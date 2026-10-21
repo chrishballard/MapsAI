@@ -1,6 +1,7 @@
 import { createGoogleClient } from "./google";
 import { describeGoogleError } from "./google-errors";
 import { MAX_SERVICE_AREA_PLACES } from "./gbp-limits";
+import { isNonEnglishLanguageCode } from "./copy-language";
 
 export interface GBPWriteResult {
   success: boolean;
@@ -374,8 +375,10 @@ export async function fetchServiceTypeCatalog(params: {
 }): Promise<ServiceTypeCatalog> {
   const oauth2Client = await createGoogleClient(params.googleAccountId);
 
-  // First: get the location's primary category
+  // First: get the location's primary category (and its language, which
+  // decides whether batchGet's English names below can be trusted)
   const locationResponse = await oauth2Client.request<{
+    languageCode?: string;
     categories?: {
       primaryCategory?: {
         name?: string;
@@ -387,11 +390,12 @@ export async function fetchServiceTypeCatalog(params: {
       };
     };
   }>({
-    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=categories`,
+    url: `${BUSINESS_INFO_BASE}/${params.locationName}?readMask=categories,languageCode`,
     method: "GET",
   });
 
   const primaryCategory = locationResponse.data.categories?.primaryCategory;
+  const languageCode = locationResponse.data.languageCode;
 
   // If category has serviceTypes directly, use those. Google names them in
   // the location's own language.
@@ -422,9 +426,14 @@ export async function fetchServiceTypeCatalog(params: {
         catResponse.data.categories?.[0]?.serviceTypes ?? []
       );
       if (fromBatchGet.serviceTypes.length > 0 || fromBatchGet.unresolvedTypeIds.length > 0) {
-        // English names, which on a non-English profile are not the ones the
+        // English names: the profile's own on an English profile, but on any
+        // other (or one whose language Google didn't say) not the ones the
         // saved titles were picked from
-        return { ...fromBatchGet, degraded: true };
+        const english = !!languageCode && !isNonEnglishLanguageCode(languageCode);
+        return {
+          ...fromBatchGet,
+          degraded: !english || fromBatchGet.unresolvedTypeIds.length > 0,
+        };
       }
     } catch {
       // batchGet failed, continue to fallback

@@ -6,6 +6,7 @@ import {
   generateServiceDescriptions,
   ServiceGenerationIncompleteError,
 } from "@/lib/service-generator";
+import { serviceNameKey } from "@/lib/service-names";
 import {
   resolveServiceTypeId,
   saveProfileServices,
@@ -102,11 +103,12 @@ export async function POST(request: NextRequest) {
   const profile = await requireProfile(profileId);
   if (profile instanceof NextResponse) return profile;
 
-  // Rows are keyed by name, and the push compares names case-insensitively,
-  // so a name listed twice would fail the save below or collide at push
+  // Rows are keyed by name and the generator matches names ignoring case
+  // and punctuation, so a name listed twice would come back as one service
+  // (one row silently missing) or fail the save below
   const spellingsByName = new Map<string, string[]>();
   for (const name of serviceNames) {
-    const key = name.toLowerCase();
+    const key = serviceNameKey(name);
     spellingsByName.set(key, [...(spellingsByName.get(key) ?? []), name]);
   }
   const duplicates = [...spellingsByName.values()]
@@ -150,9 +152,9 @@ export async function POST(request: NextRequest) {
     });
 
     // A service is structured only if GBP has a matching serviceTypeId;
-    // everything else must be pushed as a free-form item. The rows below are
-    // recreated, so a surviving name (compared case-insensitively, as the
-    // push does) keeps the id it already had: on a non-English profile an
+    // everything else must be pushed as a free-form item. The replace below
+    // deletes every row, so a surviving name (compared case-insensitively, as
+    // the push does) keeps the id it already had: on a non-English profile an
     // English title only resolves through it, and an id from an additional
     // category is not in this catalog at all (the push checks it is still
     // valid). Other names resolve the way the push resolves them.
@@ -170,25 +172,11 @@ export async function POST(request: NextRequest) {
     const keptTypeIds = new Set([...catalogTypeIds, ...storedTypeIds.values()]);
     const typeIdBySlug = typeIdSlugMap(profile.googleLanguageCode, catalogTypeIds);
 
-    // Re-optimization may cover only part of the saved set (its push merges
-    // into the live list), so only the rows being regenerated are replaced.
-    // The rest keep their copy and their record of what is live on Google.
-    const regenerated = new Set(serviceNames.map((n) => n.toLowerCase()));
-    const replacedIds = existingServices
-      .filter((s) => regenerated.has(s.serviceName.toLowerCase()))
-      .map((s) => s.id);
-
+    // Save generated services to DB (replace full set, matching onboarding
+    // pattern). The editor pre-checks every saved service and sends every one
+    // still checked, so a saved row left out is one the user unchecked.
     const savedServices = await prisma.$transaction(async (tx) => {
-      await tx.profileService.deleteMany({
-        where: {
-          profileId,
-          OR: [
-            { id: { in: replacedIds } },
-            // A row saved since the read above would block the create
-            { serviceName: { in: result.map((s) => s.serviceName) } },
-          ],
-        },
-      });
+      await tx.profileService.deleteMany({ where: { profileId } });
       await tx.profileService.createMany({
         data: result.map((s) => {
           const serviceTypeId =

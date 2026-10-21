@@ -40,6 +40,7 @@ function routeRequests(answers: {
   primaryCategory?: Record<string, unknown>;
   batchGetFull?: Record<string, unknown> | Error;
   serviceItems?: unknown[];
+  languageCode?: string;
 }) {
   mocks.request.mockImplementation(async ({ url }: { url: string }) => {
     const parsed = new URL(url);
@@ -51,8 +52,13 @@ function routeRequests(answers: {
       return { data: { categories: [answers.batchGetFull ?? { name: CATEGORY }] } };
     }
     const readMask = parsed.searchParams.get('readMask');
-    if (readMask === 'categories') {
-      return { data: { categories: { primaryCategory: answers.primaryCategory } } };
+    if (readMask === 'categories,languageCode') {
+      return {
+        data: {
+          categories: { primaryCategory: answers.primaryCategory },
+          ...(answers.languageCode ? { languageCode: answers.languageCode } : {}),
+        },
+      };
     }
     if (readMask === 'serviceItems') {
       return { data: { serviceItems: answers.serviceItems ?? [] } };
@@ -122,16 +128,38 @@ describe('fetchServiceTypeCatalog', () => {
     });
   });
 
-  it('marks a catalog that came from categories:batchGet as degraded', async () => {
+  it.each([['es-419'], [undefined]])(
+    'marks a categories:batchGet catalog degraded on a profile not known to be English (%s)',
+    async (languageCode) => {
+      // batchGet names the types in English, which on a non-English profile
+      // are not the titles the saved rows were picked from.
+      routeRequests({
+        primaryCategory: { name: CATEGORY },
+        batchGetFull: { name: CATEGORY, serviceTypes: NAMED_TYPES },
+        languageCode,
+      });
+
+      expect(await fetchServiceTypeCatalog(target)).toEqual({
+        serviceTypes: NAMED_TYPES,
+        unresolvedTypeIds: [],
+        degraded: true,
+      });
+    }
+  );
+
+  it('trusts a categories:batchGet catalog on an English profile', async () => {
+    // Its English names are the profile's own, so it is as good as the
+    // location's read and must not block a replace push.
     routeRequests({
       primaryCategory: { name: CATEGORY },
       batchGetFull: { name: CATEGORY, serviceTypes: NAMED_TYPES },
+      languageCode: 'en',
     });
 
     expect(await fetchServiceTypeCatalog(target)).toEqual({
       serviceTypes: NAMED_TYPES,
       unresolvedTypeIds: [],
-      degraded: true,
+      degraded: false,
     });
   });
 

@@ -139,7 +139,10 @@ describe('reoptimize services POST id resolution', () => {
 });
 
 describe('reoptimize services POST saved rows', () => {
-  it('replaces only the rows it regenerated, leaving the rest of the saved set alone', async () => {
+  it('replaces the whole saved set with the services sent', async () => {
+    // The re-optimize editor pre-checks every saved service and sends every
+    // one still checked, so a saved row left out is one the user unchecked:
+    // replacing the set is how a service gets dropped.
     mocks.prisma.profileService.findMany.mockResolvedValue([
       { id: 'r1', serviceName: 'Mattress cleaning', serviceTypeId: MATTRESS },
       { id: 'r2', serviceName: 'Window washing', serviceTypeId: null },
@@ -150,22 +153,22 @@ describe('reoptimize services POST saved rows', () => {
 
     expect(mocks.tx.profileService.deleteMany).toHaveBeenCalledTimes(1);
     expect(mocks.tx.profileService.deleteMany).toHaveBeenCalledWith({
-      where: {
-        profileId: 'cmppohric00ns17pa9poqsdry',
-        OR: [{ id: { in: ['r1'] } }, { serviceName: { in: ['Mattress Cleaning'] } }],
-      },
+      where: { profileId: 'cmppohric00ns17pa9poqsdry' },
     });
   });
 
   it.each([
     [['Drain cleaning', 'Drain cleaning']],
     [['Drain cleaning', 'DRAIN CLEANING']],
+    // The generator matches names ignoring punctuation, so these would come
+    // back as one service and one row would silently go missing.
+    [['Drain-cleaning', 'Drain cleaning']],
   ])('answers 400, not 500, when a name is listed twice (%j)', async (names) => {
     const res = await POST(request(names));
     expect(res.status).toBe(400);
 
     const body = await res.json();
-    expect(body.error).toContain('Drain cleaning');
+    expect(body.error).toMatch(/Drain.cleaning/);
     expect(mocks.generateServiceDescriptions).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
