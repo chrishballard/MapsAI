@@ -132,13 +132,14 @@ describe('Approve all', () => {
       { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
       { id: 'rev2', response: { id: 'resp2', status: 'DRAFTED' } },
     ]);
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await bulkApprovePOST(
       jsonRequest('/api/reviews/approve', { profileId: 'p1', confirmCount: 2 })
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ approved: 2 });
+    expect(await res.json()).toEqual({ approved: 2, skipped: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenNthCalledWith(1, 'resp1', { delayMs: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenNthCalledWith(2, 'resp2', { delayMs: 7_500 });
   });

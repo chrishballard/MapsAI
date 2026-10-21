@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
-    reviewResponse: { update: vi.fn(), upsert: vi.fn() },
+    reviewResponse: { update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   scheduleReviewPublish: vi.fn(),
@@ -117,12 +117,12 @@ describe('review routes with review management on', () => {
     mocks.prisma.review.findMany.mockResolvedValue([
       { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
     ]);
-    mocks.prisma.reviewResponse.update.mockResolvedValue({ id: 'resp1' });
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ approved: 1 });
+    await expect(res.json()).resolves.toEqual({ approved: 1, skipped: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenCalledWith('resp1', {
       delayMs: 0,
     });

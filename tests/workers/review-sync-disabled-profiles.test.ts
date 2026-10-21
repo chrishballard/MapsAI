@@ -7,6 +7,7 @@ import type { Job } from 'bullmq';
 const mocks = vi.hoisted(() => ({
   prisma: { profile: { findMany: vi.fn() } },
   syncProfileReviews: vi.fn(),
+  requeueStrandedReviewReplies: vi.fn(async () => 0),
   processor: undefined as ((job: Job) => Promise<void>) | undefined,
 }));
 
@@ -24,6 +25,9 @@ vi.mock('../../src/lib/queue/connection', () => ({ redisConnection: {} }));
 vi.mock('../../src/lib/prisma', () => ({ prisma: mocks.prisma }));
 vi.mock('../../src/lib/sync/reviews', () => ({
   syncProfileReviews: mocks.syncProfileReviews,
+}));
+vi.mock('../../src/lib/queue/review-publish-queue', () => ({
+  requeueStrandedReviewReplies: mocks.requeueStrandedReviewReplies,
 }));
 
 await import('../../workers/review-sync-worker');
@@ -54,5 +58,11 @@ describe('review sync worker', () => {
     const { where } = mocks.prisma.profile.findMany.mock.calls[0][0];
     expect(where).not.toHaveProperty('isOnboarded');
     expect(where.OR).toEqual([{ isOnboarded: true }, { reviewsOnly: true }]);
+  });
+
+  it('re-queues stranded approved replies on every run (M8)', async () => {
+    await mocks.processor!({ id: 'job1' } as Job);
+
+    expect(mocks.requeueStrandedReviewReplies).toHaveBeenCalledTimes(1);
   });
 });

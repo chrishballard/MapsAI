@@ -137,13 +137,26 @@ export async function POST(
     );
   }
 
-  // Queue for publishing
+  // Queue for publishing. If that fails the reply goes back to DRAFTED: an
+  // APPROVED reply with no job never publishes, and only drafts can be
+  // edited, so leaving it approved stranded it.
   try {
     await scheduleReviewPublish(review.response.id);
   } catch (err) {
     console.warn(
       "Failed to queue review response for publishing (Redis may be unavailable):",
       err
+    );
+    await prisma.reviewResponse.updateMany({
+      where: { id: review.response.id, status: "APPROVED" },
+      data: { status: "DRAFTED", autoApproved: false },
+    });
+    return NextResponse.json(
+      {
+        error:
+          "The reply couldn't be queued for publishing, so it's still a draft. Try again in a minute.",
+      },
+      { status: 503 }
     );
   }
 

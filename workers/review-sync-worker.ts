@@ -1,6 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
 import { syncProfileReviews } from "../src/lib/sync/reviews";
+import { requeueStrandedReviewReplies } from "../src/lib/queue/review-publish-queue";
 import { prisma } from "../src/lib/prisma";
 
 export const worker = new Worker(
@@ -39,6 +40,17 @@ export const worker = new Worker(
         );
         // Continue with next profile
       }
+    }
+
+    // Approved replies whose publish job never reached Redis (or was
+    // evicted) would otherwise sit APPROVED forever.
+    try {
+      const requeued = await requeueStrandedReviewReplies();
+      if (requeued > 0) {
+        console.log(`Re-queued ${requeued} approved review replies with no publish job`);
+      }
+    } catch (sweepErr) {
+      console.error("Failed to sweep stranded review replies:", sweepErr);
     }
 
     console.log("Review sync job complete");

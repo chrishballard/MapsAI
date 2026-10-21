@@ -119,6 +119,9 @@ function isBadRequestError(err: unknown): boolean {
   return status === 400;
 }
 
+/** Clock slack between a delayed job firing and the post's scheduledAt. */
+const SCHEDULE_TOLERANCE_MS = 60_000;
+
 export const worker = new Worker<PublishJobData>(
   "post-publish",
   async (job: Job<PublishJobData>) => {
@@ -157,6 +160,20 @@ export const worker = new Worker<PublishJobData>(
         `Post ${postId} belongs to inactive profile ${post.profileId}, skipping publish${
           demoted.count === 1 ? " (demoted to DRAFT)" : ""
         }`
+      );
+      return;
+    }
+
+    // A job can outlive its schedule: a post moved back to DRAFT and
+    // re-approved for a later date may still have its old delayed job (its
+    // removal failed, or it was mid-retry). Only publish once the post's own
+    // date has come; the post sweep enqueues it then.
+    if (
+      post.scheduledAt &&
+      post.scheduledAt.getTime() > Date.now() + SCHEDULE_TOLERANCE_MS
+    ) {
+      console.log(
+        `Post ${postId} is scheduled for ${post.scheduledAt.toISOString()}, not yet due — skipping this job`
       );
       return;
     }

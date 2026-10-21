@@ -57,7 +57,7 @@ describe('PATCH /api/posts/[id] imageId', () => {
 
     expect(res.status).toBe(200);
     expect(mocks.prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post1' },
+      where: { id: 'post1', status: 'DRAFT' },
       data: { imageId: 'img1' },
     });
     expect(mocks.markImagesUsed).toHaveBeenCalledWith(['img1']);
@@ -93,7 +93,7 @@ describe('PATCH /api/posts/[id] imageId', () => {
 
     expect(res.status).toBe(200);
     expect(mocks.prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post1' },
+      where: { id: 'post1', status: 'DRAFT' },
       data: { imageId: null },
     });
     expect(mocks.markImagesUsed).not.toHaveBeenCalled();

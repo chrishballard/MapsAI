@@ -69,7 +69,11 @@ export async function POST(request: Request) {
 
   const updatedPosts = [];
 
-  for (let i = 0; i < drafts.length; i++) {
+  // Only as many drafts as there are dates get scheduled; the rest stay
+  // DRAFT. A SCHEDULED post with no date can't be enqueued and the sweep
+  // never looks at it, so it would sit unpublished forever.
+  const toSchedule = Math.min(drafts.length, scheduleDates.length);
+  for (let i = 0; i < toSchedule; i++) {
     const draft = drafts[i];
     const scheduledAt = scheduleDates[i];
 
@@ -96,6 +100,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     approved: updatedPosts.length,
+    leftAsDraft: drafts.length - updatedPosts.length,
     posts: updatedPosts,
   });
 }
