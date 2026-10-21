@@ -32,6 +32,18 @@ export async function POST(request: Request) {
       where: { profileId: body.profileId, status: "SCHEDULED" },
       data: { status: "DRAFT", scheduledAt: null },
     }),
+    // Approved replies not yet published go back to waiting for approval,
+    // as the publish worker does for an offboarded profile. Left APPROVED,
+    // one whose job was lost would be published by the stranded-reply sweep
+    // if the profile were marked reviewsOnly again.
+    prisma.reviewResponse.updateMany({
+      where: { status: "APPROVED", review: { profileId: body.profileId } },
+      data: {
+        status: "DRAFTED",
+        autoApproved: false,
+        errorMessage: "Held before publishing: the profile was offboarded",
+      },
+    }),
     prisma.onboardingProgress.deleteMany({
       where: { profileId: body.profileId },
     }),

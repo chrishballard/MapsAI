@@ -46,6 +46,19 @@ export async function POST(request: Request) {
         continue;
       }
 
+      // Only onboarded profiles get AI posts; a reviews-only profile is
+      // offboarded on purpose. The Generate page lists onboarded profiles
+      // only, but the route doesn't rely on that.
+      if (!profile.isOnboarded) {
+        results.push({
+          profileId,
+          count: 0,
+          status: "error",
+          error: "Profile is not onboarded",
+        });
+        continue;
+      }
+
       const [keywordRecords, cityRecords] = await Promise.all([
         prisma.profileKeyword.findMany({
           where: { profileId: profile.id },

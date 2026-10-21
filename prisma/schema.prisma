@@ -66,9 +66,10 @@ model Profile {
   // Review sync for a profile that is NOT onboarded. Normally review sync
   // follows onboarding; this keeps it running for a client whose posts
   // another tool handles (Lumos Dental, 2026-10-19). The profile stays
-  // offboarded, so post generation and publishing still skip it, and it
-  // stays out of the business selector. reviewsEnabled still gates it.
-  // Set per profile by hand; no UI.
+  // offboarded, so post generation and publishing still skip it; it does
+  // appear in the business selector, to reach its reviews settings.
+  // Offboarding clears it. reviewsEnabled still gates it. Set per profile by
+  // hand; no UI.
   reviewsOnly        Boolean     @default(false)
   // Operator-authored instructions ("Train RankMaps") appended to the review
   // response prompt — e.g. persona, phrasing to use, things never to say.
