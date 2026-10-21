@@ -1,15 +1,17 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { reviewSyncQueue, initReviewSyncScheduler } from "@/lib/queue/review-sync-queue";
+import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
 
 export async function POST() {
   const unauthorized = await requireSession();
   if (unauthorized) return unauthorized;
 
-  // Trigger immediate sync. If the job can't be queued (Redis down) no sync
-  // is coming, so say so rather than telling the operator one is on its way.
+  // Trigger immediate sync. If the job can't be queued (Redis down, which
+  // makes add() hang rather than throw, hence the deadline) no sync is
+  // coming, so say so rather than telling the operator one is on its way.
   try {
-    await reviewSyncQueue.add("manual-sync", {}, { delay: 0 });
+    await enqueueWithin(reviewSyncQueue.add("manual-sync", {}, { delay: 0 }));
   } catch (err) {
     console.error("Failed to queue review sync (Redis may be unavailable):", err);
     return NextResponse.json(

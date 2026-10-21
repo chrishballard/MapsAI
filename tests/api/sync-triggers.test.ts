@@ -94,3 +94,30 @@ describe('POST /api/metrics/sync', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('sync triggers while Redis is unreachable', () => {
+  // The queues' connection waits out an outage (maxRetriesPerRequest: null,
+  // ioredis's offline queue on), so with Redis down add() never settles. The
+  // routes must still answer, not hang until the proxy gives up.
+  const never = () => new Promise<never>(() => {});
+
+  it.each([
+    ['reviews', () => reviewSync.POST(), () => mocks.reviewSyncQueue.add.mockImplementation(never)],
+    [
+      'metrics',
+      () => metricsSync.POST(new Request('http://localhost/api/metrics/sync')),
+      () => mocks.metricsSyncQueue.add.mockImplementation(never),
+    ],
+  ])('%s: 503s once the enqueue has hung past its deadline', async (_name, call, hang) => {
+    vi.useFakeTimers();
+    try {
+      hang();
+      const pending = call();
+      await vi.advanceTimersByTimeAsync(6_000);
+      const res = await pending;
+      expect(res.status).toBe(503);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

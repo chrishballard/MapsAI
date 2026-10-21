@@ -117,4 +117,17 @@ describe('generateDescription post-generation rules', () => {
     await expect(generateDescription(profile)).resolves.toBe(years);
     expect(mocks.generate).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['homes from 800-3000 square feet'],
+    ['repairs from $150-1500'],
+    ['100-1000 gallon tanks'],
+    ['the 300-4000 series'],
+    ['just off Highway 101 2024 rebuild'],
+  ])('does not mistake a range or a number pair for a phone number (%s)', async (text) => {
+    const clean = sized(`Badger Gutters handles ${text} across Charlotte.`);
+    mocks.generate.mockResolvedValue({ description: clean });
+    await expect(generateDescription(profile)).resolves.toBe(clean);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
 });

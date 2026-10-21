@@ -13,11 +13,14 @@ const DescriptionSchema = z.object({
 // practices" and "HVAC" are fine and a check would refuse good drafts.
 const URL_PATTERN =
   /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|biz|info|us|co|io)\b/i;
-// North American numbers: ten digits with an optional +1, or seven with a
-// separator. Needs the separators in the right places, so a year range
-// ("1998-2024") or a ZIP code doesn't read as one.
+// North American numbers: ten digits with an optional +1, or seven joined
+// by a dash or dot. Needs the separators in the right places, so a year
+// range ("1998-2024") or a ZIP code doesn't read as one. The seven-digit form
+// has the same shape as a range, so it is skipped after a "$" and before a
+// unit ("$150-1500", "800-3000 square feet", "100-1000 gallon"), and a space
+// doesn't count as its separator ("Highway 101 2024").
 const PHONE_PATTERN =
-  /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b|\b\d{3}[\s.-]\d{4}\b/;
+  /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b|(?<![$\d.,-])\b\d{3}[.-]\d{4}\b(?!\s*(?:sq|square|feet|foot|ft|gal|gallons?|series|lbs?|pounds?|miles?|mi|km|units?|homes?|people)\b)/i;
 
 const RULE_CHECKS = [
   { what: "a URL or web address", pattern: URL_PATTERN },

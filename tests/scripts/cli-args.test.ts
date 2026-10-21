@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  assertKnownArgs,
   CliArgError,
   flagValue,
   flagValues,
@@ -75,5 +76,27 @@ describe('nonNegativeNumberFlag', () => {
     expect(() => nonNegativeNumberFlag(['--delay', '--profile', 'p1'], 'delay', 8000)).toThrow(
       CliArgError
     );
+  });
+});
+
+describe('assertKnownArgs', () => {
+  // gbp-set-service-area writes to a live listing. A misspelled flag, the
+  // `--add=...` form or a stray word used to be ignored silently, so
+  // `--add ChIJa --add=ChIJb --replace --write --yes` replaced the whole
+  // service area with [a] alone.
+  const spec = { valueFlags: ['profile', 'add'], booleanFlags: ['replace', 'write', 'yes'] };
+
+  it('accepts a command line of known flags', () => {
+    expect(() =>
+      assertKnownArgs(['--profile', 'p1', '--add', 'ChIJa', '--replace', '--write', '--yes'], spec)
+    ).not.toThrow();
+  });
+
+  it.each([
+    [['--profile', 'p1', '--add=ChIJb']],
+    [['--profile', 'p1', '--add-cty', 'Lehi']],
+    [['--profile', 'p1', 'ChIJb']],
+  ])('refuses %j', (argv) => {
+    expect(() => assertKnownArgs(argv, spec)).toThrow(CliArgError);
   });
 });

@@ -63,3 +63,25 @@ export function nonNegativeNumberFlag(
   }
   return value;
 }
+
+/**
+ * Refuse anything on the command line that isn't one of the script's flags:
+ * a misspelled flag, the `--flag=value` form these readers don't parse, or a
+ * stray word. Ignoring them is how `--add ChIJa --add=ChIJb --replace` wrote
+ * a service area of [a] alone. Value flags take the token after them.
+ */
+export function assertKnownArgs(
+  argv: string[],
+  spec: { valueFlags: string[]; booleanFlags: string[] }
+): void {
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    const name = token.startsWith("--") ? token.slice(2) : null;
+    if (name !== null && spec.valueFlags.includes(name)) {
+      valueAt(argv, i, name);
+      i++;
+    } else if (name === null || !spec.booleanFlags.includes(name)) {
+      throw new CliArgError(`unknown argument: ${token}`);
+    }
+  }
+}

@@ -4,6 +4,7 @@ import {
   metricsSyncQueue,
   initMetricsSyncScheduler,
 } from "@/lib/queue/metrics-sync-queue";
+import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
@@ -23,10 +24,11 @@ export async function POST(request: Request) {
   const days = Math.min(Math.max(parsedDays, 1), 365);
 
   // Trigger immediate sync with requested window. If the job can't be
-  // queued (Redis down) no sync is coming, so say so rather than telling the
-  // operator one is on its way.
+  // queued (Redis down, which makes add() hang rather than throw, hence the
+  // deadline) no sync is coming, so say so rather than telling the operator
+  // one is on its way.
   try {
-    await metricsSyncQueue.add("manual-sync", { days }, { delay: 0 });
+    await enqueueWithin(metricsSyncQueue.add("manual-sync", { days }, { delay: 0 }));
   } catch (err) {
     console.error(
       "Failed to queue metrics sync (Redis may be unavailable):",

@@ -26,7 +26,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "dotenv";
-import { CliArgError, flagValue, flagValues, hasFlag } from "./cli-args";
+import {
+  assertKnownArgs,
+  CliArgError,
+  flagValue,
+  flagValues,
+  hasFlag,
+} from "./cli-args";
 
 // Same two-file load as gbp-probe-service-area.ts: the profiles live in the
 // Railway production DB, the repo .env carries the Google OAuth client, and
@@ -64,11 +70,16 @@ function addedPlaces(): Array<{ placeId: string; placeName?: string }> {
 async function main() {
   // Every flag is read before anything is looked up or sent, so a bad
   // command line stops here. A value flag never takes another flag as its
-  // value: `--add --write --yes` used to send the place id "--write".
+  // value: `--add --write --yes` used to send the place id "--write". And
+  // nothing unknown is ignored: `--add=ChIJb` used to vanish from a replace.
   let profileId: string | undefined;
   let added: Array<{ placeId: string; placeName?: string }>;
   let cityQueries: string[];
   try {
+    assertKnownArgs(argv, {
+      valueFlags: ["profile", "add", "add-city"],
+      booleanFlags: ["replace", "write", "yes"],
+    });
     profileId = flagValue(argv, "profile");
     added = addedPlaces();
     cityQueries = flagValues(argv, "add-city");
