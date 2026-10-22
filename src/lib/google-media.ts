@@ -389,8 +389,16 @@ export async function pushPhotoToGBP(
  * The library row records the media name Google gave the new photo, so the
  * next syncProfileMediaToLibrary recognizes it as this image instead of
  * importing Google's copy as a second row. A row that already has a media
- * name is a photo synced from GBP; its name stays tied to the original item.
+ * name is already on the listing (synced from GBP, or pushed before): it can
+ * still become the logo or cover, which replace the current one, but pushing
+ * it as another listing photo would add a second copy, so that is refused.
  */
+const REPLACES_CURRENT: ReadonlySet<GBPMediaCategory> = new Set([
+  "PROFILE",
+  "COVER",
+  "LOGO",
+]);
+
 export async function pushLibraryImageToGBP(params: {
   profileId: string;
   imageId: string;
@@ -427,6 +435,13 @@ export async function pushLibraryImageToGBP(params: {
     return {
       success: false,
       error: `Image ${params.imageId} not found on profile ${params.profileId}`,
+    };
+  }
+
+  if (image.googleMediaName && !REPLACES_CURRENT.has(params.category)) {
+    return {
+      success: false,
+      error: `Image ${params.imageId} is already on the listing (${image.googleMediaName}); pushing it as ${params.category} would add a second copy`,
     };
   }
 

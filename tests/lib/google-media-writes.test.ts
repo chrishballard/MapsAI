@@ -231,6 +231,45 @@ describe('pushLibraryImageToGBP', () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
+  // v4 media:create always adds a new item. Pushing an image Google already
+  // holds (a photo synced from GBP, or an upload pushed before) as another
+  // listing photo put a second copy of it on the listing.
+  it('will not add a second copy of a photo already on the listing', async () => {
+    mocks.prisma.profileImage.findFirst.mockResolvedValue({
+      publicToken: 'tok123',
+      googleUrl: 'https://lh3.googleusercontent.com/m1',
+      thumbnailUrl: null,
+      googleMediaName: 'accounts/1/locations/2/media/m1',
+    });
+
+    const result = await pushLibraryImageToGBP({
+      profileId: 'p1',
+      imageId: 'img1',
+      category: 'ADDITIONAL',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already on the listing');
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it.each(['PROFILE', 'COVER', 'LOGO'] as const)(
+    'still lets a photo already on the listing become the %s picture',
+    async (category) => {
+      mocks.prisma.profileImage.findFirst.mockResolvedValue({
+        publicToken: 'tok123',
+        googleUrl: 'https://lh3.googleusercontent.com/m1',
+        thumbnailUrl: null,
+        googleMediaName: 'accounts/1/locations/2/media/m1',
+      });
+
+      const result = await pushLibraryImageToGBP({ profileId: 'p1', imageId: 'img1', category });
+
+      expect(result.success).toBe(true);
+      expect(sent().data.locationAssociation).toEqual({ category });
+    }
+  );
+
   it('will not upload an image belonging to another profile', async () => {
     mocks.prisma.profileImage.findFirst.mockResolvedValue(null);
 

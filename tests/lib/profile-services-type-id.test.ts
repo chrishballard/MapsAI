@@ -19,18 +19,19 @@ const mocks = vi.hoisted(() => ({
   fetchStructuredServices: vi.fn(),
   fetchCategoryId: vi.fn(),
   pushServicesToGBP: vi.fn(),
+  catalogDegraded: false,
 }));
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
 vi.mock('@/lib/google-business-info', () => ({
   fetchCurrentServices: mocks.fetchCurrentServices,
   fetchStructuredServices: mocks.fetchStructuredServices,
-  // These tests read a healthy catalog; profile-services-push-safety covers
-  // a degraded one
+  // A healthy catalog unless a test says otherwise; profile-services-push-
+  // safety covers the degraded replace refusal
   fetchServiceTypeCatalog: async (params: unknown) => ({
     serviceTypes: await mocks.fetchStructuredServices(params),
     unresolvedTypeIds: [],
-    degraded: false,
+    degraded: mocks.catalogDegraded,
   }),
   fetchCategoryId: mocks.fetchCategoryId,
   pushServicesToGBP: mocks.pushServicesToGBP,
@@ -93,6 +94,7 @@ let warn: MockInstance<typeof console.warn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.catalogDegraded = false;
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.profile.findUnique.mockResolvedValue(profile('es-419'));
@@ -301,6 +303,52 @@ describe('pushApprovedServices type-id slug on a non-English profile', () => {
           label: { displayName: 'Mattress cleaning', description: 'About Mattress cleaning.' },
         },
       },
+    ]);
+  });
+});
+
+describe('pushApprovedServices on a non-English profile read through the English catalog', () => {
+  // When the location's own category carries no service types, the catalog
+  // falls back to categories:batchGet in English (degraded on a non-English
+  // profile). An English title typed in the UI that went out as a custom
+  // service on earlier pushes now matches an English display name and goes
+  // out structured; the custom copy stayed beside it, so the profile listed
+  // "Mattress cleaning" twice.
+  beforeEach(() => {
+    mocks.catalogDegraded = true;
+    mocks.fetchStructuredServices.mockResolvedValue(englishCatalog);
+  });
+
+  it('drops the custom copy the same title went out as before', async () => {
+    mocks.fetchCurrentServices.mockResolvedValue({
+      serviceItems: [
+        { freeFormServiceItem: { category: 'x', label: { displayName: 'Mattress cleaning', description: 'Old.' } } },
+        { freeFormServiceItem: { category: 'x', label: { displayName: 'Window washing' } } },
+      ],
+    });
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
+
+    await pushApprovedServices('p1', { merge: true });
+
+    expect(pushedItems()).toEqual([
+      { freeFormServiceItem: { category: 'x', label: { displayName: 'Window washing' } } },
+      { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'About Mattress cleaning.' } },
+    ]);
+  });
+
+  it('leaves the custom item alone on an English profile, as always', async () => {
+    mocks.prisma.profile.findUnique.mockResolvedValue(profile('en-US'));
+    const live = [
+      { freeFormServiceItem: { category: 'x', label: { displayName: 'Mattress cleaning', description: "Client's own." } } },
+    ];
+    mocks.fetchCurrentServices.mockResolvedValue({ serviceItems: live });
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Mattress cleaning', null)]);
+
+    await pushApprovedServices('p1', { merge: true });
+
+    expect(pushedItems()).toEqual([
+      live[0],
+      { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'About Mattress cleaning.' } },
     ]);
   });
 });
