@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateScheduleDates } from "@/lib/scheduling";
 import { schedulePostPublish } from "@/lib/queue/publish-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 import { formatDateISO } from "@/lib/dates";
 
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
     } catch (err) {
       console.warn(
         `Failed to create publish job for post ${draft.id} (Redis may be unavailable):`,
-        err
+        redisErrorMessage(err)
       );
     }
   }

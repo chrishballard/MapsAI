@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateScheduleDates } from "@/lib/scheduling";
 import { schedulePostPublish } from "@/lib/queue/publish-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { formatDateISO } from "@/lib/dates";
 
 export async function POST(
@@ -80,7 +81,7 @@ export async function POST(
     await schedulePostPublish(id, scheduledAt);
   } catch (err) {
     // Queue might not be available (no Redis) - post is still scheduled
-    console.warn("Failed to create publish job (Redis may be unavailable):", err);
+    console.warn("Failed to create publish job (Redis may be unavailable):", redisErrorMessage(err));
   }
 
   return NextResponse.json(updatedPost);

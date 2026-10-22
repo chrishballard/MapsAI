@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { fetchReviews, STAR_RATING_MAP } from "../google-reviews";
 import { generateReviewResponse } from "../review-responder";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
+import { redisErrorMessage } from "../queue/redis-errors";
 import { normalizeReviewKey } from "../review-key";
 import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
 import { isHealthcareCategory } from "../healthcare";
@@ -176,7 +177,7 @@ export async function syncProfileReviews(
             } catch (queueErr) {
               console.warn(
                 `${logPrefix} Failed to re-queue review response ${existing.response.id} for publishing:`,
-                queueErr
+                redisErrorMessage(queueErr)
               );
             }
           }
@@ -285,7 +286,7 @@ export async function syncProfileReviews(
           } catch (queueErr) {
             console.warn(
               `${logPrefix} Failed to queue review response ${reviewResponse.id} for publishing:`,
-              queueErr
+              redisErrorMessage(queueErr)
             );
           }
         }

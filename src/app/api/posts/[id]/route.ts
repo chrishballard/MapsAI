@@ -6,6 +6,7 @@ import { parseBody, idSchema } from "@/lib/api-validation";
 import { markImagesUsed } from "@/lib/post-images";
 import { isPrismaError } from "@/lib/prisma-errors";
 import { publishQueue } from "@/lib/queue/publish-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { PostStatus } from "@/generated/prisma/client";
 
 // Status changes allowed through this endpoint. Scheduling happens via
@@ -128,7 +129,7 @@ export async function PATCH(
     try {
       await publishQueue.remove(`publish-${id}`);
     } catch (err) {
-      console.warn(`Could not remove publish job for post ${id}:`, err);
+      console.warn(`Could not remove publish job for post ${id}:`, redisErrorMessage(err));
     }
   }
 

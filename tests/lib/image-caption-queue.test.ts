@@ -16,6 +16,7 @@ vi.mock('bullmq', () => ({
   Queue: class {
     add = mocks.queueAdd;
     getJob = mocks.queueGetJob;
+    on = vi.fn();
     constructor(
       public name: string,
       public opts: unknown

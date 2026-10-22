@@ -50,31 +50,32 @@ import { initReviewSyncScheduler } from "../src/lib/queue/review-sync-queue";
 import { initMetricsSyncScheduler } from "../src/lib/queue/metrics-sync-queue";
 import { initPostSweepScheduler } from "../src/lib/queue/post-sweep-queue";
 import { initPostGenerationScheduler } from "../src/lib/queue/post-generation-queue";
+import { redisErrorMessage } from "../src/lib/queue/redis-errors";
 
 async function initSchedulers() {
   try {
     await initReviewSyncScheduler();
     console.log("[workers] Review sync scheduler initialized (every 30 min)");
   } catch (err) {
-    console.error("[workers] Failed to init review sync scheduler:", err);
+    console.error("[workers] Failed to init review sync scheduler:", redisErrorMessage(err));
   }
   try {
     await initMetricsSyncScheduler();
     console.log("[workers] Metrics sync scheduler initialized (every 24h)");
   } catch (err) {
-    console.error("[workers] Failed to init metrics sync scheduler:", err);
+    console.error("[workers] Failed to init metrics sync scheduler:", redisErrorMessage(err));
   }
   try {
     await initPostSweepScheduler();
     console.log("[workers] Post sweep scheduler initialized (every 15 min)");
   } catch (err) {
-    console.error("[workers] Failed to init post sweep scheduler:", err);
+    console.error("[workers] Failed to init post sweep scheduler:", redisErrorMessage(err));
   }
   try {
     await initPostGenerationScheduler();
     console.log("[workers] Post generation scheduler initialized (daily at 06:00 UTC)");
   } catch (err) {
-    console.error("[workers] Failed to init post generation scheduler:", err);
+    console.error("[workers] Failed to init post generation scheduler:", redisErrorMessage(err));
   }
 }
 
@@ -102,7 +103,7 @@ async function shutdown(signal: string) {
   const results = await Promise.allSettled(workers.map((w) => w.close()));
   for (const result of results) {
     if (result.status === "rejected") {
-      console.error("[workers] Worker failed to close:", result.reason);
+      console.error("[workers] Worker failed to close:", redisErrorMessage(result.reason));
     }
   }
 

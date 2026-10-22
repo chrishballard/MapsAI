@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export const postGenerationQueue = new Queue("post-generation", {
   connection: redisConnection,
@@ -12,6 +13,7 @@ export const postGenerationQueue = new Queue("post-generation", {
     ...defaultJobRetention,
   },
 });
+logRedisErrors(postGenerationQueue, "post-generation");
 
 /**
  * Initialize the repeatable post generation scheduler.

@@ -4,6 +4,7 @@ import { syncProfileReviews } from "./sync/reviews";
 import { syncProfileMetrics } from "./sync/metrics";
 import { initReviewSyncScheduler } from "./queue/review-sync-queue";
 import { initMetricsSyncScheduler } from "./queue/metrics-sync-queue";
+import { redisErrorMessage } from "./queue/redis-errors";
 import { syncProfileMediaToLibrary } from "./google-media";
 import { captionUncaptionedApproved } from "./image-captioner";
 
@@ -131,7 +132,7 @@ export async function runInitialSync(profileId: string): Promise<void> {
       `${LOG_PREFIX} Review sync scheduler initialized (every 30 min)`
     );
   } catch (err) {
-    console.error(`${LOG_PREFIX} Failed to init review sync scheduler:`, err);
+    console.error(`${LOG_PREFIX} Failed to init review sync scheduler:`, redisErrorMessage(err));
     failures.push("review sync scheduler");
   }
 
@@ -141,7 +142,7 @@ export async function runInitialSync(profileId: string): Promise<void> {
       `${LOG_PREFIX} Metrics sync scheduler initialized (every 24h)`
     );
   } catch (err) {
-    console.error(`${LOG_PREFIX} Failed to init metrics sync scheduler:`, err);
+    console.error(`${LOG_PREFIX} Failed to init metrics sync scheduler:`, redisErrorMessage(err));
     failures.push("metrics sync scheduler");
   }
 

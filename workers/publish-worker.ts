@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import { createGBPPost, listGBPPosts, GBPLocalPost } from "../src/lib/google-posts";
 import { resolvePostImageSourceUrl } from "../src/lib/image-urls";
 import { googleErrorFields, googleErrorSubjects } from "../src/lib/google-errors";
@@ -366,6 +367,7 @@ export const worker = new Worker<PublishJobData>(
     limiter: { max: 8, duration: 60_000 },
   }
 );
+logRedisErrors(worker, "post-publish-worker");
 
 worker.on("completed", (job) => {
   console.log(`Job ${job.id} completed for post ${job.data.postId}`);
@@ -394,10 +396,6 @@ worker.on("failed", async (job, err) => {
       console.error(`Failed to update post status: ${updateErr}`);
     }
   }
-});
-
-worker.on("error", (err) => {
-  console.error(`[publish-worker] Worker error: ${err.message}`);
 });
 
 console.log("Publish worker started, waiting for jobs...");

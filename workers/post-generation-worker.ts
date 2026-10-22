@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import { generateAndSchedulePosts } from "../src/lib/post-generation-pipeline";
 import { prisma } from "../src/lib/prisma";
 import { formatDateISO } from "../src/lib/dates";
@@ -93,6 +94,7 @@ export const worker = new Worker(
     concurrency: 1,
   }
 );
+logRedisErrors(worker, "post-generation-worker");
 
 worker.on("completed", (job) => {
   console.log(`[post-generation] Job ${job.id} completed`);
@@ -100,10 +102,6 @@ worker.on("completed", (job) => {
 
 worker.on("failed", (job, err) => {
   console.error(`[post-generation] Job ${job?.id} failed: ${err.message}`);
-});
-
-worker.on("error", (err) => {
-  console.error(`[post-generation-worker] Worker error: ${err.message}`);
 });
 
 console.log("Post generation worker started, waiting for jobs...");

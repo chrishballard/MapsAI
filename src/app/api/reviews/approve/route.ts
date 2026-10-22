@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
 import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { idSchema, parseBody } from "@/lib/api-validation";
 import {
   REVIEWS_DISABLED_ERROR,
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
       // are still drafts, untouched.
       console.warn(
         `Failed to queue review response ${review.response.id} for publishing:`,
-        err
+        redisErrorMessage(err)
       );
       await prisma.reviewResponse.updateMany({
         where: { id: review.response.id, status: "APPROVED" },

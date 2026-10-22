@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { parseBody } from "@/lib/api-validation";
 import { enqueueImageCaption } from "@/lib/queue/image-caption-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 
 const patchImageSchema = z.object({
   status: z.enum(["PENDING", "APPROVED", "HIDDEN"]),
@@ -40,7 +41,7 @@ export async function PATCH(
       await enqueueImageCaption(id).catch((err) =>
         console.warn(
           `[images] Failed to enqueue caption for image ${id}:`,
-          err
+          redisErrorMessage(err)
         )
       );
     }

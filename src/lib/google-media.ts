@@ -4,6 +4,7 @@ import type { Prisma } from "../generated/prisma/client";
 import { newImageToken } from "./image-tokens";
 import { IMAGE_MIN_WIDTH, IMAGE_MIN_HEIGHT } from "./image-validation";
 import { enqueueCaptionsForProfile } from "./queue/image-caption-queue";
+import { redisErrorMessage } from "./queue/redis-errors";
 import { describeGoogleError } from "./google-errors";
 import {
   isPubliclyReachable,
@@ -248,7 +249,7 @@ export async function syncProfileMediaToLibrary(
     await enqueueCaptionsForProfile(profileId).catch((err) =>
       console.warn(
         `[google-media] Failed to enqueue captions for profile ${profileId}:`,
-        err
+        redisErrorMessage(err)
       )
     );
   }

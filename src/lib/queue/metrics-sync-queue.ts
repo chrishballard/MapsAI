@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export const metricsSyncQueue = new Queue("metrics-sync", {
   connection: redisConnection,
@@ -12,6 +13,7 @@ export const metricsSyncQueue = new Queue("metrics-sync", {
     ...defaultJobRetention,
   },
 });
+logRedisErrors(metricsSyncQueue, "metrics-sync");
 
 /**
  * Initialize the repeatable metrics sync scheduler.

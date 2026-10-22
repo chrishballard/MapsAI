@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export const postSweepQueue = new Queue("post-sweep", {
   connection: redisConnection,
@@ -12,6 +13,7 @@ export const postSweepQueue = new Queue("post-sweep", {
     ...defaultJobRetention,
   },
 });
+logRedisErrors(postSweepQueue, "post-sweep");
 
 /**
  * Initialize the repeatable post sweep scheduler.

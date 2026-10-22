@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { reviewSyncQueue, initReviewSyncScheduler } from "@/lib/queue/review-sync-queue";
 import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 
 export async function POST() {
   const unauthorized = await requireSession();
@@ -13,7 +14,7 @@ export async function POST() {
   try {
     await enqueueWithin(reviewSyncQueue.add("manual-sync", {}, { delay: 0 }));
   } catch (err) {
-    console.error("Failed to queue review sync (Redis may be unavailable):", err);
+    console.error("Failed to queue review sync (Redis may be unavailable):", redisErrorMessage(err));
     return NextResponse.json(
       { error: "Review sync could not be started. Please try again in a minute." },
       { status: 503 }
@@ -25,7 +26,7 @@ export async function POST() {
   try {
     await initReviewSyncScheduler();
   } catch (err) {
-    console.warn("Failed to refresh the review sync scheduler:", err);
+    console.warn("Failed to refresh the review sync scheduler:", redisErrorMessage(err));
   }
 
   return NextResponse.json({ message: "Review sync triggered" });

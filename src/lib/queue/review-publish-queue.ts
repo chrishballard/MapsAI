@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors, redisErrorMessage } from "./redis-errors";
 import { prisma } from "../prisma";
 
 export interface ReviewPublishJobData {
@@ -20,6 +21,7 @@ export const reviewPublishQueue = new Queue<ReviewPublishJobData>(
     },
   }
 );
+logRedisErrors(reviewPublishQueue, "review-publish");
 
 /**
  * Gap between publishes when several go out for one profile (bulk approve,
@@ -123,7 +125,7 @@ export async function requeueStrandedReviewReplies(
     } catch (err) {
       console.warn(
         `[review-publish-sweep] Failed to re-queue review response ${response.id}:`,
-        err
+        redisErrorMessage(err)
       );
     }
   }

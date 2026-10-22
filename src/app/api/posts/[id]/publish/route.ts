@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publishQueue, schedulePostPublish } from "@/lib/queue/publish-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 
 export async function POST(
   _request: Request,
@@ -59,7 +60,7 @@ export async function POST(
 
     return NextResponse.json({ message: "Post queued for immediate publish" });
   } catch (err) {
-    console.error(`Failed to publish post ${postId}:`, err);
+    console.error(`Failed to publish post ${postId}:`, redisErrorMessage(err));
     return NextResponse.json(
       { error: "Failed to publish post" },
       { status: 500 }

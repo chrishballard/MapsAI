@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors, redisErrorMessage } from "../src/lib/queue/redis-errors";
 import { schedulePostPublish } from "../src/lib/queue/publish-queue";
 import { prisma } from "../src/lib/prisma";
 
@@ -35,7 +36,7 @@ export const worker = new Worker(
         await schedulePostPublish(post.id, post.scheduledAt!);
         reEnqueued++;
       } catch (err) {
-        console.error(`[post-sweep] Failed to re-enqueue post ${post.id}:`, err);
+        console.error(`[post-sweep] Failed to re-enqueue post ${post.id}:`, redisErrorMessage(err));
         // Continue with next post
       }
     }
@@ -49,6 +50,7 @@ export const worker = new Worker(
     concurrency: 1,
   }
 );
+logRedisErrors(worker, "post-sweep-worker");
 
 worker.on("completed", (job) => {
   console.log(`[post-sweep] Job ${job.id} completed`);
@@ -56,10 +58,6 @@ worker.on("completed", (job) => {
 
 worker.on("failed", (job, err) => {
   console.error(`[post-sweep] Job ${job?.id} failed: ${err.message}`);
-});
-
-worker.on("error", (err) => {
-  console.error(`[post-sweep-worker] Worker error: ${err.message}`);
 });
 
 console.log("Post sweep worker started, waiting for jobs...");
