@@ -25,7 +25,13 @@ function configuredSecrets(): string[] {
   const secrets = [url];
   try {
     const { password } = new URL(url);
-    if (password) secrets.push(password, decodeURIComponent(password));
+    if (password) {
+      secrets.push(password);
+      // A stray "%" makes decoding throw; the raw form is still redacted.
+      try {
+        secrets.push(decodeURIComponent(password));
+      } catch {}
+    }
   } catch {
     // Unparseable: the URL is still redacted whole.
   }
@@ -54,7 +60,10 @@ export function redisErrorMessage(err: unknown): string {
   // an empty message; the reasons are in its inner errors.
   const inner =
     err instanceof AggregateError
-      ? err.errors.filter((e) => e instanceof Error).map((e) => e.message)
+      ? err.errors
+          .filter((e) => e instanceof Error)
+          .map((e) => e.message)
+          .filter(Boolean)
       : [];
   const detail =
     err.message ||
@@ -87,15 +96,23 @@ interface ErrorEmitter {
 /**
  * Give a BullMQ Queue, Worker or QueueEvents (or an ioredis client) an
  * 'error' listener that logs one sanitized line. Without a listener BullMQ
- * prints the raw error, password included.
+ * prints the raw error, password included. Not every error is Redis's (a
+ * worker also reports lock and listener failures here), hence "queue".
  */
 export function logRedisErrors<T extends ErrorEmitter>(
   emitter: T,
   label: string
 ): T {
+  // A queue with a job scheduler shares its client with the scheduler and
+  // re-emits the scheduler's errors, so the same error arrives twice.
+  const seen = new WeakSet<object>();
   emitter.on("error", (err: Error) => {
+    if (err && typeof err === "object") {
+      if (seen.has(err)) return;
+      seen.add(err);
+    }
     redactCommandArgs(err);
-    console.error(`[redis:${label}] ${redisErrorMessage(err)}`);
+    console.error(`[queue:${label}] ${redisErrorMessage(err)}`);
   });
   return emitter;
 }
