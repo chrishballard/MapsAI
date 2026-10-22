@@ -188,6 +188,30 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     expect(rowWrites()).toEqual({ upserts: ['locations/blokk'], adoptions: [] });
   });
 
+  it('leaves a location another login stored between the check and the write', async () => {
+    // Two logins syncing at once can both find a new location unstored. The
+    // unique index on locationName turns the second write into a P2002; that
+    // login leaves the row where it is and carries on with the rest.
+    setUp({ locations: ['locations/race', 'locations/next'] });
+    mocks.upsert.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('Unique constraint failed on the fields: (`locationName`)'), {
+        code: 'P2002',
+      });
+    });
+
+    const synced = await syncLocationsForAccount('tyler');
+
+    expect(synced.map((p) => p.id)).toEqual(['p-locations/next']);
+    expect(rowWrites().upserts).toEqual(['locations/race', 'locations/next']);
+  });
+
+  it('still throws a write error that is not a duplicate location', async () => {
+    setUp({ locations: ['locations/broken'] });
+    mocks.upsert.mockRejectedValueOnce(Object.assign(new Error('db down'), { code: 'P1001' }));
+
+    await expect(syncLocationsForAccount('tyler')).rejects.toThrow('db down');
+  });
+
   it('still disconnects a vanished profile when every listed location is served elsewhere', async () => {
     // The group did answer (with a location another login holds), so it is
     // not an empty listing: this login's unlisted profile is gone.

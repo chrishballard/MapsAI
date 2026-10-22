@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { createGoogleClient } from "./google";
 import { fetchGoogleProfileState } from "./google-business-info";
 import { prisma } from "./prisma";
+import { isPrismaError } from "./prisma-errors";
 
 interface GoogleLocation {
   name: string; // Resource name like "locations/123"
@@ -83,8 +84,10 @@ async function syncGoogleProfileState(params: {
  * still serves it (the row is connected and the login's grant still works),
  * and takes the row over (history and all) once that login has lost it or
  * been revoked: a revoked login never syncs again, so its rows would stay
- * "connected" forever with nobody able to post. Pairs made before this keep
- * updating as they are until they are merged by hand.
+ * "connected" forever with nobody able to post. The pairs made before this
+ * were merged on 2026-10-22, and locationName is now unique, so two logins
+ * syncing a new location at once can't store it twice either: the second
+ * write fails and that login leaves the row to the first.
  */
 async function storedRowFor(
   googleAccountId: string,
@@ -184,22 +187,30 @@ export async function syncLocationsForAccount(googleAccountId: string) {
           placeId: location.metadata?.placeId || null,
           isConnected: true,
         };
-        const profile =
-          stored.action === "adopt"
-            ? await prisma.profile.update({
-                where: { id: stored.id },
-                data: { googleAccountId, ...fields },
-              })
-            : await prisma.profile.upsert({
-                where: {
-                  googleAccountId_locationName: {
-                    googleAccountId,
-                    locationName: location.name,
+        let profile;
+        try {
+          profile =
+            stored.action === "adopt"
+              ? await prisma.profile.update({
+                  where: { id: stored.id },
+                  data: { googleAccountId, ...fields },
+                })
+              : await prisma.profile.upsert({
+                  where: {
+                    googleAccountId_locationName: {
+                      googleAccountId,
+                      locationName: location.name,
+                    },
                   },
-                },
-                create: { googleAccountId, locationName: location.name, ...fields },
-                update: fields,
-              });
+                  create: { googleAccountId, locationName: location.name, ...fields },
+                  update: fields,
+                });
+        } catch (err) {
+          // Another login stored this location after storedRowFor looked.
+          if (!isPrismaError(err, "P2002")) throw err;
+          servedElsewhere++;
+          continue;
+        }
         if (stored.action === "adopt") {
           console.log(
             `[location-sync] ${location.name} was stored under a login that lost it; now synced through ${googleAccountId}`
