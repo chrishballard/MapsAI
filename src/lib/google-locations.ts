@@ -75,7 +75,7 @@ async function syncGoogleProfileState(params: {
 /**
  * Which stored row a listed location belongs to, for this login.
  *
- * A location's resource name is Google's and global, but a Profile row is
+ * A location's resource name is Google's and global, but a Profile row was
  * unique per (login, location). When two agency logins can both manage a
  * location, each login's sync made its own row: ten locations were stored
  * twice by 2026-10-22, and Blokk's two copies each published a post on the
@@ -206,10 +206,18 @@ export async function syncLocationsForAccount(googleAccountId: string) {
                   update: fields,
                 });
         } catch (err) {
-          // Another login stored this location after storedRowFor looked.
+          // Another sync stored this location after storedRowFor looked. If
+          // it was this login's own (two of its syncs overlapping), the row
+          // is ours: skipping it would let the sweep below disconnect it.
           if (!isPrismaError(err, "P2002")) throw err;
-          servedElsewhere++;
-          continue;
+          const winner = await prisma.profile.findUnique({
+            where: { locationName: location.name },
+          });
+          if (!winner || winner.googleAccountId !== googleAccountId) {
+            servedElsewhere++;
+            continue;
+          }
+          profile = winner;
         }
         if (stored.action === "adopt") {
           console.log(

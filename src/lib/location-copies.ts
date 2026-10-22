@@ -3,9 +3,10 @@ import { prisma } from "./prisma";
 
 /**
  * A Google location stored twice, under two logins (see storedRowFor in
- * google-locations.ts). The location sync no longer makes new pairs, but the
- * ones made before it stay until they are merged by hand, and onboarding the
- * second copy would have both copies posting and replying on one listing.
+ * google-locations.ts). The pairs made before the sync was fixed were merged
+ * on 2026-10-22 and locationName is unique since, so these checks should
+ * never find a copy; they stay as a guard, since onboarding a second copy
+ * would have both copies posting and replying on one listing.
  *
  * A copy counts as active when it is onboarded or reviews-only: a
  * reviews-only profile still syncs and auto-publishes replies.
