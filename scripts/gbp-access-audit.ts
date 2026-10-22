@@ -2,6 +2,9 @@
 // Read-only audit: for every Google account that holds a Fusion CPA profile in
 // RankMaps, list the Fusion locations Google returns, who has admin access
 // (pending invites included), and the Voice-of-Merchant / verification state.
+// Read-only against Google. Like the app, createGoogleClient saves refreshed
+// OAuth tokens to the database DATABASE_URL points at, and marks a login
+// needsReauth when Google answers invalid_grant.
 import "dotenv/config";
 import {
   google,

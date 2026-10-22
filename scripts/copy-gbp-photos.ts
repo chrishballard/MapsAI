@@ -5,6 +5,13 @@
  *   pnpm tsx scripts/copy-gbp-photos.ts <sourceProfileId> <targetProfileId>          # dry run
  *   pnpm tsx scripts/copy-gbp-photos.ts <sourceProfileId> <targetProfileId> --apply  # actually upload
  *   ... --journal <path>   # where progress is kept (default: one file per pair under ~/.mapsai)
+ *   ... --allow-existing-target   # see below
+ *
+ * A target that already has photos but no journal for the pair is refused:
+ * the copy may have run before with its journal somewhere else (the
+ * 2026-08-20 Zubowicz Atlanta to Milton run kept it in a session scratchpad
+ * that is gone), and running again would put every photo on the listing
+ * twice. Check the target listing, then pass --allow-existing-target.
  *
  * Dry run lists both locations' current media and the planned uploads.
  * Apply POSTs each source photo's public googleUrl as a sourceUrl media
@@ -24,7 +31,8 @@ import os from "node:os";
 import path from "node:path";
 import { prisma } from "../src/lib/prisma";
 import { createGoogleClient } from "../src/lib/google";
-import { listGBPMedia, type GBPMediaItem } from "../src/lib/google-media";
+import { listGBPMedia, mediaKey, type GBPMediaItem } from "../src/lib/google-media";
+import { assertKnownArgs, CliArgError, flagValue, hasFlag } from "./cli-args";
 
 const DELAY_MS = 7000; // ~8.5 edits/min, under the 10/min/profile limit
 
@@ -41,12 +49,19 @@ function defaultJournalPath(sourceId: string, targetId: string): string {
   return path.join(os.homedir(), ".mapsai", "copy-gbp-photos", `${sourceId}-to-${targetId}.json`);
 }
 
+/**
+ * Keyed on mediaKey (the media name without its account segment): the
+ * account is whichever one the request went through and can change between
+ * runs, which made every journaled photo look new.
+ */
 function readJournal(file: string): Journal {
   if (!fs.existsSync(file)) return {};
   const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string | JournalEntry>;
   // Older journals mapped source name -> created target name.
   const journal: Journal = {};
-  for (const [k, v] of Object.entries(raw)) journal[k] = typeof v === "string" ? { target: v } : v;
+  for (const [k, v] of Object.entries(raw)) {
+    journal[mediaKey(k) ?? k] = typeof v === "string" ? { target: v } : v;
+  }
   return journal;
 }
 
@@ -102,20 +117,31 @@ async function loadProfile(id: string) {
   return p;
 }
 
+const USAGE =
+  "Usage: pnpm tsx scripts/copy-gbp-photos.ts <sourceProfileId> <targetProfileId> [--apply] [--journal <path>] [--allow-existing-target]";
+
 async function main() {
-  const args = process.argv.slice(2);
-  const apply = args.includes("--apply");
-  const journalIndex = args.indexOf("--journal");
-  const journalArg = journalIndex === -1 ? undefined : args[journalIndex + 1];
-  if (journalIndex !== -1 && (!journalArg || journalArg.startsWith("--"))) {
-    console.error("--journal needs a file path");
-    process.exit(1);
-  }
-  const [sourceId, targetId] = args.filter(
-    (a, i) => !a.startsWith("--") && !(journalIndex !== -1 && i === journalIndex + 1)
-  );
-  if (!sourceId || !targetId) {
-    console.error("Usage: pnpm tsx scripts/copy-gbp-photos.ts <sourceProfileId> <targetProfileId> [--apply] [--journal <path>]");
+  // The two profile ids come first; after them only known flags. An unknown
+  // one (--journal=path, a typo) used to be ignored silently.
+  const [sourceId, targetId, ...rest] = process.argv.slice(2);
+  let apply: boolean;
+  let allowExistingTarget: boolean;
+  let journalArg: string | undefined;
+  try {
+    if (!sourceId || !targetId || sourceId.startsWith("--") || targetId.startsWith("--")) {
+      throw new CliArgError("Pass the source and target profile ids first");
+    }
+    assertKnownArgs(rest, {
+      valueFlags: ["journal"],
+      booleanFlags: ["apply", "allow-existing-target"],
+    });
+    apply = hasFlag(rest, "apply");
+    allowExistingTarget = hasFlag(rest, "allow-existing-target");
+    journalArg = flagValue(rest, "journal");
+  } catch (error) {
+    if (!(error instanceof CliArgError)) throw error;
+    console.error(error.message);
+    console.error(USAGE);
     process.exit(1);
   }
   if (sourceId === targetId) {
@@ -155,7 +181,15 @@ async function main() {
     .sort((a, b) => String(a.createTime ?? "").localeCompare(String(b.createTime ?? "")));
   const skipped = sourceItems.filter((it) => !copyable.includes(it));
 
-  console.log(`\nPlanned uploads: ${copyable.length} photos`);
+  // What a run would do, journal included: the dry run used to show every
+  // photo as planned even when the journal said they were all done.
+  const done = readJournal(journalFile);
+  const alreadyDone = copyable.filter((it) => done[mediaKey(it.name) ?? it.name]);
+  console.log(`\nJournal: ${journalFile} (${Object.keys(done).length} entries)`);
+  console.log(
+    `Planned uploads: ${copyable.length - alreadyDone.length} photos` +
+      (alreadyDone.length ? ` (${alreadyDone.length} more already handled per the journal)` : "")
+  );
   if (skipped.length) {
     console.log(`Skipped (not PHOTO or no URL): ${skipped.length}`);
     for (const s of skipped) console.log(`  - ${s.name} format=${s.mediaFormat} url=${s.googleUrl ? "yes" : "no"}`);
@@ -167,24 +201,37 @@ async function main() {
   }
   console.log("Upload categories:", JSON.stringify(catCounts));
 
+  const targetPhotos = targetItems.filter((it) => it.mediaFormat === "PHOTO").length;
+  const unjournaledTarget = Object.keys(done).length === 0 && targetPhotos > 0;
+  if (unjournaledTarget) {
+    console.log(
+      `\nThe target already has ${targetPhotos} photos and there is no journal for this pair. ` +
+        "If this copy ran before, its journal is elsewhere and --apply would upload every photo again."
+    );
+  }
+
   if (!apply) {
     console.log("\nDRY RUN — nothing uploaded. Re-run with --apply to copy.");
     return;
   }
+  if (unjournaledTarget && !allowExistingTarget) {
+    console.error("Refusing: check the target listing, then pass --allow-existing-target to copy anyway.");
+    process.exit(1);
+  }
 
-  // Resume journal: source media name -> what was created on the target.
+  // Resume journal: source media key -> what was created on the target.
   // Written once up front so a path that can't be written fails before any
   // upload, not after the first one.
-  const done = readJournal(journalFile);
   writeJournal(journalFile, done);
-  console.log(`\nJournal: ${journalFile}`);
 
   // Diff the journal against what the target actually holds now, so a
   // resume reports anything that no longer matches instead of trusting it.
-  const targetNames = new Set(targetItems.map((it) => it.name));
+  const targetNames = new Set(targetItems.map((it) => mediaKey(it.name) ?? it.name));
   const journaled = Object.entries(done);
   if (journaled.length) {
-    const missing = journaled.filter(([, e]) => "target" in e && !targetNames.has(e.target));
+    const missing = journaled.filter(
+      ([, e]) => "target" in e && !targetNames.has(mediaKey(e.target) ?? e.target)
+    );
     const uncertain = journaled.filter(([, e]) => "uncertain" in e);
     console.log(`Resuming: ${journaled.length} source photos already handled per journal.`);
     if (missing.length) {
@@ -211,12 +258,13 @@ async function main() {
           accountResourceName: target.accountResourceName!,
           locationName: target.locationName,
         })
-      ).map((it) => it.name)
+      ).map((it) => mediaKey(it.name) ?? it.name)
     );
 
   for (let i = 0; i < copyable.length; i++) {
     const item = copyable[i];
-    if (done[item.name]) continue;
+    const key = mediaKey(item.name) ?? item.name;
+    if (done[key]) continue;
 
     // Per Chris 2026-08-20: keep the target's own cover/profile photo —
     // upload the source's cover/profile shots as regular photos instead.
@@ -265,7 +313,9 @@ async function main() {
           const now = await listTargetNames();
           const known = new Set([
             ...targetNames,
-            ...Object.values(done).flatMap((e) => ("target" in e ? [e.target] : [])),
+            ...Object.values(done).flatMap((e) =>
+              "target" in e ? [mediaKey(e.target) ?? e.target] : []
+            ),
           ]);
           created = [...now].filter((n) => !known.has(n));
         } catch (listErr) {
@@ -281,7 +331,7 @@ async function main() {
           console.error(`  [${i + 1}/${copyable.length}] UNKNOWN ${item.name}: ${message}. Not retried; check the target listing.`);
           if (created.length > 1) {
             // Something else is adding photos to this listing; stop.
-            writeJournal(journalFile, { ...done, [item.name]: entry });
+            writeJournal(journalFile, { ...done, [key]: entry });
             throw new Error("More than one new photo appeared on the target during one upload; stopping.");
           }
         }
@@ -291,8 +341,8 @@ async function main() {
     // Outside the upload's try: a journal that can't be written must stop the
     // run, or the next run would upload this photo again.
     if (entry) {
-      done[item.name] = entry;
-      if ("target" in entry) targetNames.add(entry.target);
+      done[key] = entry;
+      if ("target" in entry) targetNames.add(mediaKey(entry.target) ?? entry.target);
       try {
         writeJournal(journalFile, done);
       } catch (err) {

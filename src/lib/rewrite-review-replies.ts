@@ -1,13 +1,10 @@
 import { prisma } from "./prisma";
 import { generateReviewResponse } from "./review-responder";
 import { fetchSingleReview, publishReviewReply } from "./google-reviews";
-import { normalizeReviewKey } from "./review-key";
+import { normalizeReviewKey, reviewResourceName } from "./review-key";
+import { GBP_REPLY_MAX_BYTES } from "./reviews-enabled";
 import { isReviewNotFound } from "./review-removal";
-import {
-  checkHealthcareReply,
-  describeHealthcareIssues,
-  isHealthcareCategory,
-} from "./healthcare";
+import { isHealthcareCategory } from "./healthcare";
 
 export { normalizeReviewKey };
 
@@ -34,6 +31,13 @@ export const OWNER_SIGNATURE = "— Ben";
 /** First name as it appears in reviews — used for the third-person check. */
 const OWNER_FIRST_NAME = "Ben";
 
+/**
+ * The persona, signature and third-person check are Ben's, so the rewrite
+ * runs only on his business's profiles (two GBP listings). Pointed at
+ * another client it would sign "— Ben" on their public replies.
+ */
+const PERSONA_BUSINESS = "Badger Gutters";
+
 /** Persona instructions layered on top of the profile's own, at plan time. */
 export const OWNER_PERSONA_INSTRUCTIONS = [
   "Write in the first person, as Ben, the owner, speaking directly to the reviewer.",
@@ -49,13 +53,28 @@ export const OWNER_PERSONA_INSTRUCTIONS = [
   "The signature is added automatically, so do not write it yourself.",
 ].join("\n");
 
+/**
+ * The same persona for saving to Profile.reviewInstructions, where the
+ * review sync generates replies and nothing adds the signature afterwards:
+ * the model is told to write it. (OWNER_PERSONA_INSTRUCTIONS says it is added
+ * automatically, which is true only inside this rewrite.)
+ */
+export const SAVED_PERSONA_INSTRUCTIONS = [
+  "Write in the first person, as Ben, the owner, speaking directly to the reviewer.",
+  'Use "I" for anything Ben did himself, and "my team" or "we" only for work the crew did.',
+  "Never write about Ben in the third person. Do not use the name Ben in the body of the reply.",
+  "Do not use em dashes or en dashes in the body of the reply. Use a period, comma, colon, or parentheses.",
+  `End every reply with the signature on its own final line, exactly as written: ${OWNER_SIGNATURE}`,
+].join("\n");
+
 export type SkipReason =
   | "NO_LIVE_REPLY"
   | "FOREIGN_REPLY"
   | "DUPLICATE_ROW"
   | "THIRD_PERSON_OWNER"
   | "GENERATION_FAILED"
-  | "HEALTHCARE_PRIVACY";
+  | "TOO_LONG"
+  | "PLAN_MISMATCH";
 
 export interface RewriteCandidate {
   responseId: string;
@@ -120,26 +139,49 @@ export function mentionsOwnerInThirdPerson(text: string): boolean {
 }
 
 /**
- * The publish worker's last gate for healthcare profiles, on the exact text
- * that would go public: a reply must not confirm a patient or repeat their
- * care. The rewrite publishes without the worker, so it runs the gate itself,
- * at plan time and again at apply time (a plan file can be edited in
- * between). The persona signature has an em dash, which the healthcare rules
- * refuse, so on a healthcare profile every rewrite is held: the persona is
- * not one a healthcare profile can use as written. Null when it passes.
+ * The checks the publish worker makes before any reply goes out, plus the
+ * rewrite's own: Ben's profile, not a healthcare one, and review management
+ * on and still served. The publish worker holds a healthcare reply that
+ * fails checkHealthcareReply, and the persona's signature always fails it
+ * (it refuses em dashes), so a healthcare profile is refused outright rather
+ * than generated for and held reply by reply. Throws with the reason; checked
+ * at plan time and again at apply time, from the database.
  */
-function healthcareHold(
-  profile: { category: string | null; phone: string | null },
-  reply: string,
-  reviewerName: string | null
-): string | null {
-  if (!isHealthcareCategory(profile.category)) return null;
-  const issues = checkHealthcareReply(reply, {
-    reviewerName,
-    officePhone: profile.phone,
-  });
-  return issues.length > 0 ? describeHealthcareIssues(issues) : null;
+function assertRewritable(profile: {
+  name: string;
+  category: string | null;
+  reviewsEnabled: boolean;
+  isConnected: boolean;
+  isOnboarded: boolean;
+  reviewsOnly: boolean;
+}): void {
+  if (!profile.name.toLowerCase().includes(PERSONA_BUSINESS.toLowerCase())) {
+    throw new Error(
+      `${profile.name}: this rewrite is written for Ben at ${PERSONA_BUSINESS} (his persona and signature); refusing another profile`
+    );
+  }
+  if (isHealthcareCategory(profile.category)) {
+    throw new Error(
+      `${profile.name} is a healthcare business: the persona's signature fails the healthcare reply rules; refusing`
+    );
+  }
+  if (!profile.reviewsEnabled) {
+    throw new Error(`${profile.name} has review management turned off; refusing`);
+  }
+  if (!profile.isConnected || !(profile.isOnboarded || profile.reviewsOnly)) {
+    throw new Error(`${profile.name} is not connected and onboarded (or reviews-only); refusing`);
+  }
 }
+
+const PROFILE_GATE_FIELDS = {
+  name: true,
+  category: true,
+  phone: true,
+  reviewsEnabled: true,
+  isConnected: true,
+  isOnboarded: true,
+  reviewsOnly: true,
+} as const;
 
 function combineInstructions(profileInstructions: string | null): string {
   return [profileInstructions?.trim(), OWNER_PERSONA_INSTRUCTIONS]
@@ -166,14 +208,14 @@ export async function planReplyRewrite(options: {
     where: { id: profileId },
     select: {
       id: true,
-      name: true,
-      category: true,
-      phone: true,
+      ...PROFILE_GATE_FIELDS,
       googleAccountId: true,
+      accountResourceName: true,
       reviewInstructions: true,
     },
   });
   if (!profile) throw new Error(`Profile ${profileId} not found`);
+  assertRewritable(profile);
 
   const rows = await prisma.reviewResponse.findMany({
     where: {
@@ -191,6 +233,7 @@ export async function planReplyRewrite(options: {
         select: {
           id: true,
           googleReviewId: true,
+          googleReviewKey: true,
           rating: true,
           reviewerName: true,
           comment: true,
@@ -247,7 +290,7 @@ export async function planReplyRewrite(options: {
     try {
       liveReview = await fetchSingleReview(
         profile.googleAccountId,
-        review.googleReviewId
+        reviewResourceName(profile.accountResourceName, review.googleReviewKey)
       );
     } catch (err) {
       if (!isReviewNotFound(err)) throw err;
@@ -328,14 +371,15 @@ export async function planReplyRewrite(options: {
       continue;
     }
 
-    const held = healthcareHold(profile, after, review.reviewerName);
-    if (held) {
+    // The generator keeps its reply under Google's limit, but the signature
+    // is added after it.
+    if (Buffer.byteLength(after, "utf8") > GBP_REPLY_MAX_BYTES) {
       plan.skipped.push({
         responseId: row.id,
         googleReviewId: review.googleReviewId,
         reviewerName: review.reviewerName,
-        reason: "HEALTHCARE_PRIVACY",
-        detail: `Fails the healthcare privacy check: ${held}`,
+        reason: "TOO_LONG",
+        detail: `Signed reply is over Google's ${GBP_REPLY_MAX_BYTES}-byte limit`,
       });
       continue;
     }
@@ -385,33 +429,68 @@ export async function applyReplyRewrite(options: {
     drifted: [],
   };
 
-  // The category and phone the gate needs come from the database, not the
-  // plan file, which a person may have edited.
+  // Everything that decides what is checked and where it is published comes
+  // from the database, not the plan file, which a person may have edited (or
+  // mixed up with another profile's: one agency login reaches many
+  // locations). The plan supplies only which replies, and their new text.
   const profile = await prisma.profile.findUnique({
     where: { id: plan.profileId },
-    select: { category: true, phone: true },
+    select: {
+      ...PROFILE_GATE_FIELDS,
+      googleAccountId: true,
+      accountResourceName: true,
+    },
   });
   if (!profile) throw new Error(`Profile ${plan.profileId} not found`);
+  assertRewritable(profile);
 
-  for (const [index, candidate] of plan.candidates.entries()) {
-    const held = healthcareHold(profile, candidate.after, candidate.reviewerName);
-    if (held) {
+  let published = 0;
+  for (const candidate of plan.candidates) {
+    const skip = (reason: SkipReason, detail: string) =>
       result.skipped.push({
         responseId: candidate.responseId,
         googleReviewId: candidate.googleReviewId,
         reviewerName: candidate.reviewerName,
-        reason: "HEALTHCARE_PRIVACY",
-        detail: `Fails the healthcare privacy check: ${held}`,
+        reason,
+        detail,
       });
+
+    const stored = await prisma.reviewResponse.findUnique({
+      where: { id: candidate.responseId },
+      select: {
+        status: true,
+        review: {
+          select: { profileId: true, googleReviewKey: true, removedAt: true },
+        },
+      },
+    });
+    if (
+      !stored ||
+      stored.review.profileId !== plan.profileId ||
+      stored.review.googleReviewKey !== normalizeReviewKey(candidate.googleReviewId)
+    ) {
+      skip("PLAN_MISMATCH", "The plan's reply does not belong to this profile's review");
+      continue;
+    }
+    if (stored.status !== "PUBLISHED" || stored.review.removedAt) {
+      skip("NO_LIVE_REPLY", "No longer a published reply on a live review");
+      continue;
+    }
+    if (Buffer.byteLength(candidate.after, "utf8") > GBP_REPLY_MAX_BYTES) {
+      skip("TOO_LONG", `Over Google's ${GBP_REPLY_MAX_BYTES}-byte limit`);
       continue;
     }
 
-    if (index > 0) await sleep(throttleMs);
+    if (published > 0) await sleep(throttleMs);
+    const resourceName = reviewResourceName(
+      profile.accountResourceName,
+      stored.review.googleReviewKey
+    );
 
     try {
       const liveReview = await fetchSingleReview(
-        plan.googleAccountId,
-        candidate.googleReviewId
+        profile.googleAccountId,
+        resourceName
       );
       const liveReply = liveReview?.reviewReply?.comment;
 
@@ -426,23 +505,29 @@ export async function applyReplyRewrite(options: {
         continue;
       }
 
-      await publishReviewReply(
-        plan.googleAccountId,
-        candidate.googleReviewId,
-        candidate.after
-      );
+      await publishReviewReply(profile.googleAccountId, resourceName, candidate.after);
+      published++;
       result.rewritten++;
 
-      const updated = await prisma.reviewResponse.updateMany({
-        where: {
-          id: candidate.responseId,
-          status: "PUBLISHED",
-          content: candidate.before,
-        },
-        data: { content: candidate.after },
-      });
-
-      if (updated.count === 0) {
+      // Google has the new reply now. A store that fails is drift to report,
+      // not a failed rewrite.
+      let stored = 0;
+      try {
+        const updated = await prisma.reviewResponse.updateMany({
+          where: {
+            id: candidate.responseId,
+            status: "PUBLISHED",
+            content: candidate.before,
+          },
+          data: { content: candidate.after },
+        });
+        stored = updated.count;
+      } catch (err) {
+        log(
+          `Published ${candidate.responseId} but could not store it: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      if (stored === 0) {
         result.drifted.push({
           responseId: candidate.responseId,
           googleReviewId: candidate.googleReviewId,

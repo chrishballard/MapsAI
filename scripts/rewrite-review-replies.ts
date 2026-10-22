@@ -18,29 +18,49 @@
  *
  * Options: --since YYYY-MM-DD (default: every published reply), --limit N
  * (plan a sample first), --save-instructions (also save the persona to the
- * profile so future replies are generated this way).
+ * profile so future replies are generated this way), --out <path> (plan
+ * files, default ~/.mapsai/reply-rewrites/<profileId>: they hold reviewer
+ * names and comments, so not the current directory).
+ *
+ * Unknown or misspelled flags stop the run: `--apply --from plan.json
+ * --dry-run` used to publish every reply.
  *
  * Requires DATABASE_URL, ANTHROPIC_API_KEY, and the GOOGLE_* OAuth vars.
  */
-import { writeFileSync, readFileSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { prisma } from "../src/lib/prisma";
 import {
   planReplyRewrite,
   applyReplyRewrite,
-  OWNER_PERSONA_INSTRUCTIONS,
+  SAVED_PERSONA_INSTRUCTIONS,
   type RewritePlan,
 } from "../src/lib/rewrite-review-replies";
+import { MAX_REVIEW_INSTRUCTIONS_CHARS } from "../src/lib/reviews-enabled";
+import { assertKnownArgs, CliArgError, flagValue, hasFlag } from "./cli-args";
 
-function flag(name: string): string | undefined {
-  const index = process.argv.indexOf(`--${name}`);
-  if (index === -1) return undefined;
-  const value = process.argv[index + 1];
-  return value && !value.startsWith("--") ? value : "";
+const argv = process.argv.slice(2);
+try {
+  assertKnownArgs(argv, {
+    valueFlags: ["profile", "id", "out", "from", "since", "limit"],
+    booleanFlags: ["plan", "apply", "save-instructions"],
+  });
+  if (hasFlag(argv, "plan") && hasFlag(argv, "apply")) {
+    throw new CliArgError("Pass --plan or --apply, not both");
+  }
+  if (hasFlag(argv, "apply") && (hasFlag(argv, "limit") || hasFlag(argv, "since"))) {
+    throw new CliArgError("--limit and --since shape a plan; --apply publishes the plan file as approved");
+  }
+} catch (error) {
+  if (!(error instanceof CliArgError)) throw error;
+  console.error(error.message);
+  console.error("See the header of scripts/rewrite-review-replies.ts for usage.");
+  process.exit(1);
 }
 
-function has(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
+const flag = (name: string) => flagValue(argv, name);
+const has = (name: string) => hasFlag(argv, name);
 
 /**
  * A flag that must be a whole number of 1 or more. `--limit abc` used to
@@ -142,7 +162,8 @@ async function runPlan() {
     limit,
   });
 
-  const out = flag("out") || `./reply-rewrites-${profile.id}`;
+  const out = flag("out") || join(homedir(), ".mapsai", "reply-rewrites", profile.id);
+  mkdirSync(dirname(out), { recursive: true });
   writeFileSync(`${out}.json`, JSON.stringify(plan, null, 2));
   writeFileSync(`${out}.md`, renderMarkdown(plan));
 
@@ -201,14 +222,24 @@ async function saveInstructions(fallbackProfileId?: string) {
     select: { reviewInstructions: true },
   });
 
-  if (existing.reviewInstructions?.includes(OWNER_PERSONA_INSTRUCTIONS)) {
+  // The saved form tells the model to write the signature itself: the review
+  // sync adds nothing after it. (The rewrite's own persona says the opposite,
+  // which is true only inside the rewrite.)
+  if (existing.reviewInstructions?.includes(SAVED_PERSONA_INSTRUCTIONS)) {
     console.log(`${profile.name}: persona instructions already saved.`);
     return;
   }
 
-  const merged = [existing.reviewInstructions?.trim(), OWNER_PERSONA_INSTRUCTIONS]
+  const merged = [existing.reviewInstructions?.trim(), SAVED_PERSONA_INSTRUCTIONS]
     .filter(Boolean)
     .join("\n\n");
+  // The settings page caps instructions at this length, and the responder
+  // reads no more; over it, the persona (last) would lose its signature line.
+  if (merged.length > MAX_REVIEW_INSTRUCTIONS_CHARS) {
+    throw new Error(
+      `${profile.name}: the instructions would be ${merged.length} characters with the persona, over the ${MAX_REVIEW_INSTRUCTIONS_CHARS} limit. Shorten them in Train RankMaps first.`
+    );
+  }
 
   await prisma.profile.update({
     where: { id: profile.id },

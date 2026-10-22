@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
-    reviewResponse: { findMany: vi.fn(), updateMany: vi.fn() },
+    reviewResponse: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   fetchSingleReview: vi.fn(),
@@ -36,6 +36,7 @@ const {
   applySignature,
   mentionsOwnerInThirdPerson,
   OWNER_SIGNATURE,
+  SAVED_PERSONA_INSTRUCTIONS,
 } = await import('@/lib/rewrite-review-replies');
 
 const { ReviewNotFoundError } = await import('@/lib/review-removal');
@@ -46,10 +47,27 @@ const PROFILE = {
   id: 'p1',
   name: 'Badger Gutters',
   category: 'Gutter cleaning service',
+  phone: null as string | null,
   googleAccountId: 'ga1',
+  accountResourceName: 'accounts/117',
   reviewsEnabled: true,
+  isConnected: true,
+  isOnboarded: true,
+  reviewsOnly: false,
   reviewInstructions: null,
 };
+
+/** The stored row the apply phase cross-checks each plan entry against. */
+function storedResponse(overrides: Partial<{ status: string; profileId: string; googleReviewKey: string; removedAt: Date | null }> = {}) {
+  return {
+    status: overrides.status ?? 'PUBLISHED',
+    review: {
+      profileId: overrides.profileId ?? 'p1',
+      googleReviewKey: overrides.googleReviewKey ?? 'locations/171/reviews/AbC1',
+      removedAt: overrides.removedAt ?? null,
+    },
+  };
+}
 
 function responseRow(
   overrides: Partial<{
@@ -82,6 +100,7 @@ function responseRow(
     review: {
       id: reviewId,
       googleReviewId,
+      googleReviewKey: googleReviewId.replace(/^accounts\/[^/]+\//, ''),
       rating,
       reviewerName,
       comment,
@@ -94,6 +113,7 @@ function responseRow(
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.prisma.profile.findUnique.mockResolvedValue(PROFILE);
+  mocks.prisma.reviewResponse.findUnique.mockResolvedValue(storedResponse());
   mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
   mocks.publishReviewReply.mockResolvedValue(undefined);
 });
@@ -480,111 +500,152 @@ describe('removed and missing reviews (U2)', () => {
   });
 });
 
-// U6: the rewrite generates and publishes outside the review sync and the
-// publish worker, so it skipped two things they do. The generator was not
-// given the office phone (healthcare replies point an unhappy reviewer at it),
-// and nothing ran the worker's healthcare privacy check before publishing: a
-// rewrite on a dental profile could confirm a patient or repeat their care in
-// public. The check runs on exactly the signed text that would go out, at
-// plan time and again at apply time (a plan file can be edited between the
-// two). The persona signature has an em dash, which the healthcare rules
-// refuse, so on a healthcare profile this tool holds every rewrite.
-describe('healthcare profiles (U6)', () => {
-  const DENTIST = {
-    ...PROFILE,
-    name: 'Rice Dentistry',
-    category: 'Dentist',
-    phone: '(555) 010-4477',
+// U6 and the review of #27: the rewrite generates and publishes outside the
+// review sync and the publish worker, so it does what they do itself. The
+// generator gets the office phone, and the worker's gates hold: review
+// management on, the profile still served, and on a healthcare profile no
+// reply that fails checkHealthcareReply, which the persona's signature
+// always does (it refuses em dashes), so healthcare profiles are refused
+// outright. The persona is Ben's, so only his business's profiles run. At
+// apply time all of it is read from the database, not the plan file, which
+// a person can edit between the two phases.
+describe('who the rewrite will run for', () => {
+  const planWith = async (profile: Record<string, unknown>) => {
+    mocks.prisma.profile.findUnique.mockResolvedValue({ ...PROFILE, ...profile });
+    mocks.prisma.reviewResponse.findMany.mockResolvedValue([responseRow()]);
+    return planReplyRewrite({ profileId: 'p1', log: silentLog });
   };
 
-  function planOne(generated: string) {
-    mocks.prisma.reviewResponse.findMany.mockResolvedValue([responseRow({ comment: 'Great cleaning.' })]);
+  it('gives the generator the office phone, as the review sync does', async () => {
+    mocks.prisma.reviewResponse.findMany.mockResolvedValue([responseRow()]);
+    mocks.prisma.profile.findUnique.mockResolvedValue({ ...PROFILE, phone: '(704) 555-0100' });
     mocks.fetchSingleReview.mockResolvedValue({
       reviewReply: { comment: responseRow().content, updateTime: '2026-07-01T12:00:00Z' },
     });
-    mocks.generateReviewResponse.mockResolvedValue({
-      response: generated,
-      sentiment: 'positive',
-      tone: 'warm',
-    });
-    return planReplyRewrite({ profileId: 'p1', log: silentLog });
-  }
+    mocks.generateReviewResponse.mockResolvedValue({ response: 'Thanks Dana.', sentiment: 'positive', tone: 'warm' });
 
-  it('gives the generator the office phone, as the review sync does', async () => {
-    mocks.prisma.profile.findUnique.mockResolvedValue(DENTIST);
-    await planOne('Thanks, Dana. We appreciate it.');
+    await planReplyRewrite({ profileId: 'p1', log: silentLog });
 
-    expect(mocks.generateReviewResponse.mock.calls[0][0]).toMatchObject({
-      businessCategory: 'Dentist',
-      businessPhone: '(555) 010-4477',
-    });
+    expect(mocks.generateReviewResponse.mock.calls[0][0]).toMatchObject({ businessPhone: '(704) 555-0100' });
   });
 
-  it('holds a rewrite that fails the privacy check instead of planning it', async () => {
-    mocks.prisma.profile.findUnique.mockResolvedValue(DENTIST);
-    const plan = await planOne('We are honored to have you as a patient, Dana.');
-
-    expect(plan.candidates).toEqual([]);
-    expect(plan.skipped).toEqual([
-      expect.objectContaining({
-        responseId: 'resp1',
-        reason: 'HEALTHCARE_PRIVACY',
-        detail: expect.stringContaining('Implies the reviewer is a patient'),
-      }),
-    ]);
+  it.each([
+    [{ name: 'Rice Dentistry' }, /written for Ben at Badger Gutters/],
+    [{ category: 'Dentist' }, /healthcare business/],
+    [{ reviewsEnabled: false }, /review management turned off/],
+    [{ isConnected: false }, /not connected/],
+    [{ isOnboarded: false, reviewsOnly: false }, /not connected and onboarded/],
+  ])('refuses to plan for %o, before generating anything', async (profile, reason) => {
+    await expect(planWith(profile)).rejects.toThrow(reason);
+    expect(mocks.generateReviewResponse).not.toHaveBeenCalled();
   });
 
-  it('holds even a clean body, because the signature has an em dash', async () => {
-    mocks.prisma.profile.findUnique.mockResolvedValue(DENTIST);
-    const plan = await planOne('Thanks, Dana. We appreciate it.');
-
-    expect(plan.candidates).toEqual([]);
-    expect(plan.skipped[0]).toMatchObject({
-      reason: 'HEALTHCARE_PRIVACY',
-      detail: expect.stringContaining('Uses an em or en dash'),
+  it("plans for Badger's second listing too", async () => {
+    mocks.fetchSingleReview.mockResolvedValue({
+      reviewReply: { comment: responseRow().content, updateTime: '2026-07-01T12:00:00Z' },
     });
-  });
-
-  it('leaves a non-healthcare profile as it was', async () => {
-    const plan = await planOne('Thanks Dana, glad I could help.');
+    mocks.generateReviewResponse.mockResolvedValue({ response: 'Thanks Dana.', sentiment: 'positive', tone: 'warm' });
+    const plan = await planWith({ name: 'Badger Gutters - Charlotte Gutter Installation' });
     expect(plan.candidates).toHaveLength(1);
   });
+});
 
-  it('re-checks at apply time against the profile as stored, and publishes nothing that fails', async () => {
-    mocks.prisma.profile.findUnique.mockResolvedValue(DENTIST);
+describe('applyReplyRewrite trusts the database, not the plan file', () => {
+  function planFile(overrides: Partial<{ googleAccountId: string; googleReviewId: string; after: string }> = {}) {
+    return {
+      profileId: 'p1',
+      profileName: 'Badger Gutters',
+      googleAccountId: overrides.googleAccountId ?? 'ga1',
+      candidates: [
+        {
+          responseId: 'resp1',
+          reviewId: 'rev1',
+          googleReviewId: overrides.googleReviewId ?? 'accounts/117/locations/171/reviews/AbC1',
+          rating: 5,
+          reviewerName: 'Dana',
+          reviewComment: 'Ben did a great job.',
+          publishedAt: '2026-07-01T12:00:00.000Z',
+          before: responseRow().content,
+          after: overrides.after ?? `Thanks Dana, glad I could help.\n\n${OWNER_SIGNATURE}`,
+        },
+      ],
+      skipped: [],
+    };
+  }
+  const apply = (plan: ReturnType<typeof planFile>) =>
+    applyReplyRewrite({ plan, log: silentLog, sleep: async () => {} });
+
+  beforeEach(() => {
     mocks.fetchSingleReview.mockResolvedValue({
       reviewReply: { comment: responseRow().content, updateTime: '2026-07-01T12:00:00Z' },
     });
+  });
 
-    const result = await applyReplyRewrite({
-      plan: {
-        profileId: 'p1',
-        profileName: 'Rice Dentistry',
-        googleAccountId: 'ga1',
-        candidates: [
-          {
-            responseId: 'resp1',
-            reviewId: 'rev1',
-            googleReviewId: 'accounts/117/locations/171/reviews/AbC1',
-            rating: 5,
-            reviewerName: 'Dana',
-            reviewComment: 'Great cleaning.',
-            publishedAt: '2026-07-01T12:00:00.000Z',
-            before: responseRow().content,
-            // Edited into the plan file by hand after planning.
-            after: 'We look forward to seeing you at your next visit, Dana.',
-          },
-        ],
-        skipped: [],
-      },
-      log: silentLog,
-      sleep: async () => {},
-    });
+  it("publishes through the profile's own login and the review's stored key", async () => {
+    await apply(planFile({ googleAccountId: 'ga-from-an-edited-plan' }));
+
+    expect(mocks.fetchSingleReview).toHaveBeenCalledWith('ga1', 'accounts/117/locations/171/reviews/AbC1');
+    expect(mocks.publishReviewReply).toHaveBeenCalledWith(
+      'ga1',
+      'accounts/117/locations/171/reviews/AbC1',
+      expect.any(String)
+    );
+  });
+
+  it.each([
+    ['another profile', storedResponse({ profileId: 'p-dental' })],
+    ['another review', storedResponse({ googleReviewKey: 'locations/171/reviews/Other' })],
+  ])('refuses a reply that belongs to %s', async (_label, stored) => {
+    mocks.prisma.reviewResponse.findUnique.mockResolvedValue(stored);
+
+    const result = await apply(planFile());
 
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
-    expect(result.rewritten).toBe(0);
-    expect(result.skipped).toEqual([
-      expect.objectContaining({ responseId: 'resp1', reason: 'HEALTHCARE_PRIVACY' }),
-    ]);
+    expect(result.skipped[0]).toMatchObject({ reason: 'PLAN_MISMATCH' });
+  });
+
+  it('refuses a reply no longer published, or on a removed review', async () => {
+    mocks.prisma.reviewResponse.findUnique
+      .mockResolvedValueOnce(storedResponse({ status: 'DRAFTED' }))
+      .mockResolvedValueOnce(storedResponse({ removedAt: new Date('2026-10-01T00:00:00Z') }));
+
+    const one = await apply(planFile());
+    const two = await apply(planFile());
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect([one.skipped[0].reason, two.skipped[0].reason]).toEqual(['NO_LIVE_REPLY', 'NO_LIVE_REPLY']);
+  });
+
+  it('refuses the whole run when the stored profile is healthcare, whatever the plan says', async () => {
+    mocks.prisma.profile.findUnique.mockResolvedValue({ ...PROFILE, category: 'Dentist' });
+
+    await expect(apply(planFile())).rejects.toThrow(/healthcare business/);
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reply edited past Google\'s length limit', async () => {
+    const result = await apply(planFile({ after: 'x'.repeat(5000) }));
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(result.skipped[0]).toMatchObject({ reason: 'TOO_LONG' });
+  });
+
+  it('reports a store failure after publishing as drift, not as a failed rewrite', async () => {
+    mocks.prisma.reviewResponse.updateMany.mockRejectedValue(new Error('db down'));
+
+    const result = await apply(planFile());
+
+    expect(result.rewritten).toBe(1);
+    expect(result.failed).toEqual([]);
+    expect(result.drifted).toEqual([expect.objectContaining({ responseId: 'resp1' })]);
+  });
+});
+
+describe('SAVED_PERSONA_INSTRUCTIONS', () => {
+  // Saved to the profile, these drive the review sync, which adds no
+  // signature afterwards: they must tell the model to write it.
+  it('asks for the signature and never says it is added automatically', () => {
+    expect(SAVED_PERSONA_INSTRUCTIONS).toContain(OWNER_SIGNATURE);
+    expect(SAVED_PERSONA_INSTRUCTIONS).not.toMatch(/added automatically/i);
   });
 });
