@@ -17,6 +17,7 @@ import {
   replyPublishedBetween,
   sumDailyMetricsByDate,
   onDays,
+  reportScope,
   lastReportedDay,
   REPORTING_LAG_DAYS,
 } from "@/lib/report-metrics";
@@ -226,7 +227,7 @@ export async function generateDashboardReport(
         select: { name: true, address: true, category: true },
       })
     : null;
-  const profileFilter = profileId ? { profileId } : {};
+  const profileFilter = reportScope(profileId);
 
   // 2. Fetch current period DailyMetrics
   const currentDailyMetrics = await prisma.dailyMetric.findMany({
@@ -305,7 +306,7 @@ export async function generateDashboardReport(
       where: {
         status: "PUBLISHED",
         ...replyPublishedBetween(from, to),
-        ...(profileId ? { review: { profileId } } : {}),
+        review: reportScope(profileId),
       },
       select: {
         id: true,

@@ -217,6 +217,19 @@ export function onDays(from: Date, to: Date) {
 }
 
 /**
+ * The rows a report covers: one profile, or for "All Profiles" every
+ * onboarded profile, the ones the reports page offers. The metrics sync reads
+ * every connected location the agency's logins can see, about 225 of them
+ * never onboarded (not clients): summed in, they made September 2026 read
+ * 503k impressions where the 100 onboarded clients had 163k. For a model
+ * with a `profile` relation (DailyMetric, Post, ProfileDescription); a
+ * ReviewResponse takes it under `review`.
+ */
+export function reportScope(profileId: string | null) {
+  return profileId ? { profileId } : { profile: { isOnboarded: true } };
+}
+
+/**
  * ReviewResponse `where` for replies that went live on the days from..to, by
  * the same rule buildActionsLog dates them with: publishedAt, or createdAt
  * for a published row that has no publishedAt.

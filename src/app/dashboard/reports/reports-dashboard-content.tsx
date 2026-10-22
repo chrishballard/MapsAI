@@ -11,6 +11,7 @@ import {
   replyPublishedBetween,
   sumDailyMetricsByDate,
   onDays,
+  reportScope,
 } from "@/lib/report-metrics";
 import { ViewsOnGoogleChart } from "./views-on-google-chart";
 import { MetricSparkCard } from "./metric-spark-card";
@@ -46,7 +47,7 @@ export async function ReportsDashboardContent({
   const toDate = new Date(to + "T00:00:00Z");
   const { priorFrom, priorTo } = computePriorPeriod(fromDate, toDate);
 
-  const profileFilter = profileId ? { profileId } : {};
+  const profileFilter = reportScope(profileId);
 
   // Fetch all data in parallel
   const [currentMetrics, priorMetrics, posts, responses, descriptions, profile] =
@@ -72,7 +73,7 @@ export async function ReportsDashboardContent({
         where: {
           status: "PUBLISHED",
           ...replyPublishedBetween(fromDate, toDate),
-          ...(profileId ? { review: { profileId } } : {}),
+          review: reportScope(profileId),
         },
         include: { review: { include: { profile: { select: { name: true } } } } },
       }),

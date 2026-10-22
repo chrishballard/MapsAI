@@ -103,6 +103,37 @@ describe('ReportsDashboardContent: All Profiles charts', () => {
   });
 });
 
+// The metrics sync reads every connected location the agency's logins can
+// see, about 225 of them never onboarded (not clients). Summed into "All
+// Profiles" they made September 2026 read 503k impressions where the 100
+// onboarded clients had 163k. All Profiles means the profiles the page
+// offers: onboarded ones.
+describe('ReportsDashboardContent: All Profiles means onboarded profiles', () => {
+  it('scopes every query to onboarded profiles', async () => {
+    await ReportsDashboardContent({ profileId: null, from: '2026-09-01', to: '2026-09-30' });
+
+    const onboarded = { profile: { isOnboarded: true } };
+    for (const [args] of mocks.prisma.dailyMetric.findMany.mock.calls) {
+      expect(args.where).toMatchObject(onboarded);
+    }
+    expect(mocks.prisma.dailyMetric.findMany).toHaveBeenCalledTimes(2);
+    expect(mocks.prisma.post.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.profileDescription.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.reviewResponse.findMany.mock.calls[0][0].where).toMatchObject({
+      review: onboarded,
+    });
+  });
+
+  it('still scopes to the one profile when one is picked', async () => {
+    await ReportsDashboardContent({ profileId: 'p1', from: '2026-09-01', to: '2026-09-30' });
+
+    expect(mocks.prisma.dailyMetric.findMany.mock.calls[0][0].where).toMatchObject({ profileId: 'p1' });
+    expect(mocks.prisma.reviewResponse.findMany.mock.calls[0][0].where).toMatchObject({
+      review: { profileId: 'p1' },
+    });
+  });
+});
+
 describe('ReportsDashboardContent: the whole last day counts', () => {
   it('queries posts, replies and descriptions up to midnight after the last day', async () => {
     await ReportsDashboardContent({ profileId: 'p1', from: '2026-03-01', to: '2026-03-31' });

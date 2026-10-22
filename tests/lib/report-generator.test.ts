@@ -389,6 +389,25 @@ describe('generateReport: the whole last day counts', () => {
   });
 });
 
+describe('generateDashboardReport: All Profiles means onboarded profiles', () => {
+  // ~225 connected locations were never onboarded; summed in they tripled
+  // the agency-wide impressions.
+  it('scopes every query to onboarded profiles', async () => {
+    await generateDashboardReport(null, utc('2026-09-01'), utc('2026-09-30'), null);
+
+    const onboarded = { profile: { isOnboarded: true } };
+    expect(mocks.prisma.dailyMetric.findMany).toHaveBeenCalledTimes(2);
+    for (const [args] of mocks.prisma.dailyMetric.findMany.mock.calls) {
+      expect(args.where).toMatchObject(onboarded);
+    }
+    expect(mocks.prisma.post.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.profileDescription.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.reviewResponse.findMany.mock.calls[0][0].where).toMatchObject({
+      review: onboarded,
+    });
+  });
+});
+
 describe('generateDashboardReport: the whole last day counts', () => {
   it('queries posts and descriptions up to midnight after the last day', async () => {
     await generateDashboardReport('p1', utc('2026-03-01'), utc('2026-03-31'), null);
