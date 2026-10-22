@@ -12,6 +12,7 @@ import {
   sumDailyMetricsByDate,
   onDays,
   reportScope,
+  reportedPart,
 } from "@/lib/report-metrics";
 import { ViewsOnGoogleChart } from "./views-on-google-chart";
 import { MetricSparkCard } from "./metric-spark-card";
@@ -19,7 +20,7 @@ import { ActionsLog } from "./actions-log";
 import { ExecutiveSummary } from "./executive-summary";
 import { cn } from "@/lib/utils";
 import { DashboardDownloadBtn } from "./dashboard-download-btn";
-import { formatDateISO } from "@/lib/dates";
+import { formatDateISO, formatMediumDateUTC } from "@/lib/dates";
 
 interface ReportsDashboardContentProps {
   profileId: string | null;
@@ -45,19 +46,15 @@ export async function ReportsDashboardContent({
   // Date parsing — UTC per Phase 18 convention
   const fromDate = new Date(from + "T00:00:00Z");
   const toDate = new Date(to + "T00:00:00Z");
-  const { priorFrom, priorTo } = computePriorPeriod(fromDate, toDate);
 
   const profileFilter = reportScope(profileId);
 
-  // Fetch all data in parallel
-  const [currentMetrics, priorMetrics, posts, responses, descriptions, profile] =
+  // Fetch all data in parallel; the prior period follows, once it is known
+  // how much of this one Google has reported
+  const [currentMetrics, posts, responses, descriptions, profile] =
     await Promise.all([
       prisma.dailyMetric.findMany({
         where: { ...profileFilter, date: { gte: fromDate, lte: toDate } },
-        orderBy: { date: "asc" },
-      }),
-      prisma.dailyMetric.findMany({
-        where: { ...profileFilter, date: { gte: priorFrom, lte: priorTo } },
         orderBy: { date: "asc" },
       }),
       prisma.post.findMany({
@@ -92,7 +89,21 @@ export async function ReportsDashboardContent({
         : null,
     ]);
 
-  // Compute aggregated metrics
+  // One point per day: across all profiles there is a row per profile per
+  // day, and the charts want the day's total (as the PDF draws them). Only
+  // the days Google has reported are charted and compared: see reportedPart.
+  const { days: dailyTotals, compareTo, reportedThrough } = reportedPart(
+    sumDailyMetricsByDate(currentMetrics),
+    toDate
+  );
+  const { priorFrom, priorTo } = computePriorPeriod(fromDate, compareTo);
+  const priorMetrics = await prisma.dailyMetric.findMany({
+    where: { ...profileFilter, date: { gte: priorFrom, lte: priorTo } },
+    orderBy: { date: "asc" },
+  });
+
+  // Compute aggregated metrics (the unreported days are zeros, so the
+  // current totals are the same either way)
   const current = aggregateDailyMetrics(currentMetrics);
   const prior = aggregateDailyMetrics(priorMetrics);
 
@@ -101,10 +112,6 @@ export async function ReportsDashboardContent({
   const callsPct = computePctChange(current.callClicks, prior.callClicks);
   const clicksPct = computePctChange(current.websiteClicks, prior.websiteClicks);
   const directionsPct = computePctChange(current.directionRequests, prior.directionRequests);
-
-  // One point per day: across all profiles there is a row per profile per
-  // day, and the charts want the day's total (as the PDF draws them).
-  const dailyTotals = sumDailyMetricsByDate(currentMetrics);
 
   // Sparkline data
   const callsSparkData = computeSparklineData(dailyTotals, "callClicks");
@@ -124,7 +131,12 @@ export async function ReportsDashboardContent({
   return (
     <div className="space-y-6">
       {/* Download PDF button — passes current date range and null narrative (per D-19, D-20) */}
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-zinc-500">
+          {reportedThrough
+            ? `Google data through ${formatMediumDateUTC(reportedThrough)}. Google posts performance a few days late, so comparisons use the same number of days before ${formatMediumDateUTC(fromDate)}.`
+            : null}
+        </p>
         <DashboardDownloadBtn
           profileId={profileId}
           from={from}

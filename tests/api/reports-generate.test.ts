@@ -197,3 +197,17 @@ describe('POST /api/reports/generate: one Report per profile and month', () => {
     expect(renderedInTransaction).toBe(false);
   });
 });
+
+// "All Profiles" in the generate form ran the bulk path over every connected
+// Profile row: about 325 PDFs and Report rows, ~225 of them for locations
+// that are not clients (the logins see every location in the agency's
+// groups). It is the profiles the form lists: connected and onboarded.
+describe('POST /api/reports/generate: All Profiles', () => {
+  it('generates for onboarded, connected profiles only', async () => {
+    await POST(generateRequest({ month: '2026-09' }));
+
+    expect(mocks.prisma.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { isConnected: true, isOnboarded: true } })
+    );
+  });
+});

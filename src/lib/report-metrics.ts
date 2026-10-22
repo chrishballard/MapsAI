@@ -159,6 +159,19 @@ export function sumDailyMetricsByDate(
  */
 export const REPORTING_LAG_DAYS = 5;
 
+/** A DailyMetric `where` for a day Google has reported: any count above zero. */
+export const REPORTED_DAY = {
+  OR: [
+    { impressionsSearchDesktop: { gt: 0 } },
+    { impressionsSearchMobile: { gt: 0 } },
+    { impressionsMapsDesktop: { gt: 0 } },
+    { impressionsMapsMobile: { gt: 0 } },
+    { websiteClicks: { gt: 0 } },
+    { callClicks: { gt: 0 } },
+    { directionRequests: { gt: 0 } },
+  ],
+};
+
 /**
  * The newest day with any count in it, or null. The trailing all-zero rows
  * are days Google hasn't reported yet, not days with no activity.
@@ -176,6 +189,29 @@ export function lastReportedDay(metrics: DailyMetricCounts[]): Date | null {
       0
   );
   return reported?.date ?? null;
+}
+
+/**
+ * The part of a range Google has reported, from its per-day totals. A range
+ * ending today (the dashboard's default) ends in the zero rows the sync
+ * stores for days Google hasn't posted yet, while the period before it is
+ * fully reported, so every "vs prior period" figure leaned negative. Compare
+ * up to `compareTo` (the last reported day when that is before `to`), chart
+ * `days`, and say "data through `reportedThrough`" when it is set.
+ */
+export function reportedPart(
+  dailyTotals: DailyMetricCounts[],
+  to: Date
+): { days: DailyMetricCounts[]; compareTo: Date; reportedThrough: Date | null } {
+  const last = lastReportedDay(dailyTotals);
+  if (!last || last.getTime() >= to.getTime()) {
+    return { days: dailyTotals, compareTo: to, reportedThrough: null };
+  }
+  return {
+    days: dailyTotals.filter((m) => m.date.getTime() <= last.getTime()),
+    compareTo: last,
+    reportedThrough: last,
+  };
 }
 
 /**
@@ -218,12 +254,18 @@ export function onDays(from: Date, to: Date) {
 
 /**
  * The rows a report covers: one profile, or for "All Profiles" every
- * onboarded profile, the ones the reports page offers. The metrics sync reads
- * every connected location the agency's logins can see, about 225 of them
- * never onboarded (not clients): summed in, they made September 2026 read
- * 503k impressions where the 100 onboarded clients had 163k. For a model
- * with a `profile` relation (DailyMetric, Post, ProfileDescription); a
- * ReviewResponse takes it under `review`.
+ * onboarded profile. The metrics sync reads every connected location the
+ * agency's logins can see, about 225 of them never onboarded (not clients):
+ * summed in, they made September 2026 read 503k impressions where the 100
+ * onboarded clients had 163k. For a model with a `profile` relation
+ * (DailyMetric, Post, ProfileDescription); a ReviewResponse takes it under
+ * `review`.
+ *
+ * Onboarded, connected or not: a disconnected client's past months still
+ * count. The trade-off is that "onboarded" is today's roster, with no record
+ * of when a client joined or left: an offboarded client's history drops out
+ * of every past total, and reviews-only profiles (not onboarded) are left
+ * out though the business selector lists them.
  */
 export function reportScope(profileId: string | null) {
   return profileId ? { profileId } : { profile: { isOnboarded: true } };

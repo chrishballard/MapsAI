@@ -18,7 +18,9 @@ import {
   sumDailyMetricsByDate,
   onDays,
   reportScope,
+  reportedPart,
   lastReportedDay,
+  REPORTED_DAY,
   REPORTING_LAG_DAYS,
 } from "@/lib/report-metrics";
 import {
@@ -145,8 +147,41 @@ export async function generateReport(
     },
   });
 
-  // 8. Generate chart PNG
-  const chartData = currentDailyMetrics.map((m) => ({
+  // 8. Is the month complete? A month that hasn't ended is month-to-date,
+  // and against a whole previous month every comparison reads as a drop. So
+  // is a finished month whose last days Google hasn't reported: the generate
+  // route defaults to last month, usually run in the first days of the next
+  // one. A finished month is complete once its last day has data, or once
+  // Google has reported any later day (it reports days in order, so the
+  // empty days before that really were empty). Not on a calendar rule: Google
+  // running late, or a profile whose sync stopped, would otherwise show the
+  // missing days as a drop. "As of" is the last day Google has reported, not
+  // the day the report was generated.
+  const now = new Date();
+  const lastDayWithData = lastReportedDay(currentDailyMetrics);
+  const inProgress = curStart.getTime() >= getMonthStart(now).getTime();
+  let unfinished = false;
+  if (!inProgress && (lastDayWithData === null || lastDayWithData < curEnd)) {
+    const reportedLater = await prisma.dailyMetric.findFirst({
+      where: { profileId, date: { gt: curEnd }, ...REPORTED_DAY },
+      select: { id: true },
+    });
+    unfinished = reportedLater === null;
+  }
+  // Within two lag periods the rest is probably on its way; after that the
+  // sync has likely stopped for this profile, so the PDF makes no promise.
+  const finalSoon =
+    unfinished &&
+    now.getTime() - curEnd.getTime() < 2 * REPORTING_LAG_DAYS * 86_400_000;
+  const partial = inProgress || unfinished;
+
+  // 9. Generate chart PNG, without the zero rows of days Google hasn't
+  // reported (they draw a cliff at the end of a partial month)
+  const chartRows =
+    partial && lastDayWithData
+      ? currentDailyMetrics.filter((m) => m.date <= lastDayWithData)
+      : currentDailyMetrics;
+  const chartData = chartRows.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
@@ -162,33 +197,19 @@ export async function generateReport(
     }
   }
 
-  // 9. Build report data
-  // A month that hasn't ended is month-to-date, and against a whole previous
-  // month every comparison reads as a drop. So is a month that just ended
-  // while Google is still posting its last days: the generate route defaults
-  // to last month, usually run in the first days of the next one. Either way
-  // the PDF labels it partial and leaves the comparison out. "As of" is the
-  // last day Google has reported, not the day the report was generated.
-  const now = new Date();
-  const lastDayWithData = lastReportedDay(currentDailyMetrics);
-  const inProgress = curStart.getTime() >= getMonthStart(now).getTime();
-  const stillArriving =
-    !inProgress &&
-    now.getTime() - curEnd.getTime() < (REPORTING_LAG_DAYS + 1) * 86_400_000 &&
-    (lastDayWithData === null || lastDayWithData.getTime() < curEnd.getTime());
-
+  // 10. Build report data
   const reportData: ReportData = {
     businessName: profile.name,
     address: profile.address,
     category: profile.category,
     month: formatMonthLabel(month),
-    partialMonth:
-      inProgress || stillArriving
-        ? {
-            asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null,
-            ended: stillArriving,
-          }
-        : null,
+    partialMonth: partial
+      ? {
+          asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null,
+          ended: unfinished,
+          finalSoon,
+        }
+      : null,
     currentMetrics,
     previousMetrics,
     chartImageUri,
@@ -202,7 +223,7 @@ export async function generateReport(
     postsCount,
   };
 
-  // 10. Render PDF
+  // 11. Render PDF
   // ReportDocument renders a react-pdf <Document> at its root, but its own props
   // ({ data }) share nothing with DocumentProps, so the element type needs forcing.
   const pdfBuffer = await renderToBuffer(
@@ -235,8 +256,15 @@ export async function generateDashboardReport(
     orderBy: { date: "asc" },
   });
 
-  // 3. Fetch prior period
-  const { priorFrom, priorTo } = computePriorPeriod(from, to);
+  // 3. One point per day: without a profile filter there is a row per
+  // profile per day, and the charts want the day's total. Only the days
+  // Google has reported are charted and compared (see reportedPart), so the
+  // prior period is as many days before `from`.
+  const { days: dailyTotals, compareTo, reportedThrough } = reportedPart(
+    sumDailyMetricsByDate(currentDailyMetrics),
+    to
+  );
+  const { priorFrom, priorTo } = computePriorPeriod(from, compareTo);
   const priorDailyMetrics = await prisma.dailyMetric.findMany({
     where: { ...profileFilter, date: { gte: priorFrom, lte: priorTo } },
   });
@@ -246,9 +274,6 @@ export async function generateDashboardReport(
   const prior = aggregateDailyMetrics(priorDailyMetrics);
 
   // 5. Build chart data for impressions chart
-  // One point per day: without a profile filter there is a row per profile
-  // per day, and the chart wants the day's total.
-  const dailyTotals = sumDailyMetricsByDate(currentDailyMetrics);
   const chartData = dailyTotals.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
@@ -335,7 +360,9 @@ export async function generateDashboardReport(
   }));
 
   // 8. Format period label
-  const periodLabel = `${formatMediumDateUTC(from)} - ${formatMediumDateUTC(to)}`;
+  const periodLabel =
+    `${formatMediumDateUTC(from)} - ${formatMediumDateUTC(to)}` +
+    (reportedThrough ? ` (Google data through ${formatMediumDateUTC(reportedThrough)})` : "");
 
   // 9. Build report data
   const reportData: DashboardReportData = {

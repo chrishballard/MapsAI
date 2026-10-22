@@ -21,6 +21,7 @@
  *   metrics-window.ts reads `until`.
  */
 import { formatLocalDate } from "./metrics-window";
+import { REPORTING_LAG_DAYS } from "../src/lib/report-metrics";
 
 export interface DailyMetricRow {
   date: Date;
@@ -85,12 +86,10 @@ const BASELINE_TARGET = 4;
  */
 const FULL_MONTH_SHARE = 0.9;
 
-/**
- * Google posts performance numbers a few days late, and the metrics sync
- * stores a row of zeros for a day it hasn't reported yet. So a month that
- * ended this recently can look fully synced and still read low.
- */
-const REPORTING_LAG_DAYS = 5;
+// Google posts performance numbers a few days late, and the metrics sync
+// stores a row of zeros for a day it hasn't reported yet. So a month that
+// ended within REPORTING_LAG_DAYS can look fully synced and still read low.
+// Shared with the PDF reports.
 const DAY_MS = 86_400_000;
 
 function addMonths(d: Date, n: number): Date {

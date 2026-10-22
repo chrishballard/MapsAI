@@ -43,9 +43,11 @@ export async function POST(request: NextRequest) {
       }
       profiles = [profile];
     } else {
-      // Bulk: all connected profiles
+      // Bulk: the profiles the form lists, connected and onboarded. Every
+      // connected row included ~225 locations that are not clients (the
+      // logins see every location in the agency's groups).
       profiles = await prisma.profile.findMany({
-        where: { isConnected: true },
+        where: { isConnected: true, isOnboarded: true },
         select: { id: true, name: true },
       });
     }

@@ -189,10 +189,12 @@ export interface ReportData {
   category: string | null;
   month: string; // "March 2026"
   // Set when the month's numbers aren't complete: it hasn't ended, or it
-  // ended (ended: true) but Google hasn't posted its last days yet. The
-  // header says so and the month-over-month comparison is left out. asOf is
-  // the last day with performance data ("Oct 19, 2026"), null when none yet.
-  partialMonth: { asOf: string | null; ended: boolean } | null;
+  // ended (ended: true) but Google hasn't reported its last days. The header
+  // says so and the month-over-month comparison is left out. asOf is the last
+  // day with performance data ("Oct 19, 2026"), null when there is none.
+  // finalSoon: the month ended recently enough that the rest is probably on
+  // its way; otherwise the sync has likely stopped and nothing is promised.
+  partialMonth: { asOf: string | null; ended: boolean; finalSoon: boolean } | null;
   currentMetrics: {
     totalImpressions: number;
     websiteClicks: number;
@@ -441,9 +443,14 @@ export function DashboardReportDocument({
 
 function partialMonthNote(partial: NonNullable<ReportData["partialMonth"]>): string {
   if (partial.ended) {
-    return partial.asOf
-      ? `Google data through ${partial.asOf}; final numbers in a few days`
-      : "Google has not posted this month's data yet";
+    if (partial.asOf) {
+      return `Google data through ${partial.asOf}; ${
+        partial.finalSoon ? "final numbers in a few days" : "nothing later has synced"
+      }`;
+    }
+    return partial.finalSoon
+      ? "Google has not posted this month's data yet"
+      : "no Google data has synced for this month";
   }
   return partial.asOf ? `partial month, as of ${partial.asOf}` : "partial month, no data yet";
 }
@@ -454,7 +461,11 @@ export function ReportDocument({ data }: { data: ReportData }) {
   const change = (current: number, previous: number) =>
     data.partialMonth
       ? {
-          text: data.partialMonth.ended ? "Data still arriving" : "Month in progress",
+          text: !data.partialMonth.ended
+            ? "Month in progress"
+            : data.partialMonth.finalSoon
+              ? "Data still arriving"
+              : "Incomplete data",
           style: styles.changeNeutral,
         }
       : formatChange(current, previous);

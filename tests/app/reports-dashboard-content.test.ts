@@ -146,3 +146,40 @@ describe('ReportsDashboardContent: the whole last day counts', () => {
     });
   });
 });
+
+/** Every string in the returned tree, joined. */
+function textOf(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  const el = node as ReactElement<{ children?: ReactNode }>;
+  return textOf(el.props?.children);
+}
+
+// Google posts performance numbers a few days late, and the sync stores zero
+// rows for the days it hasn't reported. The default range ends today, so it
+// ended in those zeros while the prior period was fully reported: every "vs
+// prior period" figure (and the AI summary built on them) leaned negative.
+describe('ReportsDashboardContent: days Google has not reported yet', () => {
+  beforeEach(() => {
+    const days = Array.from({ length: 10 }, (_, i) =>
+      metricRow('p1', `2026-03-${String(i + 1).padStart(2, '0')}`, i < 7 ? 3 : 0)
+    );
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(days).mockResolvedValueOnce([]);
+  });
+
+  it('compares the reported days with as many days before the range', async () => {
+    await ReportsDashboardContent({ profileId: 'p1', from: '2026-03-01', to: '2026-03-10' });
+
+    const prior = mocks.prisma.dailyMetric.findMany.mock.calls[1][0];
+    expect(prior.where.date).toEqual({ gte: utc('2026-02-22'), lte: utc('2026-02-28') });
+  });
+
+  it('charts the reported days only and says how far the data goes', async () => {
+    const tree = await ReportsDashboardContent({ profileId: 'p1', from: '2026-03-01', to: '2026-03-10' });
+
+    const [chart] = elementsOf(tree, 'ViewsOnGoogleChart');
+    expect((chart.props.data as unknown[]).length).toBe(7);
+    expect(textOf(tree)).toContain('Google data through Mar 7, 2026');
+  });
+});
