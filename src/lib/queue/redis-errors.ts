@@ -111,15 +111,19 @@ function isConnection(value: unknown): value is Connection {
  * BullMQ wraps each ioredis client in a RedisConnection (a Worker has two:
  * `connection` and `blockingConnection`) that passes the client's errors on
  * to the Queue or Worker. Its close() removes every listener, yet one that
- * never got through to Redis fails once more after that: when its socket
- * closes, it rejects with its last error and emits that as 'error' to
- * nobody. emit('error') with no listener throws, here inside a promise
- * callback, so it becomes an unhandled rejection and Node ends the process.
- * In production that is workers/index.ts closing its Workers on SIGTERM
- * while Redis is refusing the password or can't be reached.
+ * never got through to Redis can fail once more after that: if a socket was
+ * open at close(), then once it closes the connection rejects with its last
+ * error and emits that as 'error' to nobody. emit('error') with no listener
+ * throws, here inside a promise callback, so it becomes an unhandled
+ * rejection, and Node ends a process on one. That is what made
+ * tests/lib/redis-errors.test.ts fail now and then. In production it takes
+ * a worker process that started while Redis refused the password or was
+ * unreachable, and a SIGTERM that lands mid-handshake while another part of
+ * the shutdown is still waiting on Redis (otherwise process.exit wins).
  *
- * So an error the connection would throw comes to `onError` instead. It is
- * the error already logged when it happened, so the WeakSet drops it.
+ * So an error the connection would throw comes to `onError` instead.
+ * Usually it is the error already logged when it happened, and the WeakSet
+ * drops it.
  */
 function keepClosedConnectionsQuiet(
   owner: object,

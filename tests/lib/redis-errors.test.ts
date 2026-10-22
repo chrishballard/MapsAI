@@ -63,6 +63,7 @@ function countCommands(chunk: string): number {
 async function fakeRedis(initial: 'accepting' | 'refusing') {
   let mode: 'accepting' | 'refusing' | 'silent' = initial;
   const sockets = new Set<net.Socket>();
+  const answered = new WeakSet<net.Socket>();
   const waiting = new Set<net.Socket>();
   const server = net.createServer((socket) => {
     sockets.add(socket);
@@ -74,9 +75,11 @@ async function fakeRedis(initial: 'accepting' | 'refusing') {
     socket.on('data', (data) => {
       const text = data.toString();
       if (mode === 'silent') {
-        waiting.add(socket);
+        // A socket refused just before silence() is about to close.
+        if (!answered.has(socket)) waiting.add(socket);
         return;
       }
+      answered.add(socket);
       if (mode === 'refusing') {
         const n = Math.max(countCommands(text), 1);
         socket.write(
@@ -107,7 +110,7 @@ async function fakeRedis(initial: 'accepting' | 'refusing') {
     silence() {
       mode = 'silent';
     },
-    /** Open connections that sent a command and got no answer. */
+    /** Open connections that sent commands and never got an answer. */
     get waiting() {
       return waiting.size;
     },
