@@ -176,3 +176,52 @@ describe('library uploads pushed to the listing', () => {
     expect(mocks.prisma.profileImage.deleteMany).not.toHaveBeenCalled();
   });
 });
+
+// A media item's resource name carries the account it was read through
+// (accounts/{account}/locations/{location}/media/{id}), and that segment
+// changes when the profile's accountResourceName does: a location moved to
+// another group, or a login taking over a location another login lost.
+// Matched on the full name, every photo then looked new and every row stale,
+// and the library was deleted and re-imported: captions, usage history and
+// the public links scheduled posts point at, all gone.
+describe('a profile whose account segment changed', () => {
+  const OLD = 'accounts/1/locations/2/media/m1';
+  const NEW = 'accounts/9/locations/2/media/m1';
+
+  beforeEach(() => {
+    mocks.prisma.profile.findUniqueOrThrow.mockResolvedValue({
+      id: 'p1',
+      googleAccountId: 'ga2',
+      accountResourceName: 'accounts/9',
+      locationName: 'locations/2',
+    });
+  });
+
+  it('keeps each row and records the name Google uses now', async () => {
+    mocks.prisma.profileImage.findMany.mockResolvedValue([gbpRow({ googleMediaName: OLD })]);
+    googleReturns([photo({ name: NEW })]);
+
+    const result = await syncProfileMediaToLibrary('p1');
+
+    expect(mocks.prisma.profileImage.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.profileImage.createMany).not.toHaveBeenCalled();
+    expect(result.removed).toBe(0);
+    expect(mocks.prisma.profileImage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'row1' },
+        data: expect.objectContaining({ googleMediaName: NEW }),
+      })
+    );
+  });
+
+  it("still recognizes the listing's copy of an upload pushed under the old account", async () => {
+    mocks.prisma.profileImage.findMany.mockResolvedValue([
+      { ...gbpRow({ id: 'upload1', googleMediaName: OLD }), source: 'CLIENT' },
+    ]);
+    googleReturns([photo({ name: NEW })]);
+
+    await syncProfileMediaToLibrary('p1');
+
+    expect(mocks.prisma.profileImage.createMany).not.toHaveBeenCalled();
+  });
+});

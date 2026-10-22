@@ -57,6 +57,16 @@ function listing(byAccount: Record<string, string[]>) {
   }));
 }
 
+/**
+ * The connected profiles the sweep finds unlisted. The per-location lookup
+ * (is this location stored under another login?) finds nothing.
+ */
+function missingProfiles(rows: Array<Record<string, unknown>>) {
+  mocks.findMany.mockImplementation(async ({ where }: { where: { locationName?: string } }) =>
+    where.locationName ? [] : rows
+  );
+}
+
 /** The ids the sweep set isConnected:false on, across every updateMany. */
 function disconnectedIds(): string[] {
   return mocks.updateMany.mock.calls
@@ -83,7 +93,7 @@ function googleError(status: number) {
 describe('syncLocationsForAccount disconnect sweep', () => {
   it('disconnects a profile Google stopped listing when the listing came back', async () => {
     listing({ 'accounts/1': ['locations/kept'] });
-    mocks.findMany.mockResolvedValue([
+    missingProfiles([
       { id: 'p-gone', accountResourceName: 'accounts/1' },
     ]);
 
@@ -103,7 +113,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
 
   it('disconnects nothing when Google lists no accounts at all', async () => {
     listing({});
-    mocks.findMany.mockResolvedValue([
+    missingProfiles([
       { id: 'p-a', accountResourceName: 'accounts/1' },
       { id: 'p-b', accountResourceName: 'accounts/2' },
     ]);
@@ -117,7 +127,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
     // The personal account answers, the location groups holding the
     // profiles are missing: still an empty listing for this login.
     listing({ 'accounts/personal': [] });
-    mocks.findMany.mockResolvedValue([
+    missingProfiles([
       { id: 'p-a', accountResourceName: 'accounts/1' },
     ]);
 
@@ -128,7 +138,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
 
   it("keeps a location group's profiles when that group comes back empty", async () => {
     listing({ 'accounts/1': ['locations/kept'], 'accounts/2': [] });
-    mocks.findMany.mockResolvedValue([
+    missingProfiles([
       { id: 'p-gone', accountResourceName: 'accounts/1' },
       { id: 'p-in-empty-group', accountResourceName: 'accounts/2' },
     ]);
@@ -143,7 +153,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
   it('disconnects nothing when a page of the listing fails', async () => {
     listing({ 'accounts/1': ['locations/kept'] });
     mocks.locationsList.mockRejectedValueOnce(new Error('backend error'));
-    mocks.findMany.mockResolvedValue([
+    missingProfiles([
       { id: 'p-gone', accountResourceName: 'accounts/1' },
     ]);
 
@@ -163,7 +173,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
     });
 
     it.each([404, 403])('disconnects one whose location read answers %i', async (status) => {
-      mocks.findMany.mockResolvedValue([
+      missingProfiles([
         { id: 'p-left', accountResourceName: 'accounts/2', locationName: 'locations/left' },
       ]);
       mocks.locationsGet.mockRejectedValue(googleError(status));
@@ -177,7 +187,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
     });
 
     it('keeps one whose location Google still returns', async () => {
-      mocks.findMany.mockResolvedValue([
+      missingProfiles([
         { id: 'p-here', accountResourceName: 'accounts/2', locationName: 'locations/here' },
       ]);
 
@@ -187,7 +197,7 @@ describe('syncLocationsForAccount disconnect sweep', () => {
     });
 
     it('keeps one when the read fails for any other reason', async () => {
-      mocks.findMany.mockResolvedValue([
+      missingProfiles([
         { id: 'p-here', accountResourceName: 'accounts/2', locationName: 'locations/here' },
       ]);
       mocks.locationsGet.mockRejectedValue(googleError(503));
@@ -197,9 +207,36 @@ describe('syncLocationsForAccount disconnect sweep', () => {
       expect(disconnectedIds()).toEqual([]);
     });
 
+    // accounts.list itself can leave a location group out (a transient
+    // omission, or the login's access to that group changing). Its profiles
+    // were then simply unlisted, and disconnected without a check.
+    it('checks a profile whose location group accounts.list left out', async () => {
+      missingProfiles([
+        { id: 'p-group-missing', accountResourceName: 'accounts/9', locationName: 'locations/here' },
+      ]);
+
+      await syncLocationsForAccount('ga1');
+
+      expect(mocks.locationsGet).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'locations/here' })
+      );
+      expect(disconnectedIds()).toEqual([]);
+    });
+
+    it('disconnects that profile once its own read says it is gone', async () => {
+      missingProfiles([
+        { id: 'p-group-missing', accountResourceName: 'accounts/9', locationName: 'locations/left' },
+      ]);
+      mocks.locationsGet.mockRejectedValue(googleError(404));
+
+      await syncLocationsForAccount('ga1');
+
+      expect(disconnectedIds()).toEqual(['p-group-missing']);
+    });
+
     it('checks the same way when the whole login listed nothing', async () => {
       listing({});
-      mocks.findMany.mockResolvedValue([
+      missingProfiles([
         { id: 'p-left', accountResourceName: 'accounts/2', locationName: 'locations/left' },
         { id: 'p-here', accountResourceName: 'accounts/3', locationName: 'locations/here' },
       ]);

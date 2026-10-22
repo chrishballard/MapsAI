@@ -64,6 +64,20 @@ export interface MediaSyncResult {
 }
 
 /**
+ * A media item's identity: its resource name without the account segment.
+ * Google names it accounts/{account}/locations/{location}/media/{id}, and
+ * the account is whichever one the request went through, so it changes with
+ * the profile's accountResourceName (a location moved to another group, or a
+ * login taking over a location another login lost). Matched on the full
+ * name, every photo then looked new and every row stale, and the library was
+ * deleted and re-imported, captions, usage history and public links with it.
+ * The same reason reviews key on normalizeReviewKey.
+ */
+export function mediaKey(name: string | null): string | null {
+  return name ? name.replace(/^accounts\/[^/]+\//, "") : null;
+}
+
+/**
  * Pull the profile's existing GBP photos into the image library as
  * metadata-only rows (Google keeps hosting the bytes). Re-running updates
  * URLs/dimensions in place, keeps any team-set status, and removes rows for
@@ -129,14 +143,17 @@ export async function syncProfileMediaToLibrary(
       category: true,
     },
   });
+  // Matched on mediaKey, not the full name: see mediaKey.
   const existing = rows.filter((row) => row.source === "GBP");
-  const existingByName = new Map(
-    existing.map((row) => [row.googleMediaName, row])
+  const existingByKey = new Map(
+    existing.map((row) => [mediaKey(row.googleMediaName), row])
   );
   // Google's copy of a pushed upload is the same photo the library already
   // holds; a second APPROVED row would rotate it through posts twice.
-  const pushedNames = new Set(
-    rows.filter((row) => row.source !== "GBP").map((row) => row.googleMediaName)
+  const pushedKeys = new Set(
+    rows
+      .filter((row) => row.source !== "GBP")
+      .map((row) => mediaKey(row.googleMediaName))
   );
 
   // Batch the whole reconciliation into one transaction: update only rows
@@ -166,9 +183,11 @@ export async function syncProfileMediaToLibrary(
       category: item.locationAssociation?.category ?? null,
     };
 
-    const row = existingByName.get(item.name);
+    const row = existingByKey.get(mediaKey(item.name));
     if (row) {
+      const renamed = row.googleMediaName !== item.name;
       const changed =
+        renamed ||
         row.googleUrl !== shared.googleUrl ||
         row.thumbnailUrl !== shared.thumbnailUrl ||
         row.width !== shared.width ||
@@ -177,13 +196,14 @@ export async function syncProfileMediaToLibrary(
       if (changed) {
         // A refreshed googleUrl gives a permanently fetch-skipped image a
         // new chance — clear the skip so captioning retries with it.
-        const data =
-          row.googleUrl !== shared.googleUrl
-            ? { ...shared, captionSkipReason: null }
-            : shared;
+        const data = {
+          ...shared,
+          ...(row.googleUrl !== shared.googleUrl ? { captionSkipReason: null } : {}),
+          ...(renamed ? { googleMediaName: item.name } : {}),
+        };
         updates.push({ id: row.id, data });
       }
-    } else if (!pushedNames.has(item.name)) {
+    } else if (!pushedKeys.has(mediaKey(item.name))) {
       creates.push({
         profileId,
         source: "GBP",
@@ -202,12 +222,12 @@ export async function syncProfileMediaToLibrary(
   //
   // And an empty list proves nothing: for a profile we hold photos for it
   // is indistinguishable from an API hiccup, so nothing is removed on it.
-  const liveNames = new Set(items.map((item) => item.name));
+  const liveKeys = new Set(items.map((item) => mediaKey(item.name)));
   const staleIds =
     items.length === 0
       ? []
       : existing
-          .filter((row) => row.googleMediaName && !liveNames.has(row.googleMediaName))
+          .filter((row) => row.googleMediaName && !liveKeys.has(mediaKey(row.googleMediaName)))
           .map((row) => row.id);
   if (items.length === 0 && existing.some((row) => row.googleMediaName)) {
     console.warn(
