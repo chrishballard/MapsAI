@@ -17,6 +17,8 @@ import {
   replyPublishedBetween,
   sumDailyMetricsByDate,
   onDays,
+  lastReportedDay,
+  REPORTING_LAG_DAYS,
 } from "@/lib/report-metrics";
 import {
   getMonthStart,
@@ -161,23 +163,31 @@ export async function generateReport(
 
   // 9. Build report data
   // A month that hasn't ended is month-to-date, and against a whole previous
-  // month every comparison reads as a drop. The generate route defaults to
-  // the last complete month, so this only happens when someone asks for the
-  // current one: the PDF labels it partial and leaves the comparison out.
-  // "As of" is the last day Google's performance data covers (it lags the
-  // calendar by a few days), not the day the report was generated.
+  // month every comparison reads as a drop. So is a month that just ended
+  // while Google is still posting its last days: the generate route defaults
+  // to last month, usually run in the first days of the next one. Either way
+  // the PDF labels it partial and leaves the comparison out. "As of" is the
+  // last day Google has reported, not the day the report was generated.
   const now = new Date();
-  const isPartialMonth = curStart.getTime() >= getMonthStart(now).getTime();
-  const lastDayWithData = currentDailyMetrics.at(-1)?.date ?? null;
+  const lastDayWithData = lastReportedDay(currentDailyMetrics);
+  const inProgress = curStart.getTime() >= getMonthStart(now).getTime();
+  const stillArriving =
+    !inProgress &&
+    now.getTime() - curEnd.getTime() < (REPORTING_LAG_DAYS + 1) * 86_400_000 &&
+    (lastDayWithData === null || lastDayWithData.getTime() < curEnd.getTime());
 
   const reportData: ReportData = {
     businessName: profile.name,
     address: profile.address,
     category: profile.category,
     month: formatMonthLabel(month),
-    partialMonth: isPartialMonth
-      ? { asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null }
-      : null,
+    partialMonth:
+      inProgress || stillArriving
+        ? {
+            asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null,
+            ended: stillArriving,
+          }
+        : null,
     currentMetrics,
     previousMetrics,
     chartImageUri,

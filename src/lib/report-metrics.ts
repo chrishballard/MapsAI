@@ -153,6 +153,32 @@ export function sumDailyMetricsByDate(
 }
 
 /**
+ * Google posts performance numbers a few days late, and the metrics sync
+ * stores a row of zeros for each day it hasn't reported yet (the same lag
+ * scripts/perf-snapshot.ts allows for).
+ */
+export const REPORTING_LAG_DAYS = 5;
+
+/**
+ * The newest day with any count in it, or null. The trailing all-zero rows
+ * are days Google hasn't reported yet, not days with no activity.
+ */
+export function lastReportedDay(metrics: DailyMetricCounts[]): Date | null {
+  const reported = metrics.findLast(
+    (m) =>
+      m.impressionsSearchDesktop +
+        m.impressionsSearchMobile +
+        m.impressionsMapsDesktop +
+        m.impressionsMapsMobile +
+        m.websiteClicks +
+        m.callClicks +
+        m.directionRequests >
+      0
+  );
+  return reported?.date ?? null;
+}
+
+/**
  * Returns Math.round(((current - previous) / previous) * 100) or null if previous === 0.
  */
 export function computePctChange(

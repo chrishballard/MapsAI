@@ -188,10 +188,11 @@ export interface ReportData {
   address: string | null;
   category: string | null;
   month: string; // "March 2026"
-  // Set when the month hasn't ended: the header says the month is partial
-  // and the month-over-month comparison is left out. asOf is the last day
-  // with performance data ("Oct 19, 2026"), null when there is none yet.
-  partialMonth: { asOf: string | null } | null;
+  // Set when the month's numbers aren't complete: it hasn't ended, or it
+  // ended (ended: true) but Google hasn't posted its last days yet. The
+  // header says so and the month-over-month comparison is left out. asOf is
+  // the last day with performance data ("Oct 19, 2026"), null when none yet.
+  partialMonth: { asOf: string | null; ended: boolean } | null;
   currentMetrics: {
     totalImpressions: number;
     websiteClicks: number;
@@ -438,12 +439,24 @@ export function DashboardReportDocument({
   );
 }
 
+function partialMonthNote(partial: NonNullable<ReportData["partialMonth"]>): string {
+  if (partial.ended) {
+    return partial.asOf
+      ? `Google data through ${partial.asOf}; final numbers in a few days`
+      : "Google has not posted this month's data yet";
+  }
+  return partial.asOf ? `partial month, as of ${partial.asOf}` : "partial month, no data yet";
+}
+
 export function ReportDocument({ data }: { data: ReportData }) {
   // Month-to-date against a whole previous month always reads as a drop, so
   // a partial month makes no comparison.
   const change = (current: number, previous: number) =>
     data.partialMonth
-      ? { text: "Month in progress", style: styles.changeNeutral }
+      ? {
+          text: data.partialMonth.ended ? "Data still arriving" : "Month in progress",
+          style: styles.changeNeutral,
+        }
       : formatChange(current, previous);
   const impChange = change(data.currentMetrics.totalImpressions, data.previousMetrics.totalImpressions);
   const clickChange = change(data.currentMetrics.websiteClicks, data.previousMetrics.websiteClicks);
@@ -460,11 +473,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
           {data.category && <Text style={styles.subtitle}>{data.category}</Text>}
           <Text style={styles.reportTitle}>
             Performance Report - {data.month}
-            {data.partialMonth
-              ? data.partialMonth.asOf
-                ? ` (partial month, as of ${data.partialMonth.asOf})`
-                : " (partial month, no data yet)"
-              : null}
+            {data.partialMonth ? ` (${partialMonthNote(data.partialMonth)})` : null}
           </Text>
         </View>
 
