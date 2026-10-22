@@ -308,12 +308,18 @@ export interface ServiceTypeCatalog {
   /** Type ids Google gave no display name for. Never turned into a name. */
   unresolvedTypeIds: string[];
   degraded: boolean;
+  /**
+   * Where the names came from: the location's own category ("location", in
+   * its language), categories:batchGet ("batchGet", always English), or the
+   * live service list ("live", ids only, no names).
+   */
+  source: "location" | "batchGet" | "live";
 }
 
 /** Split Google's service types into named ones and bare ids. */
 function splitServiceTypes(
   types: Array<{ serviceTypeId?: string | null; displayName?: string | null }>
-): Omit<ServiceTypeCatalog, "degraded"> {
+): Omit<ServiceTypeCatalog, "degraded" | "source"> {
   const serviceTypes: StructuredServiceInfo[] = [];
   const unnamed = new Set<string>();
   for (const type of types) {
@@ -401,7 +407,11 @@ export async function fetchServiceTypeCatalog(params: {
   // the location's own language.
   const fromLocation = splitServiceTypes(primaryCategory?.serviceTypes ?? []);
   if (fromLocation.serviceTypes.length > 0 || fromLocation.unresolvedTypeIds.length > 0) {
-    return { ...fromLocation, degraded: fromLocation.unresolvedTypeIds.length > 0 };
+    return {
+      ...fromLocation,
+      degraded: fromLocation.unresolvedTypeIds.length > 0,
+      source: "location",
+    };
   }
 
   // Fallback: try to get service types from categories batchGet. Only the
@@ -433,6 +443,7 @@ export async function fetchServiceTypeCatalog(params: {
         return {
           ...fromBatchGet,
           degraded: !english || fromBatchGet.unresolvedTypeIds.length > 0,
+          source: "batchGet",
         };
       }
     } catch {
@@ -461,7 +472,12 @@ export async function fetchServiceTypeCatalog(params: {
     if (id) liveTypeIds.add(id);
   }
 
-  return { serviceTypes: [], unresolvedTypeIds: [...liveTypeIds], degraded: true };
+  return {
+    serviceTypes: [],
+    unresolvedTypeIds: [...liveTypeIds],
+    degraded: true,
+    source: "live",
+  };
 }
 
 export async function fetchCurrentServices(params: {

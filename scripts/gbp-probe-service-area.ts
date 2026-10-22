@@ -83,6 +83,20 @@ try {
     placeName: flagValue(argv, "place-name"),
     delay: nonNegativeNumberFlag(argv, "delay", 0),
   };
+  // Shape 4 is the one that deliberately sends no places. Everywhere else an
+  // empty list would make the probe answer a different question than the
+  // one asked, so it is an error rather than a silent []. All checked here,
+  // before the DB or Google is touched.
+  if (!args.profileId) throw new CliArgError("--profile <id> required");
+  if (!args.read) {
+    if (!args.caseArg) throw new CliArgError("--case <n> or --read required");
+    if (!["1", "2", "3", "4"].includes(args.caseArg)) {
+      throw new CliArgError(`unknown case ${args.caseArg} (expected 1-4)`);
+    }
+    if (!args.placeId && args.caseArg !== "4") {
+      throw new CliArgError(`--place-id <ChIJ...> required for case ${args.caseArg}`);
+    }
+  }
 } catch (error) {
   if (!(error instanceof CliArgError)) throw error;
   console.error(error.message);
@@ -102,8 +116,7 @@ function dbTarget(): string {
 }
 
 async function main() {
-  const { profileId } = args;
-  if (!profileId) throw new Error("--profile <id> required");
+  const profileId = args.profileId!;
   console.log(`DB: ${dbTarget()}`);
 
   prisma = (await import("../src/lib/prisma")).prisma;
@@ -135,20 +148,8 @@ async function main() {
 
   // Cases are run one at a time from the command line so the operator
   // controls the spacing; Google 429s this account after ~a dozen validates.
-  const { caseArg } = args;
-  if (!caseArg) throw new Error("--case <n> or --read required");
-  if (!["1", "2", "3", "4"].includes(caseArg)) {
-    throw new Error(`unknown case ${caseArg} (expected 1-4)`);
-  }
-
-  // Shape 4 is the one that deliberately sends no places. Everywhere else an
-  // empty list would make the probe answer a different question than the one
-  // asked, so it is an error rather than a silent []. Checked before the read
-  // below, so a typo costs no quota.
+  const caseArg = args.caseArg!;
   const { placeId, placeName } = args;
-  if (!placeId && caseArg !== "4") {
-    throw new Error(`--place-id <ChIJ...> required for case ${caseArg}`);
-  }
   const placeInfos = placeId
     ? [placeName ? { placeId, placeName } : { placeId }]
     : [];
@@ -222,6 +223,7 @@ async function main() {
 
 main().catch(async (error) => {
   console.error(error);
-  await prisma.$disconnect().catch(() => {});
+  // prisma is unset if main() failed before importing it
+  await prisma?.$disconnect().catch(() => {});
   process.exit(1);
 });

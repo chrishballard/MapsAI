@@ -108,6 +108,7 @@ describe('fetchServiceTypeCatalog', () => {
       serviceTypes: NAMED_TYPES,
       unresolvedTypeIds: [],
       degraded: false,
+      source: 'location',
     });
     // No fallback traffic on the healthy path
     expect(mocks.request).toHaveBeenCalledTimes(1);
@@ -125,6 +126,7 @@ describe('fetchServiceTypeCatalog', () => {
       serviceTypes: [NAMED_TYPES[0]],
       unresolvedTypeIds: [CARPET],
       degraded: true,
+      source: 'location',
     });
   });
 
@@ -143,6 +145,7 @@ describe('fetchServiceTypeCatalog', () => {
         serviceTypes: NAMED_TYPES,
         unresolvedTypeIds: [],
         degraded: true,
+        source: 'batchGet',
       });
     }
   );
@@ -160,6 +163,7 @@ describe('fetchServiceTypeCatalog', () => {
       serviceTypes: NAMED_TYPES,
       unresolvedTypeIds: [],
       degraded: false,
+      source: 'batchGet',
     });
   });
 
@@ -178,6 +182,7 @@ describe('fetchServiceTypeCatalog', () => {
       serviceTypes: [],
       unresolvedTypeIds: [MATTRESS],
       degraded: true,
+      source: 'live',
     });
   });
 

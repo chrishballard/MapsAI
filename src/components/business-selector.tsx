@@ -9,9 +9,16 @@ interface Profile {
   name: string;
   address: string | null;
   category: string | null;
+  isOnboarded?: boolean;
   // Offboarded with reviews still synced: in the selector for its reviews
   // settings, but it gets no AI posts and is left off the Generate page.
+  // Onboarding again doesn't clear the flag, so only a profile that is not
+  // onboarded is really reviews-only.
   reviewsOnly?: boolean;
+}
+
+function isReviewsOnly(profile: Profile): boolean {
+  return !!profile.reviewsOnly && !profile.isOnboarded;
 }
 
 export function ReviewsOnlyBadge() {
@@ -46,7 +53,7 @@ export function BusinessOption({
         <p className="text-sm font-medium text-foreground truncate">
           {profile.name}
         </p>
-        {profile.reviewsOnly ? (
+        {isReviewsOnly(profile) ? (
           <p className="text-xs text-muted-foreground truncate">
             No AI posts{profile.address ? ` · ${profile.address}` : ""}
           </p>
@@ -58,7 +65,7 @@ export function BusinessOption({
           )
         )}
       </div>
-      {profile.reviewsOnly && <ReviewsOnlyBadge />}
+      {isReviewsOnly(profile) && <ReviewsOnlyBadge />}
       {selected && <Check size={16} className="text-brand-600 shrink-0" />}
     </button>
   );
@@ -130,13 +137,13 @@ export function BusinessSelector() {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg hover:border-brand-300 transition-colors min-w-[220px]"
+        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg hover:border-brand-300 transition-colors min-w-[220px] max-w-[360px]"
       >
         <Building2 size={16} className="text-zinc-400 shrink-0" />
-        <span className="text-sm font-medium text-foreground truncate">
+        <span className="text-sm font-medium text-foreground truncate min-w-0">
           {selectedProfile ? selectedProfile.name : "All Businesses"}
         </span>
-        {selectedProfile?.reviewsOnly && <ReviewsOnlyBadge />}
+        {selectedProfile && isReviewsOnly(selectedProfile) && <ReviewsOnlyBadge />}
         <ChevronDown size={14} className="text-zinc-400 ml-auto shrink-0" />
       </button>
 

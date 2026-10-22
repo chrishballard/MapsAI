@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   fetchCategoryId: vi.fn(),
   pushServicesToGBP: vi.fn(),
   catalogDegraded: false,
+  catalogSource: 'location' as 'location' | 'batchGet' | 'live',
 }));
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
@@ -32,6 +33,7 @@ vi.mock('@/lib/google-business-info', () => ({
     serviceTypes: await mocks.fetchStructuredServices(params),
     unresolvedTypeIds: [],
     degraded: mocks.catalogDegraded,
+    source: mocks.catalogSource,
   }),
   fetchCategoryId: mocks.fetchCategoryId,
   pushServicesToGBP: mocks.pushServicesToGBP,
@@ -95,6 +97,7 @@ let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.catalogDegraded = false;
+  mocks.catalogSource = 'location';
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.prisma.profile.findUnique.mockResolvedValue(profile('es-419'));
@@ -316,6 +319,7 @@ describe('pushApprovedServices on a non-English profile read through the English
   // "Mattress cleaning" twice.
   beforeEach(() => {
     mocks.catalogDegraded = true;
+    mocks.catalogSource = 'batchGet';
     mocks.fetchStructuredServices.mockResolvedValue(englishCatalog);
   });
 
@@ -333,6 +337,26 @@ describe('pushApprovedServices on a non-English profile read through the English
     expect(pushedItems()).toEqual([
       { freeFormServiceItem: { category: 'x', label: { displayName: 'Window washing' } } },
       { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'About Mattress cleaning.' } },
+    ]);
+  });
+
+  it("leaves the client's own custom item when the names are the location's own, one type unnamed", async () => {
+    // Degraded for an unrelated reason (one type came back unnamed), but the
+    // names are Spanish and the title matched one of them: a same-named
+    // custom item here is the client's own, not an earlier push.
+    mocks.catalogSource = 'location';
+    mocks.fetchStructuredServices.mockResolvedValue(spanishCatalog);
+    const live = [
+      { freeFormServiceItem: { category: 'x', label: { displayName: 'Limpieza de colchones', description: 'Del cliente.' } } },
+    ];
+    mocks.fetchCurrentServices.mockResolvedValue({ serviceItems: live });
+    mocks.prisma.profileService.findMany.mockResolvedValue([row('Limpieza de colchones', null)]);
+
+    await pushApprovedServices('p1', { merge: true });
+
+    expect(pushedItems()).toEqual([
+      live[0],
+      { structuredServiceItem: { serviceTypeId: MATTRESS, description: 'About Limpieza de colchones.' } },
     ]);
   });
 

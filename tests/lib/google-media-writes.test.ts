@@ -160,7 +160,7 @@ describe('pushLibraryImageToGBP', () => {
     );
   });
 
-  it('prefers the Google-hosted URL for a photo already synced from GBP', async () => {
+  it('prefers the Google-hosted URL when the row has one', async () => {
     mocks.prisma.profileImage.findFirst.mockResolvedValue({
       publicToken: 'tok123',
       googleUrl: 'https://lh3.googleusercontent.com/m1',
@@ -253,8 +253,10 @@ describe('pushLibraryImageToGBP', () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
-  it.each(['PROFILE', 'COVER', 'LOGO'] as const)(
-    'still lets a photo already on the listing become the %s picture',
+  // Logo and cover too: they replace the slot, not the photo, so the
+  // listing still gains a second copy, and the next sync a second row.
+  it.each(['PROFILE', 'COVER', 'LOGO', 'AT_WORK'] as const)(
+    'refuses a %s push of a photo already on the listing',
     async (category) => {
       mocks.prisma.profileImage.findFirst.mockResolvedValue({
         publicToken: 'tok123',
@@ -265,8 +267,9 @@ describe('pushLibraryImageToGBP', () => {
 
       const result = await pushLibraryImageToGBP({ profileId: 'p1', imageId: 'img1', category });
 
-      expect(result.success).toBe(true);
-      expect(sent().data.locationAssociation).toEqual({ category });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('set it in Google Business Profile itself');
+      expect(mocks.request).not.toHaveBeenCalled();
     }
   );
 

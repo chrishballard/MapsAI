@@ -293,14 +293,15 @@ export async function pushApprovedServices(
         },
       };
       // On a non-English profile a title can match late: by the slug, or by
-      // display name when a degraded read fell back to Google's English
-      // catalog. Either way it went out as a custom service on the pushes
-      // before this one, so drop that copy rather than leave both. Other
-      // matches (and English profiles) leave custom items alone, as pushes
+      // display name when the read fell back to Google's English catalog
+      // (categories:batchGet). Either way it went out as a custom service on
+      // the pushes before this one, so drop that copy rather than leave both.
+      // Other matches (a Spanish title against the location's own Spanish
+      // names, and English profiles) leave custom items alone, as pushes
       // always have: there a same-named custom item is the client's own.
       const matchedLate =
         match?.via === "typeIdSlug" ||
-        (match?.via === "displayName" && !!typeIdBySlug && catalog.degraded);
+        (match?.via === "displayName" && !!typeIdBySlug && catalog.source === "batchGet");
       if (matchedLate) {
         for (let i = serviceItems.length - 1; i >= 0; i--) {
           const label = serviceItems[i].freeFormServiceItem?.label?.displayName;

@@ -13,7 +13,7 @@ const base = { id: 'p1', name: 'Lumos Dental', address: '1 Main St', category: n
 describe('BusinessOption', () => {
   it('marks a reviews-only business', () => {
     const html = renderToStaticMarkup(
-      <BusinessOption profile={{ ...base, reviewsOnly: true }} selected={false} onSelect={() => {}} />
+      <BusinessOption profile={{ ...base, reviewsOnly: true, isOnboarded: false }} selected={false} onSelect={() => {}} />
     );
     expect(html).toContain('Lumos Dental');
     expect(html).toContain('Reviews only');
@@ -22,9 +22,19 @@ describe('BusinessOption', () => {
 
   it('adds nothing for an onboarded business', () => {
     const html = renderToStaticMarkup(
-      <BusinessOption profile={{ ...base, reviewsOnly: false }} selected={false} onSelect={() => {}} />
+      <BusinessOption profile={{ ...base, reviewsOnly: false, isOnboarded: true }} selected={false} onSelect={() => {}} />
     );
     expect(html).not.toContain('Reviews only');
+  });
+
+  // Onboarding a reviews-only client again does not clear reviewsOnly (only
+  // offboarding does), and an onboarded profile gets AI posts.
+  it('adds nothing for a reviews-only client who was onboarded again', () => {
+    const html = renderToStaticMarkup(
+      <BusinessOption profile={{ ...base, reviewsOnly: true, isOnboarded: true }} selected={false} onSelect={() => {}} />
+    );
+    expect(html).not.toContain('Reviews only');
+    expect(html).not.toContain('No AI posts');
   });
 });
 
