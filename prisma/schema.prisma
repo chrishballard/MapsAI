@@ -46,7 +46,10 @@ model Profile {
   id              String         @id @default(cuid())
   googleAccountId String
   googleAccount   GoogleAccount  @relation(fields: [googleAccountId], references: [id], onDelete: Cascade)
-  locationName         String
+  // Google's resource name for the location ("locations/123"). It is global,
+  // so a location keeps one row whichever agency logins can see it (see
+  // storedRowFor in src/lib/google-locations.ts).
+  locationName         String   @unique
   accountResourceName  String?
   name                 String
   placeId         String?

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   updateMany: vi.fn(),
   findMany: vi.fn(),
+  findUnique: vi.fn(),
+  fetchGoogleProfileState: vi.fn(),
 }));
 
 vi.mock('googleapis', () => ({
@@ -28,9 +30,7 @@ vi.mock('googleapis', () => ({
 }));
 vi.mock('@/lib/google', () => ({ createGoogleClient: vi.fn().mockResolvedValue({}) }));
 vi.mock('@/lib/google-business-info', () => ({
-  fetchGoogleProfileState: vi
-    .fn()
-    .mockResolvedValue({ description: '', serviceItems: [], languageCode: null }),
+  fetchGoogleProfileState: mocks.fetchGoogleProfileState,
 }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -39,6 +39,7 @@ vi.mock('@/lib/prisma', () => ({
       update: mocks.update,
       updateMany: mocks.updateMany,
       findMany: mocks.findMany,
+      findUnique: mocks.findUnique,
     },
   },
 }));
@@ -89,7 +90,21 @@ beforeEach(() => {
   }));
   mocks.updateMany.mockResolvedValue({ count: 0 });
   mocks.locationsGet.mockImplementation(async ({ name }: { name: string }) => ({ data: { name } }));
+  mocks.fetchGoogleProfileState.mockResolvedValue({
+    description: '',
+    serviceItems: [],
+    languageCode: null,
+  });
 });
+
+const duplicateLocation = () =>
+  Object.assign(new Error('Unique constraint failed on the fields: (`locationName`)'), {
+    code: 'P2002',
+  });
+
+/** Locations whose Google profile state was read back. */
+const readBack = () =>
+  mocks.fetchGoogleProfileState.mock.calls.map(([arg]) => arg.locationName);
 
 /** Writes that touched the Profile row itself (not the Google-state read-back). */
 function rowWrites() {
@@ -186,6 +201,49 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     await syncLocationsForAccount('chris');
 
     expect(rowWrites()).toEqual({ upserts: ['locations/blokk'], adoptions: [] });
+  });
+
+  it('leaves a location another login stored between the check and the write', async () => {
+    // Two logins syncing at once can both find a new location unstored. The
+    // unique index on locationName turns the second write into a P2002; that
+    // login leaves the row where it is and carries on with the rest.
+    setUp({ locations: ['locations/race', 'locations/next'] });
+    mocks.upsert.mockRejectedValueOnce(duplicateLocation());
+    mocks.findUnique.mockResolvedValue({ id: 'p-chris-race', googleAccountId: 'chris' });
+
+    const synced = await syncLocationsForAccount('tyler');
+
+    expect(synced.map((p) => p.id)).toEqual(['p-locations/next']);
+    expect(rowWrites().upserts).toEqual(['locations/race', 'locations/next']);
+    expect(mocks.findUnique).toHaveBeenCalledWith({ where: { locationName: 'locations/race' } });
+    expect(readBack()).toEqual(['locations/next']);
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps a row its own login stored between the check and the write', async () => {
+    // Two syncs of ONE login overlapping (Resync while a reconnect syncs):
+    // the row the other sync just made is this login's own, so it counts as
+    // synced. Skipping it would let the sweep below disconnect it.
+    setUp({ locations: ['locations/race'] });
+    mocks.upsert.mockRejectedValueOnce(duplicateLocation());
+    mocks.findUnique.mockResolvedValue({ id: 'p-tyler-race', googleAccountId: 'tyler' });
+
+    const synced = await syncLocationsForAccount('tyler');
+
+    expect(synced.map((p) => p.id)).toEqual(['p-tyler-race']);
+    expect(readBack()).toEqual(['locations/race']);
+    expect(mocks.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { googleAccountId: 'tyler', isConnected: true, id: { notIn: ['p-tyler-race'] } },
+      })
+    );
+  });
+
+  it('still throws a write error that is not a duplicate location', async () => {
+    setUp({ locations: ['locations/broken'] });
+    mocks.upsert.mockRejectedValueOnce(Object.assign(new Error('db down'), { code: 'P1001' }));
+
+    await expect(syncLocationsForAccount('tyler')).rejects.toThrow('db down');
   });
 
   it('still disconnects a vanished profile when every listed location is served elsewhere', async () => {
