@@ -207,6 +207,33 @@ describe('syncLocationsForAccount disconnect sweep', () => {
       expect(disconnectedIds()).toEqual([]);
     });
 
+    // accounts.list itself can leave a location group out (a transient
+    // omission, or the login's access to that group changing). Its profiles
+    // were then simply unlisted, and disconnected without a check.
+    it('checks a profile whose location group accounts.list left out', async () => {
+      missingProfiles([
+        { id: 'p-group-missing', accountResourceName: 'accounts/9', locationName: 'locations/here' },
+      ]);
+
+      await syncLocationsForAccount('ga1');
+
+      expect(mocks.locationsGet).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'locations/here' })
+      );
+      expect(disconnectedIds()).toEqual([]);
+    });
+
+    it('disconnects that profile once its own read says it is gone', async () => {
+      missingProfiles([
+        { id: 'p-group-missing', accountResourceName: 'accounts/9', locationName: 'locations/left' },
+      ]);
+      mocks.locationsGet.mockRejectedValue(googleError(404));
+
+      await syncLocationsForAccount('ga1');
+
+      expect(disconnectedIds()).toEqual(['p-group-missing']);
+    });
+
     it('checks the same way when the whole login listed nothing', async () => {
       listing({});
       missingProfiles([

@@ -223,8 +223,9 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   // demotes their due posts to DRAFT, so only a listing that actually came
   // back may disconnect anything. A failed page already threw above, before
   // this point. Google answering with nothing is not proof either: an empty
-  // listing for the whole login, or for the group a profile sits under,
-  // doesn't by itself disconnect the profiles it would have listed.
+  // listing for the whole login, or for the group a profile sits under, or
+  // accounts.list leaving that group out altogether, doesn't by itself
+  // disconnect the profiles it would have listed.
   const missing = await prisma.profile.findMany({
     where: {
       googleAccountId,
@@ -235,10 +236,13 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   });
 
   const emptyListing = listedTotal === 0;
+  const listedAccounts = new Set(accounts.map((a) => a.name));
   const unproven = missing.filter(
     (p) =>
       emptyListing ||
-      (p.accountResourceName && emptyAccounts.has(p.accountResourceName))
+      !p.accountResourceName ||
+      !listedAccounts.has(p.accountResourceName) ||
+      emptyAccounts.has(p.accountResourceName)
   );
   const gone = missing.filter((p) => !unproven.includes(p)).map((p) => p.id);
 
