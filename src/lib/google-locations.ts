@@ -80,9 +80,11 @@ async function syncGoogleProfileState(params: {
  * twice by 2026-10-22, and Blokk's two copies each published a post on the
  * same four days in April 2026. So a location keeps one row. A login that
  * finds it stored under another login leaves it there while that login
- * still has it connected, and takes the row over (history and all) once
- * that login has lost it. Pairs made before this keep updating as they are
- * until they are merged by hand.
+ * still serves it (the row is connected and the login's grant still works),
+ * and takes the row over (history and all) once that login has lost it or
+ * been revoked: a revoked login never syncs again, so its rows would stay
+ * "connected" forever with nobody able to post. Pairs made before this keep
+ * updating as they are until they are merged by hand.
  */
 async function storedRowFor(
   googleAccountId: string,
@@ -90,13 +92,20 @@ async function storedRowFor(
 ): Promise<{ action: "upsert" } | { action: "skip" } | { action: "adopt"; id: string }> {
   const rows = await prisma.profile.findMany({
     where: { locationName },
-    select: { id: true, googleAccountId: true, isConnected: true },
+    select: {
+      id: true,
+      googleAccountId: true,
+      isConnected: true,
+      googleAccount: { select: { needsReauth: true } },
+    },
     orderBy: [{ isOnboarded: "desc" }, { updatedAt: "desc" }],
   });
   if (rows.length === 0 || rows.some((r) => r.googleAccountId === googleAccountId)) {
     return { action: "upsert" };
   }
-  if (rows.some((r) => r.isConnected)) return { action: "skip" };
+  if (rows.some((r) => r.isConnected && !r.googleAccount.needsReauth)) {
+    return { action: "skip" };
+  }
   return { action: "adopt", id: rows[0].id };
 }
 

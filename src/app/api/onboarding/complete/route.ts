@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { onboardedCopyOf } from "@/lib/location-copies";
+import { activeCopyOf, activeCopyMessage } from "@/lib/location-copies";
 import { enqueueOnboardingSync } from "@/lib/queue/onboarding-sync-queue";
 import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
@@ -16,13 +16,10 @@ export async function POST(request: Request) {
 
   // The same Google location onboarded under another login's row would have
   // both copies posting and replying on one listing.
-  const copy = await onboardedCopyOf(body.profileId);
+  const copy = await activeCopyOf(body.profileId);
   if (copy) {
     return NextResponse.json(
-      {
-        error: `This business is already onboarded through ${copy.googleEmail}. Manage it from that profile instead.`,
-        onboardedProfileId: copy.id,
-      },
+      { error: activeCopyMessage(copy), onboardedProfileId: copy.id },
       { status: 409 }
     );
   }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Building2, CheckCircle2, ArrowRight } from "lucide-react";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hideCopiesOfOnboardedLocations } from "@/lib/location-copies";
+import { hideCopiesOfActiveLocations } from "@/lib/location-copies";
 
 export default async function OnboardingPage() {
   const session = await getServerSession(authOptions);
@@ -14,7 +14,7 @@ export default async function OnboardingPage() {
 
   // A location already onboarded under another login's row is not offered
   // again: onboarding the second copy would post and reply twice.
-  const notACopy = await hideCopiesOfOnboardedLocations();
+  const notACopy = await hideCopiesOfActiveLocations();
   const profiles = await prisma.profile.findMany({
     where: {
       isConnected: true,

@@ -45,7 +45,19 @@ vi.mock('@/lib/prisma', () => ({
 
 const { syncLocationsForAccount } = await import('@/lib/google-locations');
 
-type StoredRow = { id: string; googleAccountId: string; isConnected: boolean };
+type StoredRow = {
+  id: string;
+  googleAccountId: string;
+  isConnected: boolean;
+  googleAccount: { needsReauth: boolean };
+};
+
+const stored = (
+  id: string,
+  googleAccountId: string,
+  isConnected: boolean,
+  needsReauth = false
+): StoredRow => ({ id, googleAccountId, isConnected, googleAccount: { needsReauth } });
 
 /**
  * Google lists `locations` for this login; `stored` is what the database
@@ -103,7 +115,7 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     setUp({
       locations: ['locations/thrive'],
       stored: {
-        'locations/thrive': [{ id: 'p-chris-thrive', googleAccountId: 'chris', isConnected: true }],
+        'locations/thrive': [stored('p-chris-thrive', 'chris', true)],
       },
     });
 
@@ -117,7 +129,7 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     setUp({
       locations: ['locations/maverick'],
       stored: {
-        'locations/maverick': [{ id: 'p-chris-maverick', googleAccountId: 'chris', isConnected: false }],
+        'locations/maverick': [stored('p-chris-maverick', 'chris', false)],
       },
     });
 
@@ -141,13 +153,32 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     );
   });
 
+  it('takes over a row held by a login whose grant was revoked', async () => {
+    // A revoked login never syncs again (createGoogleClient throws), so its
+    // rows stay "connected" with nobody able to post through them.
+    setUp({
+      locations: ['locations/gopro'],
+      stored: { 'locations/gopro': [stored('p-diesel-gopro', 'diesel', true, true)] },
+    });
+
+    const synced = await syncLocationsForAccount('tyler');
+
+    expect(rowWrites().adoptions).toEqual([
+      {
+        where: { id: 'p-diesel-gopro' },
+        data: expect.objectContaining({ googleAccountId: 'tyler', isConnected: true }),
+      },
+    ]);
+    expect(synced.map((p) => p.id)).toEqual(['p-diesel-gopro']);
+  });
+
   it('keeps updating its own row of a pair made before the fix', async () => {
     setUp({
       locations: ['locations/blokk'],
       stored: {
         'locations/blokk': [
-          { id: 'p-tyler-blokk', googleAccountId: 'tyler', isConnected: true },
-          { id: 'p-chris-blokk', googleAccountId: 'chris', isConnected: true },
+          stored('p-tyler-blokk', 'tyler', true),
+          stored('p-chris-blokk', 'chris', true),
         ],
       },
     });
@@ -163,7 +194,7 @@ describe('syncLocationsForAccount keeps one row per Google location', () => {
     setUp({
       locations: ['locations/thrive'],
       stored: {
-        'locations/thrive': [{ id: 'p-chris-thrive', googleAccountId: 'chris', isConnected: true }],
+        'locations/thrive': [stored('p-chris-thrive', 'chris', true)],
       },
       missing: [{ id: 'p-tyler-gone', accountResourceName: 'accounts/1', locationName: 'locations/gone' }],
     });

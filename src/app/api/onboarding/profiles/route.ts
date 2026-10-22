@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hideCopiesOfOnboardedLocations } from "@/lib/location-copies";
+import { hideCopiesOfActiveLocations } from "@/lib/location-copies";
 
 export async function GET() {
   const unauthorized = await requireSession();
@@ -9,7 +9,7 @@ export async function GET() {
 
   // A location already onboarded under another login's row is not offered
   // again: onboarding the second copy would post and reply twice.
-  const notACopy = await hideCopiesOfOnboardedLocations();
+  const notACopy = await hideCopiesOfActiveLocations();
   const profiles = await prisma.profile.findMany({
     where: {
       isConnected: true,
