@@ -120,11 +120,17 @@ async function until(check: () => boolean, ms = 5_000): Promise<void> {
   }
 }
 
-async function shutDown(queue: Queue) {
-  await Promise.race([
-    queue.disconnect().catch(() => {}),
-    new Promise((r) => setTimeout(r, 1_000)),
-  ]);
+// Stop the queue reconnecting before the test ends: a reconnect loop that
+// outlives the test logs during vitest's teardown and fails the run.
+// close() disconnects a queue that never got a connection; a connected one
+// would QUIT, which waits forever on a Redis refusing AUTH, so its client is
+// disconnected first.
+async function shutDown(queue: Queue, client?: { disconnect(): void }) {
+  client?.disconnect();
+  await queue.close();
+  const settled = lines.length;
+  await new Promise((r) => setTimeout(r, 300)); // several retry intervals
+  expect(lines.slice(settled)).toEqual([]);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +160,19 @@ describe('redisErrorMessage', () => {
     );
     expect(line).not.toContain('hunter2hunter2');
     expect(line).toContain('rediss://[redacted]@elsewhere:6380');
+  });
+
+  it('spells out a refused connection (an AggregateError with no message)', () => {
+    const err = new AggregateError(
+      [
+        new Error('connect ECONNREFUSED ::1:6379'),
+        new Error('connect ECONNREFUSED 127.0.0.1:6379'),
+      ],
+      ''
+    );
+    expect(redisErrorMessage(err)).toBe(
+      'AggregateError: connect ECONNREFUSED ::1:6379; connect ECONNREFUSED 127.0.0.1:6379'
+    );
   });
 
   it('handles a thrown non-Error', () => {
@@ -229,7 +248,7 @@ describe('BullMQ against a Redis that refuses the password', () => {
       expect(lines.some((l) => l.startsWith('Failed to queue job: ReplyError: WRONGPASS'))).toBe(true);
       expect(lines.some((l) => l.includes(PASSWORD))).toBe(false);
     } finally {
-      await shutDown(queue);
+      await shutDown(queue, await queue.client);
       await redis.close();
     }
   });

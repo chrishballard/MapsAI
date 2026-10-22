@@ -49,9 +49,18 @@ function scrub(text: string): string {
  * connection options or stack.
  */
 export function redisErrorMessage(err: unknown): string {
-  const text =
-    err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  return scrub(text);
+  if (!(err instanceof Error)) return scrub(String(err));
+  // A refused connection tried over IPv4 and IPv6 is an AggregateError with
+  // an empty message; the reasons are in its inner errors.
+  const inner =
+    err instanceof AggregateError
+      ? err.errors.filter((e) => e instanceof Error).map((e) => e.message)
+      : [];
+  const detail =
+    err.message ||
+    inner.join("; ") ||
+    String((err as { code?: unknown }).code ?? "");
+  return scrub(`${err.name}: ${detail}`);
 }
 
 /**
