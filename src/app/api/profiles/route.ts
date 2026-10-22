@@ -26,6 +26,7 @@ export async function GET(request: Request) {
       name: true,
       address: true,
       category: true,
+      isOnboarded: true,
       reviewsOnly: true,
     },
     orderBy: { name: "asc" },

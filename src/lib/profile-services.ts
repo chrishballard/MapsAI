@@ -292,12 +292,17 @@ export async function pushApprovedServices(
           description: service.description || undefined,
         },
       };
-      if (match?.via === "typeIdSlug") {
-        // A title only the slug recognizes (non-English profiles) went out
-        // as a custom service on every push before this one. Now that it goes
-        // out as its structured type, drop that copy rather than leave both.
-        // Stored-id and display-name matches leave custom items alone, as
-        // pushes always have.
+      // On a non-English profile a title can match late: by the slug, or by
+      // display name when the read fell back to Google's English catalog
+      // (categories:batchGet). Either way it went out as a custom service on
+      // the pushes before this one, so drop that copy rather than leave both.
+      // Other matches (a Spanish title against the location's own Spanish
+      // names, and English profiles) leave custom items alone, as pushes
+      // always have: there a same-named custom item is the client's own.
+      const matchedLate =
+        match?.via === "typeIdSlug" ||
+        (match?.via === "displayName" && !!typeIdBySlug && catalog.source === "batchGet");
+      if (matchedLate) {
         for (let i = serviceItems.length - 1; i >= 0; i--) {
           const label = serviceItems[i].freeFormServiceItem?.label?.displayName;
           if (label?.toLowerCase() === nameKey) serviceItems.splice(i, 1);

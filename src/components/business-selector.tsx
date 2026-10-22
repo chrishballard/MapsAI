@@ -9,6 +9,66 @@ interface Profile {
   name: string;
   address: string | null;
   category: string | null;
+  isOnboarded?: boolean;
+  // Offboarded with reviews still synced: in the selector for its reviews
+  // settings, but it gets no AI posts and is left off the Generate page.
+  // Onboarding again doesn't clear the flag, so only a profile that is not
+  // onboarded is really reviews-only.
+  reviewsOnly?: boolean;
+}
+
+function isReviewsOnly(profile: Profile): boolean {
+  return !!profile.reviewsOnly && !profile.isOnboarded;
+}
+
+export function ReviewsOnlyBadge() {
+  return (
+    <span
+      title="Reviews are synced and answered; this business gets no AI posts"
+      className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+    >
+      Reviews only
+    </span>
+  );
+}
+
+export function BusinessOption({
+  profile,
+  selected,
+  onSelect,
+}: {
+  profile: Profile;
+  selected: boolean;
+  onSelect: (profileId: string) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(profile.id)}
+      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 transition-colors"
+    >
+      <div className="w-8 h-8 bg-zinc-100 rounded-full flex items-center justify-center shrink-0">
+        <Building2 size={14} className="text-muted-foreground" />
+      </div>
+      <div className="text-left min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground truncate">
+          {profile.name}
+        </p>
+        {isReviewsOnly(profile) ? (
+          <p className="text-xs text-muted-foreground truncate">
+            No AI posts{profile.address ? ` · ${profile.address}` : ""}
+          </p>
+        ) : (
+          profile.address && (
+            <p className="text-xs text-muted-foreground truncate">
+              {profile.address}
+            </p>
+          )
+        )}
+      </div>
+      {isReviewsOnly(profile) && <ReviewsOnlyBadge />}
+      {selected && <Check size={16} className="text-brand-600 shrink-0" />}
+    </button>
+  );
 }
 
 export function BusinessSelector() {
@@ -77,12 +137,13 @@ export function BusinessSelector() {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg hover:border-brand-300 transition-colors min-w-[220px]"
+        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg hover:border-brand-300 transition-colors min-w-[220px] max-w-[360px]"
       >
         <Building2 size={16} className="text-zinc-400 shrink-0" />
-        <span className="text-sm font-medium text-foreground truncate">
+        <span className="text-sm font-medium text-foreground truncate min-w-0">
           {selectedProfile ? selectedProfile.name : "All Businesses"}
         </span>
+        {selectedProfile && isReviewsOnly(selectedProfile) && <ReviewsOnlyBadge />}
         <ChevronDown size={14} className="text-zinc-400 ml-auto shrink-0" />
       </button>
 
@@ -125,28 +186,12 @@ export function BusinessSelector() {
               </div>
             ) : (
               filtered.map((profile) => (
-                <button
+                <BusinessOption
                   key={profile.id}
-                  onClick={() => select(profile.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 transition-colors"
-                >
-                  <div className="w-8 h-8 bg-zinc-100 rounded-full flex items-center justify-center shrink-0">
-                    <Building2 size={14} className="text-muted-foreground" />
-                  </div>
-                  <div className="text-left min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {profile.name}
-                    </p>
-                    {profile.address && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {profile.address}
-                      </p>
-                    )}
-                  </div>
-                  {selectedId === profile.id && (
-                    <Check size={16} className="text-brand-600 shrink-0" />
-                  )}
-                </button>
+                  profile={profile}
+                  selected={selectedId === profile.id}
+                  onSelect={select}
+                />
               ))
             )}
           </div>

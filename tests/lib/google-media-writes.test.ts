@@ -160,7 +160,7 @@ describe('pushLibraryImageToGBP', () => {
     );
   });
 
-  it('prefers the Google-hosted URL for a photo already synced from GBP', async () => {
+  it('prefers the Google-hosted URL when the row has one', async () => {
     mocks.prisma.profileImage.findFirst.mockResolvedValue({
       publicToken: 'tok123',
       googleUrl: 'https://lh3.googleusercontent.com/m1',
@@ -230,6 +230,48 @@ describe('pushLibraryImageToGBP', () => {
     expect(result.error).toContain('accountResourceName');
     expect(mocks.request).not.toHaveBeenCalled();
   });
+
+  // v4 media:create always adds a new item. Pushing an image Google already
+  // holds (a photo synced from GBP, or an upload pushed before) as another
+  // listing photo put a second copy of it on the listing.
+  it('will not add a second copy of a photo already on the listing', async () => {
+    mocks.prisma.profileImage.findFirst.mockResolvedValue({
+      publicToken: 'tok123',
+      googleUrl: 'https://lh3.googleusercontent.com/m1',
+      thumbnailUrl: null,
+      googleMediaName: 'accounts/1/locations/2/media/m1',
+    });
+
+    const result = await pushLibraryImageToGBP({
+      profileId: 'p1',
+      imageId: 'img1',
+      category: 'ADDITIONAL',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already on the listing');
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  // Logo and cover too: they replace the slot, not the photo, so the
+  // listing still gains a second copy, and the next sync a second row.
+  it.each(['PROFILE', 'COVER', 'LOGO', 'AT_WORK'] as const)(
+    'refuses a %s push of a photo already on the listing',
+    async (category) => {
+      mocks.prisma.profileImage.findFirst.mockResolvedValue({
+        publicToken: 'tok123',
+        googleUrl: 'https://lh3.googleusercontent.com/m1',
+        thumbnailUrl: null,
+        googleMediaName: 'accounts/1/locations/2/media/m1',
+      });
+
+      const result = await pushLibraryImageToGBP({ profileId: 'p1', imageId: 'img1', category });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('set it in Google Business Profile itself');
+      expect(mocks.request).not.toHaveBeenCalled();
+    }
+  );
 
   it('will not upload an image belonging to another profile', async () => {
     mocks.prisma.profileImage.findFirst.mockResolvedValue(null);

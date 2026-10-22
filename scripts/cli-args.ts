@@ -1,6 +1,6 @@
 /**
  * Flag readers for the GBP operator scripts (gbp-set-service-area.ts,
- * gbp-validate-writes.ts).
+ * gbp-validate-writes.ts, gbp-probe-service-area.ts).
  *
  * Both used to take whatever token followed a value flag. With `--add
  * --write --yes` that meant a real write with the place id "--write", and

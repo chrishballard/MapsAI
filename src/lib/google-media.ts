@@ -409,7 +409,11 @@ export async function pushPhotoToGBP(
  * The library row records the media name Google gave the new photo, so the
  * next syncProfileMediaToLibrary recognizes it as this image instead of
  * importing Google's copy as a second row. A row that already has a media
- * name is a photo synced from GBP; its name stays tied to the original item.
+ * name is already on the listing (synced from GBP, or pushed before), and
+ * v4 media:create always adds a new item, logo and cover included (those
+ * replace the slot, not the photo): a re-push puts a second copy of it on the
+ * listing, which the next sync imports as a second library row. So it is
+ * refused, in every category.
  */
 export async function pushLibraryImageToGBP(params: {
   profileId: string;
@@ -447,6 +451,13 @@ export async function pushLibraryImageToGBP(params: {
     return {
       success: false,
       error: `Image ${params.imageId} not found on profile ${params.profileId}`,
+    };
+  }
+
+  if (image.googleMediaName) {
+    return {
+      success: false,
+      error: `Image ${params.imageId} is already on the listing (${image.googleMediaName}); pushing it again as ${params.category} would add a second copy. To make it the ${params.category === "ADDITIONAL" ? "listing photo" : params.category.toLowerCase()}, set it in Google Business Profile itself.`,
     };
   }
 
