@@ -16,6 +16,12 @@ import {
   buildActionsLog,
   replyPublishedBetween,
   sumDailyMetricsByDate,
+  onDays,
+  reportScope,
+  reportedPart,
+  lastReportedDay,
+  REPORTED_DAY,
+  REPORTING_LAG_DAYS,
 } from "@/lib/report-metrics";
 import {
   getMonthStart,
@@ -115,7 +121,7 @@ export async function generateReport(
     where: {
       profileId,
       removedAt: null,
-      reviewDate: { gte: curStart, lte: curEnd },
+      reviewDate: onDays(curStart, curEnd),
     },
     include: { response: true },
   });
@@ -137,12 +143,45 @@ export async function generateReport(
     where: {
       profileId,
       status: "PUBLISHED",
-      publishedAt: { gte: curStart, lte: curEnd },
+      publishedAt: onDays(curStart, curEnd),
     },
   });
 
-  // 8. Generate chart PNG
-  const chartData = currentDailyMetrics.map((m) => ({
+  // 8. Is the month complete? A month that hasn't ended is month-to-date,
+  // and against a whole previous month every comparison reads as a drop. So
+  // is a finished month whose last days Google hasn't reported: the generate
+  // route defaults to last month, usually run in the first days of the next
+  // one. A finished month is complete once its last day has data, or once
+  // Google has reported any later day (it reports days in order, so the
+  // empty days before that really were empty). Not on a calendar rule: Google
+  // running late, or a profile whose sync stopped, would otherwise show the
+  // missing days as a drop. "As of" is the last day Google has reported, not
+  // the day the report was generated.
+  const now = new Date();
+  const lastDayWithData = lastReportedDay(currentDailyMetrics);
+  const inProgress = curStart.getTime() >= getMonthStart(now).getTime();
+  let unfinished = false;
+  if (!inProgress && (lastDayWithData === null || lastDayWithData < curEnd)) {
+    const reportedLater = await prisma.dailyMetric.findFirst({
+      where: { profileId, date: { gt: curEnd }, ...REPORTED_DAY },
+      select: { id: true },
+    });
+    unfinished = reportedLater === null;
+  }
+  // Within two lag periods the rest is probably on its way; after that the
+  // sync has likely stopped for this profile, so the PDF makes no promise.
+  const finalSoon =
+    unfinished &&
+    now.getTime() - curEnd.getTime() < 2 * REPORTING_LAG_DAYS * 86_400_000;
+  const partial = inProgress || unfinished;
+
+  // 9. Generate chart PNG, without the zero rows of days Google hasn't
+  // reported (they draw a cliff at the end of a partial month)
+  const chartRows =
+    partial && lastDayWithData
+      ? currentDailyMetrics.filter((m) => m.date <= lastDayWithData)
+      : currentDailyMetrics;
+  const chartData = chartRows.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,
@@ -158,20 +197,19 @@ export async function generateReport(
     }
   }
 
-  // 9. Build report data
-  // A month that hasn't ended is month-to-date, and against a whole previous
-  // month every comparison reads as a drop. The generate route defaults to
-  // the last complete month, so this only happens when someone asks for the
-  // current one: the PDF labels it partial and leaves the comparison out.
-  const now = new Date();
-  const isPartialMonth = curStart.getTime() >= getMonthStart(now).getTime();
-
+  // 10. Build report data
   const reportData: ReportData = {
     businessName: profile.name,
     address: profile.address,
     category: profile.category,
     month: formatMonthLabel(month),
-    partialMonthAsOf: isPartialMonth ? formatMediumDateUTC(now) : null,
+    partialMonth: partial
+      ? {
+          asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null,
+          ended: unfinished,
+          finalSoon,
+        }
+      : null,
     currentMetrics,
     previousMetrics,
     chartImageUri,
@@ -185,7 +223,7 @@ export async function generateReport(
     postsCount,
   };
 
-  // 10. Render PDF
+  // 11. Render PDF
   // ReportDocument renders a react-pdf <Document> at its root, but its own props
   // ({ data }) share nothing with DocumentProps, so the element type needs forcing.
   const pdfBuffer = await renderToBuffer(
@@ -210,7 +248,7 @@ export async function generateDashboardReport(
         select: { name: true, address: true, category: true },
       })
     : null;
-  const profileFilter = profileId ? { profileId } : {};
+  const profileFilter = reportScope(profileId);
 
   // 2. Fetch current period DailyMetrics
   const currentDailyMetrics = await prisma.dailyMetric.findMany({
@@ -218,8 +256,15 @@ export async function generateDashboardReport(
     orderBy: { date: "asc" },
   });
 
-  // 3. Fetch prior period
-  const { priorFrom, priorTo } = computePriorPeriod(from, to);
+  // 3. One point per day: without a profile filter there is a row per
+  // profile per day, and the charts want the day's total. Only the days
+  // Google has reported are charted and compared (see reportedPart), so the
+  // prior period is as many days before `from`.
+  const { days: dailyTotals, compareTo, reportedThrough } = reportedPart(
+    sumDailyMetricsByDate(currentDailyMetrics),
+    to
+  );
+  const { priorFrom, priorTo } = computePriorPeriod(from, compareTo);
   const priorDailyMetrics = await prisma.dailyMetric.findMany({
     where: { ...profileFilter, date: { gte: priorFrom, lte: priorTo } },
   });
@@ -229,9 +274,6 @@ export async function generateDashboardReport(
   const prior = aggregateDailyMetrics(priorDailyMetrics);
 
   // 5. Build chart data for impressions chart
-  // One point per day: without a profile filter there is a row per profile
-  // per day, and the chart wants the day's total.
-  const dailyTotals = sumDailyMetricsByDate(currentDailyMetrics);
   const chartData = dailyTotals.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
@@ -276,7 +318,7 @@ export async function generateDashboardReport(
       where: {
         ...profileFilter,
         status: "PUBLISHED",
-        publishedAt: { gte: from, lte: to },
+        publishedAt: onDays(from, to),
       },
       select: {
         id: true,
@@ -289,7 +331,7 @@ export async function generateDashboardReport(
       where: {
         status: "PUBLISHED",
         ...replyPublishedBetween(from, to),
-        ...(profileId ? { review: { profileId } } : {}),
+        review: reportScope(profileId),
       },
       select: {
         id: true,
@@ -300,7 +342,7 @@ export async function generateDashboardReport(
       },
     }),
     prisma.profileDescription.findMany({
-      where: { ...profileFilter, pushedAt: { gte: from, lte: to } },
+      where: { ...profileFilter, pushedAt: onDays(from, to) },
       select: {
         id: true,
         pushedAt: true,
@@ -318,7 +360,9 @@ export async function generateDashboardReport(
   }));
 
   // 8. Format period label
-  const periodLabel = `${formatMediumDateUTC(from)} - ${formatMediumDateUTC(to)}`;
+  const periodLabel =
+    `${formatMediumDateUTC(from)} - ${formatMediumDateUTC(to)}` +
+    (reportedThrough ? ` (Google data through ${formatMediumDateUTC(reportedThrough)})` : "");
 
   // 9. Build report data
   const reportData: DashboardReportData = {

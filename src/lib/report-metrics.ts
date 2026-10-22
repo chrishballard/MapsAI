@@ -1,4 +1,4 @@
-import { formatDateISO } from "./dates";
+import { formatDateISO, getNextDayStart } from "./dates";
 // All date math uses UTC to match PostgreSQL datetime storage
 // D-03: Defaults to last 30 days when no params
 // D-04: Prior period = preceding equal-length period
@@ -153,6 +153,68 @@ export function sumDailyMetricsByDate(
 }
 
 /**
+ * Google posts performance numbers a few days late, and the metrics sync
+ * stores a row of zeros for each day it hasn't reported yet (the same lag
+ * scripts/perf-snapshot.ts allows for).
+ */
+export const REPORTING_LAG_DAYS = 5;
+
+/** A DailyMetric `where` for a day Google has reported: any count above zero. */
+export const REPORTED_DAY = {
+  OR: [
+    { impressionsSearchDesktop: { gt: 0 } },
+    { impressionsSearchMobile: { gt: 0 } },
+    { impressionsMapsDesktop: { gt: 0 } },
+    { impressionsMapsMobile: { gt: 0 } },
+    { websiteClicks: { gt: 0 } },
+    { callClicks: { gt: 0 } },
+    { directionRequests: { gt: 0 } },
+  ],
+};
+
+/**
+ * The newest day with any count in it, or null. The trailing all-zero rows
+ * are days Google hasn't reported yet, not days with no activity.
+ */
+export function lastReportedDay(metrics: DailyMetricCounts[]): Date | null {
+  const reported = metrics.findLast(
+    (m) =>
+      m.impressionsSearchDesktop +
+        m.impressionsSearchMobile +
+        m.impressionsMapsDesktop +
+        m.impressionsMapsMobile +
+        m.websiteClicks +
+        m.callClicks +
+        m.directionRequests >
+      0
+  );
+  return reported?.date ?? null;
+}
+
+/**
+ * The part of a range Google has reported, from its per-day totals. A range
+ * ending today (the dashboard's default) ends in the zero rows the sync
+ * stores for days Google hasn't posted yet, while the period before it is
+ * fully reported, so every "vs prior period" figure leaned negative. Compare
+ * up to `compareTo` (the last reported day when that is before `to`), chart
+ * `days`, and say "data through `reportedThrough`" when it is set.
+ */
+export function reportedPart(
+  dailyTotals: DailyMetricCounts[],
+  to: Date
+): { days: DailyMetricCounts[]; compareTo: Date; reportedThrough: Date | null } {
+  const last = lastReportedDay(dailyTotals);
+  if (!last || last.getTime() >= to.getTime()) {
+    return { days: dailyTotals, compareTo: to, reportedThrough: null };
+  }
+  return {
+    days: dailyTotals.filter((m) => m.date.getTime() <= last.getTime()),
+    compareTo: last,
+    reportedThrough: last,
+  };
+}
+
+/**
  * Returns Math.round(((current - previous) / previous) * 100) or null if previous === 0.
  */
 export function computePctChange(
@@ -180,22 +242,53 @@ export function computeSparklineData(
 }
 
 /**
- * ReviewResponse `where` for replies that went live in [from, to], by the
- * same rule buildActionsLog dates them with: publishedAt, or createdAt for a
- * published row that has no publishedAt.
+ * A `where` range for timestamps falling on the days from..to, where both are
+ * UTC midnights and `to` is the range's last day. `lte: to` stopped at 00:00
+ * on that day and dropped the rest of it: reviews, posts and replies from a
+ * month's last day were missing from its report. (DailyMetric.date is a day,
+ * not a timestamp; `lte: to` is right for it.)
+ */
+export function onDays(from: Date, to: Date) {
+  return { gte: from, lt: getNextDayStart(to) };
+}
+
+/**
+ * The rows a report covers: one profile, or for "All Profiles" every
+ * onboarded profile. The metrics sync reads every connected location the
+ * agency's logins can see, about 225 of them never onboarded (not clients):
+ * summed in, they made September 2026 read 503k impressions where the 100
+ * onboarded clients had 163k. For a model with a `profile` relation
+ * (DailyMetric, Post, ProfileDescription); a ReviewResponse takes it under
+ * `review`.
+ *
+ * Onboarded, connected or not: a disconnected client's past months still
+ * count. The trade-off is that "onboarded" is today's roster, with no record
+ * of when a client joined or left: an offboarded client's history drops out
+ * of every past total, and reviews-only profiles (not onboarded) are left
+ * out though the business selector lists them.
+ */
+export function reportScope(profileId: string | null) {
+  return profileId ? { profileId } : { profile: { isOnboarded: true } };
+}
+
+/**
+ * ReviewResponse `where` for replies that went live on the days from..to, by
+ * the same rule buildActionsLog dates them with: publishedAt, or createdAt
+ * for a published row that has no publishedAt.
  */
 export function replyPublishedBetween(from: Date, to: Date) {
+  const days = onDays(from, to);
   return {
     OR: [
-      { publishedAt: { gte: from, lte: to } },
-      { publishedAt: null, createdAt: { gte: from, lte: to } },
+      { publishedAt: days },
+      { publishedAt: null, createdAt: days },
     ],
   };
 }
 
 /**
  * Builds action log items from Post, ReviewResponse, and ProfileDescription arrays,
- * filtered to the given date range.
+ * filtered to the days from..to (the whole of the last day, as onDays).
  * Per D-14 and research: services and attributes are NOT trackable (no timestamp fields).
  * NO .slice() limit — returns all items in range, sorted newest-first.
  * A review reply is dated by when it went live (publishedAt), not when it was
@@ -223,13 +316,14 @@ export function buildActionsLog(
   from: Date,
   to: Date
 ): ActionLogItem[] {
+  const end = getNextDayStart(to);
   const postItems: ActionLogItem[] = posts
     .filter(
       (p) =>
         p.status === "PUBLISHED" &&
         p.publishedAt !== null &&
         p.publishedAt >= from &&
-        p.publishedAt <= to
+        p.publishedAt < end
     )
     .map((p) => ({
       id: p.id,
@@ -242,7 +336,7 @@ export function buildActionsLog(
   const responseItems: ActionLogItem[] = responses
     .map((r) => ({ r, time: r.publishedAt ?? r.createdAt }))
     .filter(
-      ({ r, time }) => r.status === "PUBLISHED" && time >= from && time <= to
+      ({ r, time }) => r.status === "PUBLISHED" && time >= from && time < end
     )
     .map(({ r, time }) => ({
       id: r.id,
@@ -257,7 +351,7 @@ export function buildActionsLog(
       (d) =>
         d.pushedAt !== null &&
         d.pushedAt >= from &&
-        d.pushedAt <= to
+        d.pushedAt < end
     )
     .map((d) => ({
       id: d.id,

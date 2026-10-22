@@ -10,7 +10,7 @@ import type { ReactElement, ReactNode } from 'react';
 const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
-    dailyMetric: { findMany: vi.fn() },
+    dailyMetric: { findMany: vi.fn(), findFirst: vi.fn() },
     monthlyKeyword: { findMany: vi.fn() },
     review: { findMany: vi.fn() },
     post: { count: vi.fn(), findMany: vi.fn() },
@@ -111,6 +111,7 @@ beforeEach(() => {
     category: 'Gutter service',
   });
   mocks.prisma.dailyMetric.findMany.mockResolvedValue([]);
+  mocks.prisma.dailyMetric.findFirst.mockResolvedValue(null);
   mocks.prisma.monthlyKeyword.findMany.mockResolvedValue([]);
   mocks.prisma.review.findMany.mockResolvedValue([]);
   mocks.prisma.post.count.mockResolvedValue(0);
@@ -191,12 +192,13 @@ describe('generateDashboardReport: review replies in the actions log', () => {
     await generateDashboardReport('p1', from, to, null);
 
     const args = mocks.prisma.reviewResponse.findMany.mock.calls[0][0];
+    const end = utc('2026-04-01'); // the whole of Mar 31 counts
     expect(args.where).toMatchObject({
       status: 'PUBLISHED',
       review: { profileId: 'p1' },
       OR: [
-        { publishedAt: { gte: from, lte: to } },
-        { publishedAt: null, createdAt: { gte: from, lte: to } },
+        { publishedAt: { gte: from, lt: end } },
+        { publishedAt: null, createdAt: { gte: from, lt: end } },
       ],
     });
     expect(args.where.createdAt).toBeUndefined();
@@ -288,16 +290,219 @@ describe('generateReport: a month still in progress', () => {
     vi.setSystemTime(new Date('2026-10-21T15:00:00Z'));
   });
 
-  it('marks the current month as partial, as of today (UTC)', async () => {
+  // Google's performance data lags the calendar by a few days, so a report
+  // generated on the 21st holds data through the 18th or 19th. "As of" the
+  // generation date claimed days the numbers don't cover.
+  it('marks the current month as partial, as of the last day with data', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce([
+      metricRow('p1', '2026-10-01', 1),
+      metricRow('p1', '2026-10-18', 1),
+      metricRow('p1', '2026-10-19', 1),
+    ]);
     await generateReport('p1', utc('2026-10-01'));
     const data = renderedData<ReportData>();
     expect(data.month).toBe('October 2026');
-    expect(data.partialMonthAsOf).toBe('Oct 21, 2026');
+    expect(data.partialMonth).toEqual({ asOf: 'Oct 19, 2026', ended: false, finalSoon: false });
+  });
+
+  // The metrics sync asks Google for every day through today and stores a row
+  // of zeros for each day Google hasn't reported yet, so the last row is not
+  // the last day with data.
+  it("skips the zero rows the sync stores for days Google hasn't reported", async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce([
+      metricRow('p1', '2026-10-16', 3),
+      metricRow('p1', '2026-10-17', 2),
+      metricRow('p1', '2026-10-18', 0),
+      metricRow('p1', '2026-10-19', 0),
+      metricRow('p1', '2026-10-20', 0),
+      metricRow('p1', '2026-10-21', 0),
+    ]);
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toEqual({ asOf: 'Oct 17, 2026', ended: false, finalSoon: false });
+  });
+
+  it('says so when a month in progress has no data yet', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce([
+      metricRow('p1', '2026-10-01', 0),
+      metricRow('p1', '2026-10-02', 0),
+    ]);
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toEqual({ asOf: null, ended: false, finalSoon: false });
   });
 
   it('leaves a finished month unmarked', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce([
+      metricRow('p1', '2026-09-01', 4),
+      metricRow('p1', '2026-09-30', 4),
+    ]);
     await generateReport('p1', utc('2026-09-01'));
-    expect(renderedData<ReportData>().partialMonthAsOf).toBeNull();
+    expect(renderedData<ReportData>().partialMonth).toBeNull();
+  });
+});
+
+// The default report is last month's, and it is usually generated in the
+// first days of the next month, while Google is still posting the last few
+// days. Shown as complete, those empty days read as a drop against the month
+// before.
+describe('generateReport: a month that just ended, still filling in', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-02T15:00:00Z'));
+  });
+
+  const october = (lastReported: number) =>
+    Array.from({ length: 31 }, (_, i) =>
+      metricRow('p1', `2026-10-${String(i + 1).padStart(2, '0')}`, i + 1 <= lastReported ? 5 : 0)
+    );
+
+  it('is marked partial, through the last reported day', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(28));
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toEqual({
+      asOf: 'Oct 28, 2026',
+      ended: true,
+      finalSoon: true,
+    });
+  });
+
+  it('is complete once its last day has data', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(31));
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toBeNull();
+  });
+
+  // Google reports days in order: a reported day after the month means its
+  // empty last days really were empty.
+  it('is complete once Google has reported a later day', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(28));
+    mocks.prisma.dailyMetric.findFirst.mockResolvedValue({ id: 'nov-1' });
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toBeNull();
+    expect(mocks.prisma.dailyMetric.findFirst.mock.calls[0][0].where).toMatchObject({
+      profileId: 'p1',
+      date: { gt: utc('2026-10-31') },
+    });
+  });
+
+  // Not on a calendar rule: Google running late, or a profile whose sync
+  // stopped mid-month, left the empty days to read as a drop once five days
+  // had passed.
+  it('stays partial while no later day is reported, however long ago it ended', async () => {
+    vi.setSystemTime(new Date('2026-11-25T15:00:00Z'));
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(15));
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toEqual({
+      asOf: 'Oct 15, 2026',
+      ended: true,
+      finalSoon: false,
+    });
+  });
+
+  it.each([
+    ['2026-11-09T23:59:00Z', true],
+    ['2026-11-10T00:30:00Z', false],
+  ])('promises final numbers only within ten days of the end (%s)', async (at, finalSoon) => {
+    vi.setSystemTime(new Date(at));
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(28));
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth?.finalSoon).toBe(finalSoon);
+  });
+
+  it('says so when a finished month has no data at all', async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(0));
+    await generateReport('p1', utc('2026-10-01'));
+    expect(renderedData<ReportData>().partialMonth).toEqual({ asOf: null, ended: true, finalSoon: true });
+  });
+
+  it("charts only the days Google has reported, not the sync's zero rows", async () => {
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(october(28));
+    await generateReport('p1', utc('2026-10-01'));
+    const series = mocks.renderImpressionsChart.mock.calls[0][0] as Array<{ date: string }>;
+    expect(series).toHaveLength(28);
+    expect(series.at(-1)?.date).toBe('2026-10-28');
+  });
+});
+
+// Ranges run from UTC midnight on the first day to UTC midnight on the last
+// day. For DailyMetric (one row per date) that's right; for timestamps,
+// `lte: <last day 00:00>` dropped everything after midnight on the month's
+// last day: reviews, posts and replies from the 31st went missing.
+describe('generateReport: the whole last day counts', () => {
+  it('counts reviews and posts up to midnight after the last day', async () => {
+    await generateReport('p1', utc('2026-03-01'));
+
+    const range = { gte: utc('2026-03-01'), lt: utc('2026-04-01') };
+    expect(mocks.prisma.review.findMany.mock.calls[0][0].where.reviewDate).toEqual(range);
+    expect(mocks.prisma.post.count.mock.calls[0][0].where.publishedAt).toEqual(range);
+    // Daily metrics are dates, not timestamps: the last day's row is dated 00:00.
+    expect(mocks.prisma.dailyMetric.findMany.mock.calls[0][0].where.date).toEqual({
+      gte: utc('2026-03-01'),
+      lte: utc('2026-03-31'),
+    });
+  });
+});
+
+describe('generateDashboardReport: All Profiles means onboarded profiles', () => {
+  // ~225 connected locations were never onboarded; summed in they tripled
+  // the agency-wide impressions.
+  it('scopes every query to onboarded profiles', async () => {
+    await generateDashboardReport(null, utc('2026-09-01'), utc('2026-09-30'), null);
+
+    const onboarded = { profile: { isOnboarded: true } };
+    expect(mocks.prisma.dailyMetric.findMany).toHaveBeenCalledTimes(2);
+    for (const [args] of mocks.prisma.dailyMetric.findMany.mock.calls) {
+      expect(args.where).toMatchObject(onboarded);
+    }
+    expect(mocks.prisma.post.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.profileDescription.findMany.mock.calls[0][0].where).toMatchObject(onboarded);
+    expect(mocks.prisma.reviewResponse.findMany.mock.calls[0][0].where).toMatchObject({
+      review: onboarded,
+    });
+  });
+});
+
+describe('generateDashboardReport: days Google has not reported yet', () => {
+  it('compares the reported days with as many days before, and labels the period', async () => {
+    const days = Array.from({ length: 10 }, (_, i) =>
+      metricRow('p1', `2026-03-${String(i + 1).padStart(2, '0')}`, i < 7 ? 3 : 0)
+    );
+    mocks.prisma.dailyMetric.findMany.mockResolvedValueOnce(days).mockResolvedValueOnce([]);
+
+    await generateDashboardReport('p1', utc('2026-03-01'), utc('2026-03-10'), null);
+
+    expect(mocks.prisma.dailyMetric.findMany.mock.calls[1][0].where.date).toEqual({
+      gte: utc('2026-02-22'),
+      lte: utc('2026-02-28'),
+    });
+    expect(renderedData<DashboardReportData>().periodLabel).toBe(
+      'Mar 1, 2026 - Mar 10, 2026 (Google data through Mar 7, 2026)'
+    );
+    expect(mocks.renderImpressionsChart.mock.calls[0][0]).toHaveLength(7);
+  });
+});
+
+describe('generateDashboardReport: the whole last day counts', () => {
+  it('queries posts and descriptions up to midnight after the last day', async () => {
+    await generateDashboardReport('p1', utc('2026-03-01'), utc('2026-03-31'), null);
+
+    const range = { gte: utc('2026-03-01'), lt: utc('2026-04-01') };
+    expect(mocks.prisma.post.findMany.mock.calls[0][0].where.publishedAt).toEqual(range);
+    expect(mocks.prisma.profileDescription.findMany.mock.calls[0][0].where.pushedAt).toEqual(range);
+  });
+
+  it('lists an action from the evening of the last day', async () => {
+    mocks.prisma.post.findMany.mockResolvedValue([
+      {
+        id: 'late',
+        status: 'PUBLISHED',
+        publishedAt: new Date('2026-03-31T18:00:00Z'),
+        profile: { name: 'Badger Test Gutters' },
+      },
+    ]);
+    await generateDashboardReport('p1', utc('2026-03-01'), utc('2026-03-31'), null);
+    expect(renderedData<DashboardReportData>().actions).toEqual([
+      { label: 'Published post', profileName: 'Badger Test Gutters', date: 'Mar 31, 2026' },
+    ]);
   });
 });
 
@@ -307,7 +512,7 @@ describe('ReportDocument', () => {
     address: null,
     category: null,
     month: 'October 2026',
-    partialMonthAsOf: null,
+    partialMonth: null,
     currentMetrics: { totalImpressions: 600, websiteClicks: 6, callClicks: 6, directionRequests: 6 },
     previousMetrics: { totalImpressions: 1000, websiteClicks: 10, callClicks: 10, directionRequests: 10 },
     chartImageUri: null,
@@ -328,12 +533,51 @@ describe('ReportDocument', () => {
   // a partial month says so in the header and makes no comparison.
   it('labels a partial month and drops the month-over-month comparison', () => {
     const texts = textsOf(
-      ReportDocument({ data: { ...base, partialMonthAsOf: 'Oct 21, 2026' } })
+      ReportDocument({ data: { ...base, partialMonth: { asOf: 'Oct 19, 2026', ended: false, finalSoon: false } } })
     );
     expect(texts).toContain(
-      'Performance Report - October 2026 (partial month, as of Oct 21, 2026)'
+      'Performance Report - October 2026 (partial month, as of Oct 19, 2026)'
     );
     expect(texts.some((t) => t.includes('vs prev month'))).toBe(false);
     expect(texts.filter((t) => t === 'Month in progress')).toHaveLength(4);
+  });
+
+  it('labels a partial month with no data yet', () => {
+    const texts = textsOf(
+      ReportDocument({ data: { ...base, partialMonth: { asOf: null, ended: false, finalSoon: false } } })
+    );
+    expect(texts).toContain('Performance Report - October 2026 (partial month, no data yet)');
+    expect(texts.filter((t) => t === 'Month in progress')).toHaveLength(4);
+  });
+
+  it('labels a finished month whose last days Google has not posted yet', () => {
+    const texts = textsOf(
+      ReportDocument({ data: { ...base, partialMonth: { asOf: 'Oct 28, 2026', ended: true, finalSoon: true } } })
+    );
+    expect(texts).toContain(
+      'Performance Report - October 2026 (Google data through Oct 28, 2026; final numbers in a few days)'
+    );
+    expect(texts.some((t) => t.includes('vs prev month'))).toBe(false);
+    expect(texts.filter((t) => t === 'Data still arriving')).toHaveLength(4);
+  });
+
+  it('makes no promise once a finished month has waited too long', () => {
+    const texts = textsOf(
+      ReportDocument({ data: { ...base, partialMonth: { asOf: 'Oct 15, 2026', ended: true, finalSoon: false } } })
+    );
+    expect(texts).toContain(
+      'Performance Report - October 2026 (Google data through Oct 15, 2026; nothing later has synced)'
+    );
+    expect(texts.filter((t) => t === 'Incomplete data')).toHaveLength(4);
+  });
+
+  it.each([
+    [true, "Performance Report - October 2026 (Google has not posted this month's data yet)"],
+    [false, 'Performance Report - October 2026 (no Google data has synced for this month)'],
+  ])('labels a finished month with no data (finalSoon %s)', (finalSoon, header) => {
+    const texts = textsOf(
+      ReportDocument({ data: { ...base, partialMonth: { asOf: null, ended: true, finalSoon } } })
+    );
+    expect(texts).toContain(header);
   });
 });

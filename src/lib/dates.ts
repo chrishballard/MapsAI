@@ -11,6 +11,13 @@ export function getDayStart(date: Date = new Date()): Date {
   );
 }
 
+/** Midnight UTC of the day after the date's UTC calendar day. */
+export function getNextDayStart(date: Date): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)
+  );
+}
+
 /** First of the month (UTC midnight). `offsetMonths` shifts the month, e.g. -1 for the previous month. */
 export function getMonthStart(date: Date = new Date(), offsetMonths = 0): Date {
   return new Date(
