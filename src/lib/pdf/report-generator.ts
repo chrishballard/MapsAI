@@ -16,6 +16,7 @@ import {
   buildActionsLog,
   replyPublishedBetween,
   sumDailyMetricsByDate,
+  onDays,
 } from "@/lib/report-metrics";
 import {
   getMonthStart,
@@ -115,7 +116,7 @@ export async function generateReport(
     where: {
       profileId,
       removedAt: null,
-      reviewDate: { gte: curStart, lte: curEnd },
+      reviewDate: onDays(curStart, curEnd),
     },
     include: { response: true },
   });
@@ -137,7 +138,7 @@ export async function generateReport(
     where: {
       profileId,
       status: "PUBLISHED",
-      publishedAt: { gte: curStart, lte: curEnd },
+      publishedAt: onDays(curStart, curEnd),
     },
   });
 
@@ -163,15 +164,20 @@ export async function generateReport(
   // month every comparison reads as a drop. The generate route defaults to
   // the last complete month, so this only happens when someone asks for the
   // current one: the PDF labels it partial and leaves the comparison out.
+  // "As of" is the last day Google's performance data covers (it lags the
+  // calendar by a few days), not the day the report was generated.
   const now = new Date();
   const isPartialMonth = curStart.getTime() >= getMonthStart(now).getTime();
+  const lastDayWithData = currentDailyMetrics.at(-1)?.date ?? null;
 
   const reportData: ReportData = {
     businessName: profile.name,
     address: profile.address,
     category: profile.category,
     month: formatMonthLabel(month),
-    partialMonthAsOf: isPartialMonth ? formatMediumDateUTC(now) : null,
+    partialMonth: isPartialMonth
+      ? { asOf: lastDayWithData ? formatMediumDateUTC(lastDayWithData) : null }
+      : null,
     currentMetrics,
     previousMetrics,
     chartImageUri,
@@ -276,7 +282,7 @@ export async function generateDashboardReport(
       where: {
         ...profileFilter,
         status: "PUBLISHED",
-        publishedAt: { gte: from, lte: to },
+        publishedAt: onDays(from, to),
       },
       select: {
         id: true,
@@ -300,7 +306,7 @@ export async function generateDashboardReport(
       },
     }),
     prisma.profileDescription.findMany({
-      where: { ...profileFilter, pushedAt: { gte: from, lte: to } },
+      where: { ...profileFilter, pushedAt: onDays(from, to) },
       select: {
         id: true,
         pushedAt: true,

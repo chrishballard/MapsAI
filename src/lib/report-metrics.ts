@@ -1,4 +1,4 @@
-import { formatDateISO } from "./dates";
+import { formatDateISO, getNextDayStart } from "./dates";
 // All date math uses UTC to match PostgreSQL datetime storage
 // D-03: Defaults to last 30 days when no params
 // D-04: Prior period = preceding equal-length period
@@ -180,22 +180,34 @@ export function computeSparklineData(
 }
 
 /**
- * ReviewResponse `where` for replies that went live in [from, to], by the
- * same rule buildActionsLog dates them with: publishedAt, or createdAt for a
- * published row that has no publishedAt.
+ * A `where` range for timestamps falling on the days from..to, where both are
+ * UTC midnights and `to` is the range's last day. `lte: to` stopped at 00:00
+ * on that day and dropped the rest of it: reviews, posts and replies from a
+ * month's last day were missing from its report. (DailyMetric.date is a day,
+ * not a timestamp; `lte: to` is right for it.)
+ */
+export function onDays(from: Date, to: Date) {
+  return { gte: from, lt: getNextDayStart(to) };
+}
+
+/**
+ * ReviewResponse `where` for replies that went live on the days from..to, by
+ * the same rule buildActionsLog dates them with: publishedAt, or createdAt
+ * for a published row that has no publishedAt.
  */
 export function replyPublishedBetween(from: Date, to: Date) {
+  const days = onDays(from, to);
   return {
     OR: [
-      { publishedAt: { gte: from, lte: to } },
-      { publishedAt: null, createdAt: { gte: from, lte: to } },
+      { publishedAt: days },
+      { publishedAt: null, createdAt: days },
     ],
   };
 }
 
 /**
  * Builds action log items from Post, ReviewResponse, and ProfileDescription arrays,
- * filtered to the given date range.
+ * filtered to the days from..to (the whole of the last day, as onDays).
  * Per D-14 and research: services and attributes are NOT trackable (no timestamp fields).
  * NO .slice() limit — returns all items in range, sorted newest-first.
  * A review reply is dated by when it went live (publishedAt), not when it was
@@ -223,13 +235,14 @@ export function buildActionsLog(
   from: Date,
   to: Date
 ): ActionLogItem[] {
+  const end = getNextDayStart(to);
   const postItems: ActionLogItem[] = posts
     .filter(
       (p) =>
         p.status === "PUBLISHED" &&
         p.publishedAt !== null &&
         p.publishedAt >= from &&
-        p.publishedAt <= to
+        p.publishedAt < end
     )
     .map((p) => ({
       id: p.id,
@@ -242,7 +255,7 @@ export function buildActionsLog(
   const responseItems: ActionLogItem[] = responses
     .map((r) => ({ r, time: r.publishedAt ?? r.createdAt }))
     .filter(
-      ({ r, time }) => r.status === "PUBLISHED" && time >= from && time <= to
+      ({ r, time }) => r.status === "PUBLISHED" && time >= from && time < end
     )
     .map(({ r, time }) => ({
       id: r.id,
@@ -257,7 +270,7 @@ export function buildActionsLog(
       (d) =>
         d.pushedAt !== null &&
         d.pushedAt >= from &&
-        d.pushedAt <= to
+        d.pushedAt < end
     )
     .map((d) => ({
       id: d.id,

@@ -9,6 +9,8 @@ import {
   computeSparklineData,
   buildActionsLog,
   replyPublishedBetween,
+  sumDailyMetricsByDate,
+  onDays,
 } from "@/lib/report-metrics";
 import { ViewsOnGoogleChart } from "./views-on-google-chart";
 import { MetricSparkCard } from "./metric-spark-card";
@@ -61,7 +63,7 @@ export async function ReportsDashboardContent({
         where: {
           ...profileFilter,
           status: "PUBLISHED",
-          publishedAt: { gte: fromDate, lte: toDate },
+          publishedAt: onDays(fromDate, toDate),
         },
         include: { profile: { select: { name: true } } },
       }),
@@ -77,7 +79,7 @@ export async function ReportsDashboardContent({
       prisma.profileDescription.findMany({
         where: {
           ...profileFilter,
-          pushedAt: { gte: fromDate, lte: toDate },
+          pushedAt: onDays(fromDate, toDate),
         },
         include: { profile: { select: { name: true } } },
       }),
@@ -99,13 +101,17 @@ export async function ReportsDashboardContent({
   const clicksPct = computePctChange(current.websiteClicks, prior.websiteClicks);
   const directionsPct = computePctChange(current.directionRequests, prior.directionRequests);
 
+  // One point per day: across all profiles there is a row per profile per
+  // day, and the charts want the day's total (as the PDF draws them).
+  const dailyTotals = sumDailyMetricsByDate(currentMetrics);
+
   // Sparkline data
-  const callsSparkData = computeSparklineData(currentMetrics, "callClicks");
-  const clicksSparkData = computeSparklineData(currentMetrics, "websiteClicks");
-  const directionsSparkData = computeSparklineData(currentMetrics, "directionRequests");
+  const callsSparkData = computeSparklineData(dailyTotals, "callClicks");
+  const clicksSparkData = computeSparklineData(dailyTotals, "websiteClicks");
+  const directionsSparkData = computeSparklineData(dailyTotals, "directionRequests");
 
   // Chart data — daily search + maps impressions
-  const chartData = currentMetrics.map((m) => ({
+  const chartData = dailyTotals.map((m) => ({
     date: formatDateISO(m.date),
     search: m.impressionsSearchDesktop + m.impressionsSearchMobile,
     maps: m.impressionsMapsDesktop + m.impressionsMapsMobile,

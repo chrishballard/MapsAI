@@ -8,6 +8,7 @@ import {
   buildActionsLog,
   sumDailyMetricsByDate,
   replyPublishedBetween,
+  onDays,
 } from '@/lib/report-metrics';
 
 // Helpers
@@ -403,11 +404,49 @@ describe('replyPublishedBetween', () => {
   it('matches publishedAt in range, or createdAt when publishedAt is missing', () => {
     const from = new Date('2026-03-01T00:00:00Z');
     const to = new Date('2026-03-31T00:00:00Z');
+    const end = new Date('2026-04-01T00:00:00Z');
     expect(replyPublishedBetween(from, to)).toEqual({
       OR: [
-        { publishedAt: { gte: from, lte: to } },
-        { publishedAt: null, createdAt: { gte: from, lte: to } },
+        { publishedAt: { gte: from, lt: end } },
+        { publishedAt: null, createdAt: { gte: from, lt: end } },
       ],
     });
+  });
+});
+
+// Callers pass `to` as UTC midnight of the range's last day. Timestamps
+// anywhere on that day belong to the range; `lte: to` stopped at 00:00 and
+// dropped the rest of the day (reviews, posts and replies from the 31st).
+describe('onDays', () => {
+  it('runs from the first day to midnight after the last day', () => {
+    expect(onDays(new Date('2026-03-01T00:00:00Z'), new Date('2026-03-31T00:00:00Z'))).toEqual({
+      gte: new Date('2026-03-01T00:00:00Z'),
+      lt: new Date('2026-04-01T00:00:00Z'),
+    });
+  });
+
+  it('crosses a year end', () => {
+    expect(onDays(new Date('2026-12-01T00:00:00Z'), new Date('2026-12-31T00:00:00Z')).lt).toEqual(
+      new Date('2027-01-01T00:00:00Z')
+    );
+  });
+});
+
+describe('buildActionsLog: the whole last day counts', () => {
+  const from = new Date('2026-03-01T00:00:00Z');
+  const to = new Date('2026-03-31T00:00:00Z'); // how the reports pass it
+
+  it('keeps an action from the evening of the last day, and none from the day after', () => {
+    const posts = [
+      { id: 'evening', status: 'PUBLISHED', publishedAt: new Date('2026-03-31T22:30:00Z'), profile: { name: 'A' } },
+      { id: 'next-day', status: 'PUBLISHED', publishedAt: new Date('2026-04-01T00:00:00Z'), profile: { name: 'A' } },
+    ];
+    const responses = [
+      { id: 'reply', status: 'PUBLISHED', createdAt: new Date('2026-03-30T00:00:00Z'), publishedAt: new Date('2026-03-31T15:00:00Z'), review: { profile: { name: 'A' } } },
+    ];
+    const descriptions = [{ id: 'desc', pushedAt: new Date('2026-03-31T09:00:00Z'), profile: { name: 'A' } }];
+
+    const result = buildActionsLog(posts, responses, descriptions, from, to);
+    expect(result.map((r) => r.id).sort()).toEqual(['desc', 'evening', 'reply']);
   });
 });

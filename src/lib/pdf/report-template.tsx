@@ -188,9 +188,10 @@ export interface ReportData {
   address: string | null;
   category: string | null;
   month: string; // "March 2026"
-  // Set when the month hasn't ended ("Oct 21, 2026"): the header says the
-  // month is partial and the month-over-month comparison is left out.
-  partialMonthAsOf: string | null;
+  // Set when the month hasn't ended: the header says the month is partial
+  // and the month-over-month comparison is left out. asOf is the last day
+  // with performance data ("Oct 19, 2026"), null when there is none yet.
+  partialMonth: { asOf: string | null } | null;
   currentMetrics: {
     totalImpressions: number;
     websiteClicks: number;
@@ -441,7 +442,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
   // Month-to-date against a whole previous month always reads as a drop, so
   // a partial month makes no comparison.
   const change = (current: number, previous: number) =>
-    data.partialMonthAsOf
+    data.partialMonth
       ? { text: "Month in progress", style: styles.changeNeutral }
       : formatChange(current, previous);
   const impChange = change(data.currentMetrics.totalImpressions, data.previousMetrics.totalImpressions);
@@ -459,8 +460,10 @@ export function ReportDocument({ data }: { data: ReportData }) {
           {data.category && <Text style={styles.subtitle}>{data.category}</Text>}
           <Text style={styles.reportTitle}>
             Performance Report - {data.month}
-            {data.partialMonthAsOf
-              ? ` (partial month, as of ${data.partialMonthAsOf})`
+            {data.partialMonth
+              ? data.partialMonth.asOf
+                ? ` (partial month, as of ${data.partialMonth.asOf})`
+                : " (partial month, no data yet)"
               : null}
           </Text>
         </View>
