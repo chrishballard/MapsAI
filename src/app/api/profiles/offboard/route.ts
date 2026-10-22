@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 import { publishQueue } from "@/lib/queue/publish-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
     } catch (err) {
       console.warn(
         `[offboard] Could not remove publish job for post ${post.id}:`,
-        err
+        redisErrorMessage(err)
       );
     }
   }

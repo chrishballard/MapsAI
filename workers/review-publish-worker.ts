@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import { fetchSingleReview, publishReviewReply } from "../src/lib/google-reviews";
 import { prisma } from "../src/lib/prisma";
 import {
@@ -293,6 +294,7 @@ export const worker = new Worker<ReviewPublishJobData>(
     limiter: { max: 8, duration: 60_000 },
   }
 );
+logRedisErrors(worker, "review-publish-worker");
 
 worker.on("completed", (job) => {
   console.log(
@@ -325,10 +327,6 @@ worker.on("failed", async (job, err) => {
       console.error(`Failed to update review response status: ${updateErr}`);
     }
   }
-});
-
-worker.on("error", (err) => {
-  console.error(`[review-publish-worker] Worker error: ${err.message}`);
 });
 
 console.log("Review publish worker started, waiting for jobs...");

@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import { syncProfileMetrics } from "../src/lib/sync/metrics";
 import { prisma } from "../src/lib/prisma";
 
@@ -46,6 +47,7 @@ export const worker = new Worker(
     concurrency: 1,
   }
 );
+logRedisErrors(worker, "metrics-sync-worker");
 
 worker.on("completed", (job) => {
   console.log(`Metrics sync job ${job.id} completed`);

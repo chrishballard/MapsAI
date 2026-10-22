@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export const reviewSyncQueue = new Queue("review-sync", {
   connection: redisConnection,
@@ -12,6 +13,7 @@ export const reviewSyncQueue = new Queue("review-sync", {
     ...defaultJobRetention,
   },
 });
+logRedisErrors(reviewSyncQueue, "review-sync");
 
 /**
  * Initialize the repeatable review sync scheduler.

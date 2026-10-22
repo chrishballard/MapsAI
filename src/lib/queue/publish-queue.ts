@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export interface PublishJobData {
   postId: string;
@@ -16,6 +17,7 @@ export const publishQueue = new Queue<PublishJobData>("post-publish", {
     ...defaultJobRetention,
   },
 });
+logRedisErrors(publishQueue, "post-publish");
 
 /**
  * Schedule a post for publishing at a specific time.

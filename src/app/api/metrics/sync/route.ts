@@ -5,6 +5,7 @@ import {
   initMetricsSyncScheduler,
 } from "@/lib/queue/metrics-sync-queue";
 import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 
 export async function POST(request: Request) {
   const unauthorized = await requireSession();
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error(
       "Failed to queue metrics sync (Redis may be unavailable):",
-      err
+      redisErrorMessage(err)
     );
     return NextResponse.json(
       { error: "Metrics sync could not be started. Please try again in a minute." },
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   try {
     await initMetricsSyncScheduler();
   } catch (err) {
-    console.warn("Failed to refresh the metrics sync scheduler:", err);
+    console.warn("Failed to refresh the metrics sync scheduler:", redisErrorMessage(err));
   }
 
   return NextResponse.json({ message: `Metrics sync triggered (${days} days)` });

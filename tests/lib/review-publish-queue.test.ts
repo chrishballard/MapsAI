@@ -18,6 +18,7 @@ vi.mock('bullmq', () => ({
   Queue: class {
     add = mocks.queueAdd;
     getJob = mocks.queueGetJob;
+    on = vi.fn();
   },
 }));
 vi.mock('@/lib/queue/connection', () => ({

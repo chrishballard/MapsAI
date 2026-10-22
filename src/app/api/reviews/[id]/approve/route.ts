@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scheduleReviewPublish } from "@/lib/queue/review-publish-queue";
 import { enqueueWithin } from "@/lib/queue/enqueue-deadline";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
@@ -147,7 +148,7 @@ export async function POST(
   } catch (err) {
     console.warn(
       "Failed to queue review response for publishing (Redis may be unavailable):",
-      err
+      redisErrorMessage(err)
     );
     await prisma.reviewResponse.updateMany({
       where: { id: review.response.id, status: "APPROVED" },

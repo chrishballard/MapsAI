@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors, redisErrorMessage } from "./redis-errors";
 import { prisma } from "../prisma";
 import { awaitingCaption } from "../caption-state";
 
@@ -24,6 +25,7 @@ export const imageCaptionQueue = new Queue<ImageCaptionJobData>(
     },
   }
 );
+logRedisErrors(imageCaptionQueue, "image-caption");
 
 /**
  * Enqueue a caption job for one library image.
@@ -97,7 +99,7 @@ export async function enqueueCaptionsForProfile(
       } catch (err) {
         console.warn(
           `[image-caption-queue] Failed to enqueue caption for image ${row.id}:`,
-          err
+          redisErrorMessage(err)
         );
       }
     }
@@ -105,7 +107,7 @@ export async function enqueueCaptionsForProfile(
   } catch (err) {
     console.warn(
       `[image-caption-queue] Failed to enqueue captions for profile ${profileId}:`,
-      err
+      redisErrorMessage(err)
     );
     return 0;
   }

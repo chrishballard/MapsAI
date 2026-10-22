@@ -1,7 +1,16 @@
 import { ConnectionOptions } from "bullmq";
 
 function parseRedisUrl(url: string): ConnectionOptions {
-  const parsed = new URL(url);
+  // Node's TypeError for a bad URL carries the input, password and all, and
+  // this runs on import: every boot would print it. Fail without it.
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(
+      "REDIS_URL is not a valid URL (value not shown). A password with / # ? or % must be percent-encoded."
+    );
+  }
   return {
     host: parsed.hostname,
     port: parseInt(parsed.port || "6379", 10),

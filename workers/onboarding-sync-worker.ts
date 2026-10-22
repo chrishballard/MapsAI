@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import { runInitialSync } from "../src/lib/onboarding-sync";
 
 interface OnboardingSyncJobData {
@@ -28,6 +29,7 @@ export const worker = new Worker<OnboardingSyncJobData>(
     concurrency: 2,
   }
 );
+logRedisErrors(worker, "onboarding-sync-worker");
 
 worker.on("completed", (job) => {
   console.log(
@@ -39,10 +41,6 @@ worker.on("failed", (job, err) => {
   console.error(
     `[onboarding-sync] Job ${job?.id} failed for profile ${job?.data.profileId}: ${err.message}`
   );
-});
-
-worker.on("error", (err) => {
-  console.error(`[onboarding-sync-worker] Worker error: ${err.message}`);
 });
 
 console.log("Onboarding sync worker started, waiting for jobs...");

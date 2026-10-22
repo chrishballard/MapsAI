@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enqueueOnboardingSync } from "@/lib/queue/onboarding-sync-queue";
+import { redisErrorMessage } from "@/lib/queue/redis-errors";
 import { parseBody, profileIdBodySchema } from "@/lib/api-validation";
 
 export async function POST(request: Request) {
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error(
       `[onboarding-complete] Failed to enqueue initial sync for ${body.profileId}:`,
-      err
+      redisErrorMessage(err)
     );
     // Onboarding state is already saved; calling this endpoint again is safe
     // and re-attempts the enqueue.

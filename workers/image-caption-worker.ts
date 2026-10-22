@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "../src/lib/queue/connection";
+import { logRedisErrors } from "../src/lib/queue/redis-errors";
 import {
   captionImage,
   recordCaptionRetriesExhausted,
@@ -54,6 +55,7 @@ export const worker = new Worker<ImageCaptionJobData>(
     concurrency: 2,
   }
 );
+logRedisErrors(worker, "image-caption-worker");
 
 worker.on("completed", (job) => {
   console.log(`[image-caption] Job ${job.id} completed`);
@@ -61,10 +63,6 @@ worker.on("completed", (job) => {
 
 worker.on("failed", (job, err) => {
   console.error(`[image-caption] Job ${job?.id} failed: ${err.message}`);
-});
-
-worker.on("error", (err) => {
-  console.error(`[image-caption-worker] Worker error: ${err.message}`);
 });
 
 console.log("Image caption worker started, waiting for jobs...");

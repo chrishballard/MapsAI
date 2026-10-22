@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { generateMonthlyPosts } from "./post-generator";
 import { calculateRollingScheduleDates } from "./scheduling";
 import { schedulePostPublish } from "./queue/publish-queue";
+import { redisErrorMessage } from "./queue/redis-errors";
 import { markImagesUsed, isImageFkViolation } from "./post-images";
 import { pickImagesForPostContents } from "./post-image-matcher";
 import { PostType } from "../generated/prisma/client";
@@ -141,7 +142,7 @@ export async function generateAndSchedulePosts(
       try {
         await schedulePostPublish(post.id, post.scheduledAt);
       } catch (err) {
-        console.warn(`${logPrefix} Failed to queue post ${post.id}:`, err);
+        console.warn(`${logPrefix} Failed to queue post ${post.id}:`, redisErrorMessage(err));
       }
     }
   }

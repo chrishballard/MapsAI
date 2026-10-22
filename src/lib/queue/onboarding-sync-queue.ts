@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { redisConnection, defaultJobRetention } from "./connection";
+import { logRedisErrors } from "./redis-errors";
 
 export interface OnboardingSyncJobData {
   profileId: string;
@@ -19,6 +20,7 @@ export const onboardingSyncQueue = new Queue<OnboardingSyncJobData>(
     },
   }
 );
+logRedisErrors(onboardingSyncQueue, "onboarding-sync");
 
 /**
  * Enqueue the initial data sync for a freshly onboarded profile.
