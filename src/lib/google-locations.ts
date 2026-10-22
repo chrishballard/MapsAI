@@ -71,6 +71,35 @@ async function syncGoogleProfileState(params: {
   }
 }
 
+/**
+ * Which stored row a listed location belongs to, for this login.
+ *
+ * A location's resource name is Google's and global, but a Profile row is
+ * unique per (login, location). When two agency logins can both manage a
+ * location, each login's sync made its own row: ten locations were stored
+ * twice by 2026-10-22, and Blokk's two copies each published a post on the
+ * same four days in April 2026. So a location keeps one row. A login that
+ * finds it stored under another login leaves it there while that login
+ * still has it connected, and takes the row over (history and all) once
+ * that login has lost it. Pairs made before this keep updating as they are
+ * until they are merged by hand.
+ */
+async function storedRowFor(
+  googleAccountId: string,
+  locationName: string
+): Promise<{ action: "upsert" } | { action: "skip" } | { action: "adopt"; id: string }> {
+  const rows = await prisma.profile.findMany({
+    where: { locationName },
+    select: { id: true, googleAccountId: true, isConnected: true },
+    orderBy: [{ isOnboarded: "desc" }, { updatedAt: "desc" }],
+  });
+  if (rows.length === 0 || rows.some((r) => r.googleAccountId === googleAccountId)) {
+    return { action: "upsert" };
+  }
+  if (rows.some((r) => r.isConnected)) return { action: "skip" };
+  return { action: "adopt", id: rows[0].id };
+}
+
 export async function syncLocationsForAccount(googleAccountId: string) {
   const oauth2Client = await createGoogleClient(googleAccountId);
 
@@ -105,12 +134,15 @@ export async function syncLocationsForAccount(googleAccountId: string) {
   // proves nothing about the profiles stored under that group, so the sweep
   // below leaves them alone.
   const emptyAccounts = new Set<string>();
+  // Every location Google listed, including ones stored under another login.
+  let listedTotal = 0;
+  let servedElsewhere = 0;
 
   for (const account of accounts) {
     if (!account.name) continue;
 
     let nextPageToken: string | undefined;
-    const syncedBefore = syncedProfiles.length;
+    const listedBefore = listedTotal;
 
     do {
       const locationsRes = await mybusinessbusinessinformation.accounts.locations.list({
@@ -125,37 +157,45 @@ export async function syncLocationsForAccount(googleAccountId: string) {
 
       for (const location of locations) {
         if (!location.name) continue;
+        listedTotal++;
 
-        const profile = await prisma.profile.upsert({
-          where: {
-            googleAccountId_locationName: {
-              googleAccountId,
-              locationName: location.name,
-            },
-          },
-          create: {
-            googleAccountId,
-            locationName: location.name,
-            accountResourceName: account.name,
-            name: location.title || "Unnamed Location",
-            address: formatAddress(location.storefrontAddress),
-            phone: location.phoneNumbers?.primaryPhone || null,
-            category: location.categories?.primaryCategory?.displayName || null,
-            websiteUrl: location.websiteUri || null,
-            placeId: location.metadata?.placeId || null,
-            isConnected: true,
-          },
-          update: {
-            accountResourceName: account.name,
-            name: location.title || "Unnamed Location",
-            address: formatAddress(location.storefrontAddress),
-            phone: location.phoneNumbers?.primaryPhone || null,
-            category: location.categories?.primaryCategory?.displayName || null,
-            websiteUrl: location.websiteUri || null,
-            placeId: location.metadata?.placeId || null,
-            isConnected: true,
-          },
-        });
+        const stored = await storedRowFor(googleAccountId, location.name);
+        if (stored.action === "skip") {
+          servedElsewhere++;
+          continue;
+        }
+
+        const fields = {
+          accountResourceName: account.name,
+          name: location.title || "Unnamed Location",
+          address: formatAddress(location.storefrontAddress),
+          phone: location.phoneNumbers?.primaryPhone || null,
+          category: location.categories?.primaryCategory?.displayName || null,
+          websiteUrl: location.websiteUri || null,
+          placeId: location.metadata?.placeId || null,
+          isConnected: true,
+        };
+        const profile =
+          stored.action === "adopt"
+            ? await prisma.profile.update({
+                where: { id: stored.id },
+                data: { googleAccountId, ...fields },
+              })
+            : await prisma.profile.upsert({
+                where: {
+                  googleAccountId_locationName: {
+                    googleAccountId,
+                    locationName: location.name,
+                  },
+                },
+                create: { googleAccountId, locationName: location.name, ...fields },
+                update: fields,
+              });
+        if (stored.action === "adopt") {
+          console.log(
+            `[location-sync] ${location.name} was stored under a login that lost it; now synced through ${googleAccountId}`
+          );
+        }
 
         // What Google itself shows for this location. Kept apart from the
         // RankMaps drafts in ProfileDescription / ProfileService so the vault
@@ -170,7 +210,13 @@ export async function syncLocationsForAccount(googleAccountId: string) {
       }
     } while (nextPageToken);
 
-    if (syncedProfiles.length === syncedBefore) emptyAccounts.add(account.name);
+    if (listedTotal === listedBefore) emptyAccounts.add(account.name);
+  }
+
+  if (servedElsewhere > 0) {
+    console.log(
+      `[location-sync] ${servedElsewhere} location(s) listed for ${googleAccountId} are already connected through another login; left there`
+    );
   }
 
   // Mark profiles not in this sync as disconnected. The publish worker then
@@ -188,7 +234,7 @@ export async function syncLocationsForAccount(googleAccountId: string) {
     select: { id: true, accountResourceName: true, locationName: true },
   });
 
-  const emptyListing = syncedProfiles.length === 0;
+  const emptyListing = listedTotal === 0;
   const unproven = missing.filter(
     (p) =>
       emptyListing ||
