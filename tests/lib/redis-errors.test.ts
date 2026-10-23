@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import net from 'node:net';
+import type { EventEmitter } from 'node:events';
 import { format } from 'node:util';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -51,21 +52,34 @@ function wrongpassError(): Error & { command?: unknown } {
 
 // ---------------------------------------------------------------------------
 // A fake Redis. 'accepting' answers enough for BullMQ to connect; after
-// rotate() every connection is cut and every command gets WRONGPASS.
+// rotate() every connection is cut and every command gets WRONGPASS. After
+// silence() it answers nothing, so a client that connects sends AUTH and
+// waits with its socket open.
 
 function countCommands(chunk: string): number {
   return chunk.match(/(?:^|\r\n)\*\d+\r\n/g)?.length ?? 0;
 }
 
 async function fakeRedis(initial: 'accepting' | 'refusing') {
-  let mode = initial;
+  let mode: 'accepting' | 'refusing' | 'silent' = initial;
   const sockets = new Set<net.Socket>();
+  const answered = new WeakSet<net.Socket>();
+  const waiting = new Set<net.Socket>();
   const server = net.createServer((socket) => {
     sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
+    socket.on('close', () => {
+      sockets.delete(socket);
+      waiting.delete(socket);
+    });
     socket.on('error', () => {});
     socket.on('data', (data) => {
       const text = data.toString();
+      if (mode === 'silent') {
+        // A socket refused just before silence() is about to close.
+        if (!answered.has(socket)) waiting.add(socket);
+        return;
+      }
+      answered.add(socket);
       if (mode === 'refusing') {
         const n = Math.max(countCommands(text), 1);
         socket.write(
@@ -93,6 +107,13 @@ async function fakeRedis(initial: 'accepting' | 'refusing') {
       mode = 'refusing';
       for (const socket of sockets) socket.destroy();
     },
+    silence() {
+      mode = 'silent';
+    },
+    /** Open connections that sent commands and never got an answer. */
+    get waiting() {
+      return waiting.size;
+    },
     async close() {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -100,8 +121,20 @@ async function fakeRedis(initial: 'accepting' | 'refusing') {
   };
 }
 
-function queueOn(port: number) {
+function queueOn(port: number, retryStrategy: () => number | null = () => 50) {
   return new Queue('redis-errors-test', {
+    connection: {
+      host: '127.0.0.1',
+      port,
+      password: PASSWORD,
+      maxRetriesPerRequest: null,
+      retryStrategy,
+    },
+  });
+}
+
+function workerOn(port: number) {
+  return new Worker('redis-errors-test', async () => {}, {
     connection: {
       host: '127.0.0.1',
       port,
@@ -125,12 +158,27 @@ async function until(check: () => boolean, ms = 5_000): Promise<void> {
 // close() disconnects a queue that never got a connection; a connected one
 // would QUIT, which waits forever on a Redis refusing AUTH, so its client is
 // disconnected first.
-async function shutDown(queue: Queue, client?: { disconnect(): void }) {
-  client?.disconnect();
-  await queue.close();
-  const settled = lines.length;
-  await new Promise((r) => setTimeout(r, 300)); // several retry intervals
-  expect(lines.slice(settled)).toEqual([]);
+//
+// Closing must not leave an unhandled rejection either. Vitest reports one
+// only as a stray error after every test passed, and stands aside while
+// another listener is registered, so this one fails the test that caused it.
+async function shutDown(
+  queue: { close(): Promise<unknown> },
+  client?: { disconnect(): void }
+) {
+  const rejections: unknown[] = [];
+  const record = (reason: unknown) => rejections.push(reason);
+  process.on('unhandledRejection', record);
+  try {
+    client?.disconnect();
+    await queue.close();
+    const settled = lines.length;
+    await new Promise((r) => setTimeout(r, 300)); // several retry intervals
+    expect(lines.slice(settled)).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', record);
+  }
+  expect(rejections).toEqual([]);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,11 +290,17 @@ describe('the Redis connection options', () => {
 describe('BullMQ against a Redis that refuses the password', () => {
   it('without a listener, BullMQ prints the password (the 2026-10-22 leak)', async () => {
     const redis = await fakeRedis('refusing');
-    const queue = queueOn(redis.port);
+    let retry: number | null = 50;
+    const queue = queueOn(redis.port, () => retry);
     try {
       await until(() => lines.some((l) => l.includes('WRONGPASS')));
       expect(lines.some((l) => l.includes(PASSWORD))).toBe(true);
     } finally {
+      // Nothing here stops the late rejection a close() can cause (see the
+      // mid-handshake tests below), so the client gives up first: its
+      // startup promise then settles here, before close().
+      retry = null;
+      await queue.client.catch(() => {});
       await shutDown(queue);
       await redis.close();
     }
@@ -269,26 +323,55 @@ describe('BullMQ against a Redis that refuses the password', () => {
 
   it('a Worker with logRedisErrors logs no password either', async () => {
     const redis = await fakeRedis('refusing');
-    const worker = logRedisErrors(
-      new Worker('redis-errors-test', async () => {}, {
-        connection: {
-          host: '127.0.0.1',
-          port: redis.port,
-          password: PASSWORD,
-          maxRetriesPerRequest: null,
-          retryStrategy: () => 50,
-        },
-      }),
-      'test-worker'
-    );
+    const worker = logRedisErrors(workerOn(redis.port), 'test-worker');
     try {
       await until(() => lines.filter((l) => l.includes('WRONGPASS')).length >= 2);
       expect(lines.some((l) => l.includes(PASSWORD))).toBe(false);
     } finally {
-      await worker.close(true);
-      const settled = lines.length;
-      await new Promise((r) => setTimeout(r, 300));
-      expect(lines.slice(settled)).toEqual([]);
+      await shutDown({ close: () => worker.close(true) });
+      await redis.close();
+    }
+  });
+
+  // BullMQ's close() strips every listener off its connection, and a
+  // connection that never got through fails once more after that: when its
+  // socket closes it rejects with its last error and re-emits it as 'error'
+  // to nobody, which throws inside a promise callback. An unhandled
+  // rejection, and Node ends a process on one. It takes a close() that lands
+  // while a socket is open, a few ms in every 50 here: CI hit it about one
+  // run in 15 (2026-10-22). silence() holds the socket open every time.
+  it('a queue closed mid-handshake leaves no unhandled rejection', async () => {
+    const redis = await fakeRedis('refusing');
+    const queue = logRedisErrors(queueOn(redis.port), 'test');
+    try {
+      await until(() => lines.some((l) => l.includes('WRONGPASS')));
+      redis.silence();
+      await until(() => redis.waiting === 1);
+    } finally {
+      await shutDown(queue);
+      await redis.close();
+    }
+  });
+
+  // What workers/index.ts does on SIGTERM. A Worker has two connections,
+  // BullMQ's `connection` and `blockingConnection`; each must have failed
+  // once, since the late rejection carries that failure.
+  it('a Worker closed mid-handshake leaves no unhandled rejection', async () => {
+    const redis = await fakeRedis('refusing');
+    const worker = logRedisErrors(workerOn(redis.port), 'test-worker');
+    const connections = (['connection', 'blockingConnection'] as const).map(
+      (key) => (worker as unknown as Record<string, EventEmitter>)[key]
+    );
+    const failed = new Set<EventEmitter>();
+    for (const connection of connections) {
+      connection.on('error', () => failed.add(connection));
+    }
+    try {
+      await until(() => failed.size === 2);
+      redis.silence();
+      await until(() => redis.waiting === 2);
+    } finally {
+      await shutDown(worker);
       await redis.close();
     }
   });
