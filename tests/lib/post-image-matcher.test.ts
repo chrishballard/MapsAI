@@ -358,3 +358,17 @@ describe('pickImagesForPostContents id validation', () => {
     expect(picked).toEqual([null, 's1']);
   });
 });
+
+describe('formatPostLines', () => {
+  it('keeps each post on one line, so multi-paragraph posts and lists stay countable', async () => {
+    const { formatPostLines } = await import('@/lib/post-image-matcher');
+    const lines = formatPostLines([
+      { content: 'Fall prep matters.\n\nHere is the list:\n\n• Clean gutters\n• Check the roof', type: 'WHATS_NEW' },
+      { content: 'Second post.', type: 'OFFER' },
+    ]);
+    expect(lines).toEqual([
+      '1. [WHATS_NEW] Fall prep matters. Here is the list: • Clean gutters • Check the roof',
+      '2. [OFFER] Second post.',
+    ]);
+  });
+});
