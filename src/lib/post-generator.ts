@@ -14,6 +14,8 @@ interface ProfileInput {
   address: string | null;
   keywords?: string[];
   cities?: string[];
+  /** The profile's live Google description: the facts a longer post can draw on. */
+  description?: string | null;
 }
 
 /** Google's hard limit for a post's text. */
@@ -75,21 +77,39 @@ function cleanPost(post: GeneratedPost): GeneratedPost | null {
   };
 }
 
+/** "October 27, 2026". UTC, like the schedule dates the posts get. */
+function formatToday(): string {
+  return new Date().toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// The date and description go here, not in the system prompt, which is
+// cached across profiles and must stay byte-identical.
 function buildUserMessage(
   profile: ProfileInput,
   count: number,
   alreadyWritten: GeneratedPost[]
 ): string {
+  const description = profile.description?.trim();
   return [
     `Business name: ${profile.name}`,
     profile.category ? `Category: ${profile.category}` : null,
     profile.address ? `Address: ${profile.address}` : null,
+    description
+      ? `\nThe business's own Google description (facts here are safe to use):\n${description}`
+      : null,
     profile.keywords?.length
-      ? `\nTarget keywords (naturally incorporate 1-3 per post): ${profile.keywords.join(", ")}`
+      ? `\nTarget keywords (naturally incorporate 2-4 per post): ${profile.keywords.join(", ")}`
       : null,
     profile.cities?.length
       ? `Target cities/service areas: ${profile.cities.join(", ")}`
       : null,
+    "",
+    `Today is ${formatToday()}. These posts publish over roughly the next month, on days you don't know in advance, so any time reference must read correctly on any day in that stretch: name the season or month ("this fall", "as the holidays get closer") rather than counting down to a specific date ("Halloween is days away").`,
     "",
     `Generate ${count} varied monthly Google Business Profile posts for this business.`,
     profile.keywords?.length
@@ -135,8 +155,9 @@ ${US_ENGLISH_RULE}`;
         system: systemPrompt,
         prompt: buildUserMessage(profile, count, posts),
         schema: BatchPostsSchema,
-        // Was 2048 before thinking was always on.
-        maxTokens: 8_192,
+        // Up to 12 posts of ~1,000 characters is ~4k tokens of JSON, plus
+        // thinking; the ceiling for a non-streaming call (see CLAUDE_MODEL).
+        maxTokens: 16_384,
         effort: "medium",
         // Profiles sharing a template run back to back in the daily job.
         cacheSystem: true,

@@ -127,3 +127,20 @@ describe('generateAndSchedulePosts image wiring', () => {
     await expect(generateAndSchedulePosts(PROFILE)).rejects.toThrow('db down');
   });
 });
+
+describe('generateAndSchedulePosts generator input', () => {
+  it("hands the profile's Google description to the post generator", async () => {
+    await generateAndSchedulePosts({
+      ...PROFILE,
+      googleDescription: 'Kitchen and bath remodels across Boise since 2004.',
+    });
+
+    expect(mocks.generateMonthlyPosts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'Kitchen and bath remodels across Boise since 2004.',
+      }),
+      undefined,
+      2
+    );
+  });
+});

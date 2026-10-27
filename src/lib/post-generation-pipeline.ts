@@ -13,6 +13,7 @@ export interface PostGenerationProfile {
   category: string | null;
   address: string | null;
   postFrequency: number | null;
+  googleDescription?: string | null;
   promptTemplate?: { prompt: string } | null;
 }
 
@@ -64,6 +65,7 @@ export async function generateAndSchedulePosts(
       address: profile.address,
       keywords: keywordRecords.map((k) => k.keyword),
       cities: cityRecords.map((c) => c.city),
+      description: profile.googleDescription,
     },
     profile.promptTemplate?.prompt ?? undefined,
     profile.postFrequency ?? 4
