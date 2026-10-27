@@ -13,7 +13,8 @@ export interface PostGenerationProfile {
   category: string | null;
   address: string | null;
   postFrequency: number | null;
-  googleDescription?: string | null;
+  /** Required, so a caller that `select`s fields can't silently drop the facts. */
+  googleDescription: string | null;
   promptTemplate?: { prompt: string } | null;
 }
 

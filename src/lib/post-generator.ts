@@ -7,6 +7,7 @@ import {
 } from "./prompts/types";
 import { getDefaultPrompt } from "./prompts/defaults";
 import { US_ENGLISH_RULE } from "./copy-language";
+import { pastedContent, PASTED_CONTENT_SYSTEM_NOTE } from "./pasted-content";
 
 interface ProfileInput {
   name: string;
@@ -14,7 +15,10 @@ interface ProfileInput {
   address: string | null;
   keywords?: string[];
   cities?: string[];
-  /** The profile's live Google description: the facts a longer post can draw on. */
+  /**
+   * The profile's live Google description: the facts a longer post can draw
+   * on. The owner can edit it on Google, so it goes in as outside text.
+   */
   description?: string | null;
 }
 
@@ -100,16 +104,16 @@ function buildUserMessage(
     profile.category ? `Category: ${profile.category}` : null,
     profile.address ? `Address: ${profile.address}` : null,
     description
-      ? `\nThe business's own Google description (facts here are safe to use):\n${description}`
+      ? `\nThe business's own Google description (facts here are safe to use):\n${pastedContent(description)}`
       : null,
     profile.keywords?.length
-      ? `\nTarget keywords (naturally incorporate 2-4 per post): ${profile.keywords.join(", ")}`
+      ? `\nTarget keywords (naturally incorporate 2-4 in a full-length post, fewer in a short one): ${profile.keywords.join(", ")}`
       : null,
     profile.cities?.length
       ? `Target cities/service areas: ${profile.cities.join(", ")}`
       : null,
     "",
-    `Today is ${formatToday()}. These posts publish over roughly the next month, on days you don't know in advance, so any time reference must read correctly on any day in that stretch: name the season or month ("this fall", "as the holidays get closer") rather than counting down to a specific date ("Halloween is days away").`,
+    `Today is ${formatToday()}. These posts go live over the coming weeks, on dates you don't know in advance, so a time reference has to stay true for the next month or so: name the season ("this fall", "this winter"), and never count down to a specific holiday or date ("Halloween is days away", "book before Christmas"), since some posts may go live after it.`,
     "",
     `Generate ${count} varied monthly Google Business Profile posts for this business.`,
     profile.keywords?.length
@@ -141,7 +145,9 @@ export async function generateMonthlyPosts(
   // appended to whichever one is used rather than written into the defaults.
   const systemPrompt = `${customPrompt || getDefaultPrompt(profile.category)}
 
-${US_ENGLISH_RULE}`;
+${US_ENGLISH_RULE}
+
+${PASTED_CONTENT_SYSTEM_NOTE}`;
 
   // One spare call past the chunks needed, for an answer that came back
   // short after cleaning; never an open-ended loop of paid calls.

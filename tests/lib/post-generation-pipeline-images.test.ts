@@ -47,6 +47,7 @@ const PROFILE = {
   category: 'Remodeler',
   address: '1 Main St',
   postFrequency: 2,
+  googleDescription: null,
   promptTemplate: null,
 };
 
