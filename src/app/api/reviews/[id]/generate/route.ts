@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateReviewResponse } from "@/lib/review-responder";
+import { earlierRepliesForProfile } from "@/lib/review-reply-history";
 import {
   REVIEWS_DISABLED_ERROR,
   REVIEWS_DISABLED_STATUS,
@@ -83,6 +84,10 @@ export async function POST(
     reviewComment: review.comment,
     customInstructions: review.profile.reviewInstructions,
     businessPhone: review.profile.phone,
+    earlierReplies: await earlierRepliesForProfile(review.profileId, {
+      excludeReviewId: id,
+      includeDrafts: true,
+    }),
   });
 
   // Upsert: create if none exists, update if it does. Either way this is a

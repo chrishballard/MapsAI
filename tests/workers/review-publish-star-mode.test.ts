@@ -9,7 +9,7 @@ import type { Job } from 'bullmq';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    reviewResponse: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), findUniqueOrThrow: vi.fn(), update: vi.fn() },
   },
   fetchSingleReview: vi.fn(),
   publishReviewReply: vi.fn(),

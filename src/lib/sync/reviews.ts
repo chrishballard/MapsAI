@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { fetchReviews, STAR_RATING_MAP } from "../google-reviews";
 import { generateReviewResponse } from "../review-responder";
+import { earlierRepliesForProfile } from "../review-reply-history";
 import { scheduleReviewPublish } from "../queue/review-publish-queue";
 import { redisErrorMessage } from "../queue/redis-errors";
 import { normalizeReviewKey } from "../review-key";
@@ -255,6 +256,11 @@ export async function syncProfileReviews(
           reviewComment: review.comment,
           customInstructions: profile.reviewInstructions,
           businessPhone: profile.phone,
+          // Read per review: the draft just written for the review before
+          // this one has to count too.
+          earlierReplies: await earlierRepliesForProfile(profile.id, {
+            includeDrafts: true,
+          }),
         });
 
         // A healthcare reply always waits for a person, whatever the star

@@ -352,14 +352,22 @@ export function BulkApproveButton({
     setLoading(true);
     setError(null);
     try {
-      const result = await sendJson<{ approved: number; skipped?: number }>(
+      const result = await sendJson<{ approved: number; skipped?: number; repeated?: number }>(
         "/api/reviews/approve",
         { profileId, confirmCount: draftCount }
       );
       setOpen(false);
-      alert(
+      const notes = [
         result.skipped
-          ? `${result.approved} responses approved and queued for publishing. ${result.skipped} were edited or approved by someone else while this ran, so they were left alone.`
+          ? `${result.skipped} were edited or approved by someone else while this ran, so they were left alone.`
+          : null,
+        result.repeated
+          ? `${result.repeated} repeat a reply already on this business's reviews, so they're still drafts. Regenerate or edit them.`
+          : null,
+      ].filter((note) => note !== null);
+      alert(
+        notes.length > 0
+          ? `${result.approved} responses approved and queued for publishing. ${notes.join(" ")}`
           : `${result.approved} responses approved and queued for publishing!`
       );
       router.refresh();

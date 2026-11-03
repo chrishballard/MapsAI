@@ -7,11 +7,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 //   and only approves the exact text the operator was looking at
 // - a person can edit a draft's text (or write one) before approving it
 
+type HistoryQuery = { where: { status: { in: string[] }; review: { id?: unknown } } };
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
     reviewResponse: {
+      findMany: vi.fn(async (_args: HistoryQuery): Promise<unknown[]> => []),
       update: vi.fn(),
       updateMany: vi.fn(),
       create: vi.fn(),
@@ -107,8 +110,8 @@ describe('Approve all', () => {
       category: 'Plumber',
     });
     mocks.prisma.review.findMany.mockResolvedValue([
-      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
-      { id: 'rev2', response: { id: 'resp2', status: 'DRAFTED' } },
+      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 1' } },
+      { id: 'rev2', response: { id: 'resp2', status: 'DRAFTED', content: 'Reply number 2' } },
     ]);
 
     const res = await bulkApprovePOST(
@@ -129,8 +132,8 @@ describe('Approve all', () => {
       category: 'Plumber',
     });
     mocks.prisma.review.findMany.mockResolvedValue([
-      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
-      { id: 'rev2', response: { id: 'resp2', status: 'DRAFTED' } },
+      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 3' } },
+      { id: 'rev2', response: { id: 'resp2', status: 'DRAFTED', content: 'Reply number 4' } },
     ]);
     mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
@@ -139,7 +142,7 @@ describe('Approve all', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ approved: 2, skipped: 0 });
+    expect(await res.json()).toEqual({ approved: 2, skipped: 0, repeated: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenNthCalledWith(1, 'resp1', { delayMs: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenNthCalledWith(2, 'resp2', { delayMs: 7_500 });
   });
@@ -315,5 +318,83 @@ describe('editing a reply', () => {
     const res = await edit({ content: SAFE });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('repeated replies', () => {
+  const EARLIER = [
+    {
+      content: "Dana's twin got this: we're sorry to read this.",
+      review: { reviewerName: "Dana's twin", comment: null },
+    },
+  ];
+  const REPEAT = 'Thank you so much for the rating, Dana, we appreciate it!';
+  const ROBIN = {
+    content: 'Thank you so much for the rating, Robin, we appreciate it!',
+    review: { reviewerName: 'Robin', comment: null },
+  };
+
+  it('single Approve refuses a repeat of a reply already out, any category', async () => {
+    mocks.prisma.review.findUnique.mockResolvedValue(
+      review({ content: REPEAT, category: 'Plumber' })
+    );
+    mocks.prisma.reviewResponse.findMany.mockResolvedValueOnce([ROBIN, ...EARLIER]);
+
+    const res = await approvePOST(
+      new Request('http://localhost:3000/api/reviews/rev1/approve', { method: 'POST' }),
+      { params }
+    );
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toContain('says the same thing');
+    expect(mocks.prisma.reviewResponse.updateMany).not.toHaveBeenCalled();
+    expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
+  });
+
+  it('single Approve compares against replies out or on their way, not its own or drafts', async () => {
+    mocks.prisma.review.findUnique.mockResolvedValue(
+      review({ content: REPEAT, category: 'Plumber' })
+    );
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
+    mocks.scheduleReviewPublish.mockResolvedValue(undefined);
+
+    await approvePOST(
+      new Request('http://localhost:3000/api/reviews/rev1/approve', { method: 'POST' }),
+      { params }
+    );
+
+    const { where } = mocks.prisma.reviewResponse.findMany.mock.calls[0][0];
+    expect(where.status.in).toEqual(['APPROVED', 'PUBLISHED']);
+    expect(where.review.id).toEqual({ not: 'rev1' });
+  });
+
+  it('Approve all leaves repeats as drafts, including two in the same batch', async () => {
+    mocks.prisma.profile.findUnique.mockResolvedValue({
+      id: 'p1',
+      reviewsEnabled: true,
+      category: 'Plumber',
+    });
+    const draft = (id: string, name: string, content: string) => ({
+      id,
+      reviewerName: name,
+      comment: null,
+      response: { id: `resp-${id}`, status: 'DRAFTED', content },
+    });
+    mocks.prisma.review.findMany.mockResolvedValue([
+      draft('a', 'Dana', 'Thank you so much for the rating, Dana, we appreciate it!'),
+      draft('b', 'Sam', 'Thanks for the stars, Sam. It means a lot.'),
+      draft('c', 'Kim', 'Thanks for the stars, Kim. It means a lot.'),
+    ]);
+    mocks.prisma.reviewResponse.findMany.mockResolvedValueOnce([ROBIN]);
+    mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
+    mocks.scheduleReviewPublish.mockResolvedValue(undefined);
+
+    const res = await bulkApprovePOST(
+      jsonRequest('/api/reviews/approve', { profileId: 'p1', confirmCount: 3 })
+    );
+
+    expect(await res.json()).toEqual({ approved: 1, skipped: 0, repeated: 2 });
+    expect(mocks.scheduleReviewPublish).toHaveBeenCalledOnce();
+    expect(mocks.scheduleReviewPublish.mock.calls[0][0]).toBe('resp-b');
   });
 });

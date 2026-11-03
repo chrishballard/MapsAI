@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
-    reviewResponse: { update: vi.fn(), updateMany: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), update: vi.fn(), updateMany: vi.fn() },
   },
   scheduleReviewPublish: vi.fn(),
 }));

@@ -18,7 +18,7 @@ type Row = {
 const mocks = vi.hoisted(() => ({
   prisma: {
     review: { findUnique: vi.fn() },
-    reviewResponse: { upsert: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), upsert: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   rows: new Map<string, Row>(),

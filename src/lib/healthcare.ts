@@ -248,27 +248,63 @@ const RATING_WORDS = ["one", "two", "three", "four", "five"];
  * the reviewer, and a person edits or approves it before anything publishes
  * (healthcare replies never publish unattended).
  */
-export function safeHealthcareReply(input: {
+export function safeHealthcareReply(
+  input: {
+    reviewerName: string | null;
+    starRating: number;
+    reviewComment: string | null;
+    businessPhone?: string | null;
+  },
+  isTaken: (reply: string) => boolean = () => false
+): string {
+  const options = safeReplyOptions(input);
+  // Every wording taken: return the last and let the approve gate stop it, so
+  // a person writes one. Better than a reply that breaks the privacy rules.
+  return options.find((reply) => !isTaken(reply)) ?? options[options.length - 1];
+}
+
+function safeReplyOptions(input: {
   reviewerName: string | null;
   starRating: number;
   reviewComment: string | null;
   businessPhone?: string | null;
-}): string {
+}): string[] {
   const name = input.reviewerName?.trim() || null;
   const phone = input.businessPhone?.trim() || null;
   const call = phone ? `please call the office at ${phone}` : "please call the office";
+  const callStart = call[0].toUpperCase() + call.slice(1);
   const rating = Math.min(5, Math.max(1, Math.round(input.starRating)));
+  const after = name ? `, ${name}` : "";
 
   if (rating <= 2) {
-    return `${name ? `${name}, we're` : "We're"} sorry to read this. We'd like to talk with you directly, so ${call}.`;
+    return [
+      `${name ? `${name}, we're` : "We're"} sorry to read this. We'd like to talk with you directly, so ${call}.`,
+      `We're sorry to read this${after}. ${callStart} so we can talk directly.`,
+      `Thank you for letting us know${after}. We'd like to hear more, so ${call}.`,
+    ];
   }
   if (rating === 3) {
-    return `Thank you for the feedback${name ? `, ${name}` : ""}. If you'd like to talk it over, ${call}.`;
+    return [
+      `Thank you for the feedback${after}. If you'd like to talk it over, ${call}.`,
+      `Thanks for sharing this${after}. We'd be glad to talk, so ${call}.`,
+      `We appreciate the feedback${after}. If you'd like to talk, ${call}.`,
+    ];
   }
   if (input.reviewComment?.trim()) {
-    return `Thank you for the kind words${name ? `, ${name}` : ""}. We appreciate you taking the time to write.`;
+    return [
+      `Thank you for the kind words${after}. We appreciate you taking the time to write.`,
+      `Thanks so much for writing this${after}. It means a lot to our team.`,
+      `What a kind note${after}. Thank you from all of us here.`,
+      `${name ? `${name}, thank` : "Thank"} you for the kind words. Our whole team appreciates it.`,
+    ];
   }
-  return `Thanks for the ${RATING_WORDS[rating - 1]} stars${name ? `, ${name}` : ""}. We appreciate it.`;
+  const stars = RATING_WORDS[rating - 1];
+  return [
+    `Thanks for the ${stars} stars${after}. We appreciate it.`,
+    `Thank you for the ${stars}-star rating${after}. It means a lot to our team.`,
+    `${name ? `${name}, thanks` : "Thanks"} for the ${stars} stars. Our whole team appreciates it.`,
+    `We appreciate the ${stars} stars${after}. Thank you from all of us here.`,
+  ];
 }
 
 /** Operator-facing one-liner listing a draft's issues. */

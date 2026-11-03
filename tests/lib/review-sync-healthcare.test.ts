@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // AUTO is drafted for approval, like DRAFT. The office phone reaches the
 // reply generator. Other profiles keep AUTO.
 
+type HistoryQuery = { where: { status: { in: string[] }; review: { id?: unknown } } };
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     review: {
@@ -14,7 +16,7 @@ const mocks = vi.hoisted(() => ({
       count: vi.fn(),
       findFirst: vi.fn(),
     },
-    reviewResponse: { create: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async (_args: HistoryQuery): Promise<unknown[]> => []), create: vi.fn() },
     profile: { update: vi.fn() },
   },
   fetchReviews: vi.fn(),
@@ -116,5 +118,36 @@ describe('syncProfileReviews on a healthcare profile', () => {
       data: expect.objectContaining({ status: 'APPROVED', autoApproved: true }),
     });
     expect(mocks.scheduleReviewPublish).toHaveBeenCalledWith('resp1');
+  });
+});
+
+describe('syncProfileReviews earlier replies', () => {
+  it('writes each new reply knowing what the profile already said, drafts included', async () => {
+    mocks.fetchReviews.mockResolvedValue({
+      reviews: [
+        {
+          name: 'accounts/1/locations/123/reviews/new1',
+          reviewer: { displayName: 'Sam' },
+          starRating: 'FIVE',
+          createTime: new Date().toISOString(),
+        },
+      ],
+    });
+    mocks.prisma.reviewResponse.findMany.mockResolvedValueOnce([
+      { content: 'Thank you, Robin!', review: { reviewerName: 'Robin', comment: null } },
+    ]);
+
+    await syncProfileReviews(autoProfile as never);
+
+    expect(mocks.generateReviewResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        earlierReplies: [
+          { content: 'Thank you, Robin!', reviewerName: 'Robin', ratingOnly: true },
+        ],
+      })
+    );
+    expect(mocks.prisma.reviewResponse.findMany.mock.calls[0][0].where.status.in).toContain(
+      'DRAFTED'
+    );
   });
 });
