@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
-    reviewResponse: { update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   scheduleReviewPublish: vi.fn(),
@@ -84,7 +84,7 @@ describe('review routes with review management off', () => {
     mocks.prisma.review.findUnique.mockResolvedValue({
       id: 'rev1',
       repliedExternally: false,
-      response: { id: 'resp1', status: 'DRAFTED' },
+      response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 1' },
       profile: { reviewsEnabled: false },
     });
 
@@ -115,14 +115,14 @@ describe('review routes with review management on', () => {
   it('bulk-approve proceeds and queues publishes', async () => {
     mocks.prisma.profile.findUnique.mockResolvedValue({ reviewsEnabled: true });
     mocks.prisma.review.findMany.mockResolvedValue([
-      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
+      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 2' } },
     ]);
     mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await bulkApprovePOST(bulkRequest({ profileId: 'p1', confirmCount: 1 }));
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ approved: 1, skipped: 0 });
+    await expect(res.json()).resolves.toEqual({ approved: 1, skipped: 0, repeated: 0 });
     expect(mocks.scheduleReviewPublish).toHaveBeenCalledWith('resp1', {
       delayMs: 0,
     });

@@ -13,6 +13,8 @@ import {
   describeHealthcareIssues,
   isHealthcareCategory,
 } from "@/lib/healthcare";
+import { earlierRepliesForProfile } from "@/lib/review-reply-history";
+import { findRepeatedReply, REPEATED_REPLY_ERROR } from "@/lib/review-reply-repeats";
 
 /**
  * Optional body: the reply text the operator is looking at. When given,
@@ -114,6 +116,18 @@ export async function POST(
         { status: 422 }
       );
     }
+  }
+
+  // Two reviewers on one profile never get the same reply, so this holds for
+  // every business, not just healthcare. Drafts don't count: nobody has seen
+  // them, and whichever is approved first is the one that goes out.
+  const repeated = findRepeatedReply(
+    review.response.content,
+    review.reviewerName,
+    await earlierRepliesForProfile(review.profileId, { excludeReviewId: id })
+  );
+  if (repeated) {
+    return NextResponse.json({ error: REPEATED_REPLY_ERROR }, { status: 422 });
   }
 
   // A person clicked Approve — clear autoApproved so the publish worker

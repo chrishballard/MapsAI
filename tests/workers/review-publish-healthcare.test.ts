@@ -9,7 +9,7 @@ import type { Job } from 'bullmq';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    reviewResponse: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async (): Promise<unknown[]> => []), findUniqueOrThrow: vi.fn(), update: vi.fn() },
   },
   fetchSingleReview: vi.fn(),
   publishReviewReply: vi.fn(),
@@ -159,5 +159,34 @@ describe('review publish worker healthcare gate', () => {
     await mocks.processor!(job());
 
     expect(mocks.publishReviewReply).toHaveBeenCalledOnce();
+  });
+});
+
+describe('review publish worker repeated replies', () => {
+  it('sends a reply back to a draft instead of publishing a repeat', async () => {
+    const content = 'Thank you for the kind words, Dana. We appreciate you taking the time to write.';
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approved({ content, autoApproved: false, category: 'Plumber' })
+    );
+    mocks.prisma.reviewResponse.findMany.mockResolvedValueOnce([
+      {
+        content: 'Thank you for the kind words, Robin. We appreciate you taking the time to write.',
+        review: { reviewerName: 'Robin', comment: 'Great.' },
+      },
+    ]);
+
+    await mocks.processor!(job());
+
+    expect(mocks.publishReviewReply).not.toHaveBeenCalled();
+    expect(mocks.fetchSingleReview).not.toHaveBeenCalled();
+    expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'DRAFTED',
+          autoApproved: false,
+          errorMessage: expect.stringContaining('says the same thing'),
+        }),
+      })
+    );
   });
 });

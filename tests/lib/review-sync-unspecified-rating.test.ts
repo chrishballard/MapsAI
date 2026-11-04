@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
       count: vi.fn(),
       findFirst: vi.fn(),
     },
-    reviewResponse: { create: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), create: vi.fn() },
     profile: { update: vi.fn() },
   },
   fetchReviews: vi.fn(),

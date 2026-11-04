@@ -15,6 +15,8 @@ import {
   HEALTHCARE_BULK_APPROVE_HELD_ERROR,
   isHealthcareCategory,
 } from "@/lib/healthcare";
+import { earlierRepliesForProfile } from "@/lib/review-reply-history";
+import { findRepeatedReply } from "@/lib/review-reply-repeats";
 
 /**
  * Approve all publishes every live draft on a profile exactly as written,
@@ -84,6 +86,11 @@ export async function POST(request: Request) {
 
   let approvedCount = 0;
   let skippedCount = 0;
+  let repeatedCount = 0;
+
+  // Same rule as single Approve. Each reply approved here joins the list, so
+  // two drafts saying the same thing can't both go out in one pass.
+  const earlierReplies = await earlierRepliesForProfile(profileId);
 
   // Stagger publishes so a bulk approval stays under GBP's 10 edits/min
   // per-profile limit (all these reviews belong to one profile).
@@ -91,6 +98,11 @@ export async function POST(request: Request) {
 
   for (const review of reviews) {
     if (!review.response) continue;
+
+    if (findRepeatedReply(review.response.content, review.reviewerName, earlierReplies)) {
+      repeatedCount++;
+      continue;
+    }
 
     // A person clicked Approve — clear autoApproved so the publish worker
     // treats this as a human decision, whatever the star mode is now. Only
@@ -108,6 +120,11 @@ export async function POST(request: Request) {
       skippedCount++;
       continue;
     }
+    earlierReplies.push({
+      content: review.response.content,
+      reviewerName: review.reviewerName,
+      ratingOnly: !review.comment,
+    });
 
     try {
       await enqueueWithin(
@@ -132,6 +149,7 @@ export async function POST(request: Request) {
           error: `${approvedCount} ${approvedCount === 1 ? "reply was" : "replies were"} approved and queued, then the publish queue stopped answering. The rest are still drafts. Try again in a minute.`,
           approved: approvedCount,
           skipped: skippedCount,
+          repeated: repeatedCount,
         },
         { status: 503 }
       );
@@ -140,5 +158,9 @@ export async function POST(request: Request) {
     approvedCount++;
   }
 
-  return NextResponse.json({ approved: approvedCount, skipped: skippedCount });
+  return NextResponse.json({
+    approved: approvedCount,
+    skipped: skippedCount,
+    repeated: repeatedCount,
+  });
 }

@@ -13,6 +13,8 @@ import {
   describeHealthcareIssues,
   isHealthcareCategory,
 } from "../src/lib/healthcare";
+import { earlierRepliesForProfile } from "../src/lib/review-reply-history";
+import { findRepeatedReply, REPEATED_REPLY_ERROR } from "../src/lib/review-reply-repeats";
 import {
   REVIEW_REMOVED_SKIP_MESSAGE,
   isReviewNotFound,
@@ -187,6 +189,31 @@ export const worker = new Worker<ReviewPublishJobData>(
         });
         return;
       }
+    }
+
+    // Last gate for repeats. The sync and the approve routes stop these too;
+    // this catches a job queued before those checks, or two replies approved
+    // at the same moment. Whichever gets here second goes back to a draft.
+    const repeated = findRepeatedReply(
+      reviewResponse.content,
+      review.reviewerName,
+      await earlierRepliesForProfile(review.profileId, {
+        excludeReviewId: review.id,
+      })
+    );
+    if (repeated) {
+      console.warn(
+        `Review response ${reviewResponseId} for ${review.profile.name} repeats an earlier reply, reverting to DRAFTED instead of publishing`
+      );
+      await prisma.reviewResponse.update({
+        where: { id: reviewResponseId },
+        data: {
+          status: "DRAFTED",
+          errorMessage: `Held before publishing: ${REPEATED_REPLY_ERROR}`,
+          autoApproved: false,
+        },
+      });
+      return;
     }
 
     // Address Google with the profile's *current* account and the review's

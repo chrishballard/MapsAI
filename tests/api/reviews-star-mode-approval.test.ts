@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     profile: { findUnique: vi.fn() },
     review: { findUnique: vi.fn(), findMany: vi.fn() },
-    reviewResponse: { update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
   },
   generateReviewResponse: vi.fn(),
   scheduleReviewPublish: vi.fn(),
@@ -68,7 +68,7 @@ describe('bulk approve with star modes', () => {
   it('skips drafts whose star rating is set to Ignore', async () => {
     mocks.prisma.profile.findUnique.mockResolvedValue({ reviewsEnabled: true });
     mocks.prisma.review.findMany.mockResolvedValue([
-      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
+      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 1' } },
     ]);
     mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
@@ -90,7 +90,7 @@ describe('bulk approve with star modes', () => {
   it('marks bulk-approved responses as human-approved', async () => {
     mocks.prisma.profile.findUnique.mockResolvedValue({ reviewsEnabled: true });
     mocks.prisma.review.findMany.mockResolvedValue([
-      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED' } },
+      { id: 'rev1', response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 2' } },
     ]);
     mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });
 
@@ -109,7 +109,7 @@ describe('single approve with star modes', () => {
     mocks.prisma.review.findUnique.mockResolvedValue({
       id: 'rev1',
       repliedExternally: false,
-      response: { id: 'resp1', status: 'DRAFTED' },
+      response: { id: 'resp1', status: 'DRAFTED', content: 'Reply number 3' },
       profile: { reviewsEnabled: true },
     });
     mocks.prisma.reviewResponse.updateMany.mockResolvedValue({ count: 1 });

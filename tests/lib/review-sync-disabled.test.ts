@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   prisma: {
     review: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-    reviewResponse: { create: vi.fn() },
+    reviewResponse: { findMany: vi.fn(async () => []), create: vi.fn() },
     profile: { update: vi.fn() },
   },
   fetchReviews: vi.fn(),
