@@ -78,6 +78,7 @@ export async function POST(request: Request) {
           address: profile.address,
           keywords: keywordRecords.map((k) => k.keyword),
           cities: cityRecords.map((c) => c.city),
+          description: profile.googleDescription,
         },
         customPrompt ?? undefined,
         profile.postFrequency ?? 4

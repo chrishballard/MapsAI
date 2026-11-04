@@ -47,6 +47,7 @@ const PROFILE = {
   category: 'Remodeler',
   address: '1 Main St',
   postFrequency: 2,
+  googleDescription: null,
   promptTemplate: null,
 };
 
@@ -125,5 +126,22 @@ describe('generateAndSchedulePosts image wiring', () => {
     mocks.prisma.$transaction.mockRejectedValueOnce(new Error('db down'));
 
     await expect(generateAndSchedulePosts(PROFILE)).rejects.toThrow('db down');
+  });
+});
+
+describe('generateAndSchedulePosts generator input', () => {
+  it("hands the profile's Google description to the post generator", async () => {
+    await generateAndSchedulePosts({
+      ...PROFILE,
+      googleDescription: 'Kitchen and bath remodels across Boise since 2004.',
+    });
+
+    expect(mocks.generateMonthlyPosts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'Kitchen and bath remodels across Boise since 2004.',
+      }),
+      undefined,
+      2
+    );
   });
 });

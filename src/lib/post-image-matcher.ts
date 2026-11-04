@@ -35,10 +35,15 @@ export function formatSpecificImageLines(
   );
 }
 
-/** One numbered line per post for the matcher prompt. */
+/**
+ * One numbered line per post for the matcher prompt. Posts run to several
+ * paragraphs and lists, so their line breaks are flattened: otherwise the
+ * matcher can't tell where one post ends and the next begins.
+ */
 export function formatPostLines(posts: PostForMatching[]): string[] {
   return posts.map(
-    (post, i) => `${i + 1}. [${post.type ?? "WHATS_NEW"}] ${post.content}`
+    (post, i) =>
+      `${i + 1}. [${post.type ?? "WHATS_NEW"}] ${post.content.replace(/\s+/g, " ").trim()}`
   );
 }
 

@@ -11,8 +11,9 @@ export const MAX_POSTS_PER_CALL = 12;
 /**
  * Lengths and URLs are checked per post after the parse (post-generator.ts),
  * not here: a constraint in this schema fails the whole batch, so one post a
- * little over the 300-character style target, or one CTA that isn't a URL,
- * used to throw away every post in it. The prompt still asks for 150-300.
+ * little over the length the prompt asked for, or one CTA that isn't a URL,
+ * used to throw away every post in it. The prompt asks for about 120-180
+ * words; the code only enforces Google's 1,500-character limit.
  */
 export const GeneratedPostSchema = z.object({
   content: z.string().min(1),
