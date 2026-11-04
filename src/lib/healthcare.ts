@@ -312,6 +312,3 @@ export function describeHealthcareIssues(issues: HealthcareReplyIssue[]): string
   return issues.map((i) => `${i.reason} ("${i.match}")`).join("; ");
 }
 
-/** Refusal for Approve all on a healthcare profile. */
-export const HEALTHCARE_BULK_APPROVE_HELD_ERROR =
-  "Approve all is off for healthcare businesses. Read and approve each reply on its own: a reply that confirms someone is a patient, or repeats their visit, treatment or bill, can break HIPAA.";

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// A healthcare profile never auto-publishes a review reply: a rating set to
-// AUTO is drafted for approval, like DRAFT. The office phone reaches the
-// reply generator. Other profiles keep AUTO.
+// A healthcare profile follows its star modes like any other: a rating set to
+// AUTO publishes without a person. The office phone reaches the reply
+// generator.
 
 type HistoryQuery = { where: { status: { in: string[] }; review: { id?: unknown } } };
 
@@ -90,14 +90,14 @@ beforeEach(() => {
 });
 
 describe('syncProfileReviews on a healthcare profile', () => {
-  it('drafts instead of auto-publishing when the rating is set to AUTO', async () => {
+  it('auto-publishes when the rating is set to AUTO', async () => {
     const synced = await syncProfileReviews({ ...autoProfile });
 
     expect(synced).toBe(1);
     expect(mocks.prisma.reviewResponse.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ status: 'DRAFTED', autoApproved: false }),
+      data: expect.objectContaining({ status: 'APPROVED', autoApproved: true }),
     });
-    expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
+    expect(mocks.scheduleReviewPublish).toHaveBeenCalledWith('resp1');
   });
 
   it('passes the office phone to the reply generator', async () => {

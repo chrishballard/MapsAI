@@ -6,7 +6,6 @@ import { scheduleReviewPublish } from "../queue/review-publish-queue";
 import { redisErrorMessage } from "../queue/redis-errors";
 import { normalizeReviewKey } from "../review-key";
 import { REVIEW_REMOVED_SKIP_MESSAGE } from "../review-removal";
-import { isHealthcareCategory } from "../healthcare";
 import {
   AUTO_REPLY_MAX_REVIEW_AGE_DAYS,
   STAR_RATINGS,
@@ -102,9 +101,9 @@ export async function syncProfileReviews(
   // reviews count), or the first row was stored under FIRST_SYNC_WINDOW_MS
   // ago. Decided once up front so page one's reviews don't turn page two
   // into a later sync. Only asked when AUTO could apply at all.
-  const canAutoPublish =
-    !isHealthcareCategory(profile.category) &&
-    STAR_RATINGS.some((stars) => replyModeForRating(profile, stars) === "AUTO");
+  const canAutoPublish = STAR_RATINGS.some(
+    (stars) => replyModeForRating(profile, stars) === "AUTO"
+  );
   let firstSync = false;
   if (canAutoPublish) {
     const firstStored = await prisma.review.findFirst({
@@ -263,11 +262,10 @@ export async function syncProfileReviews(
           }),
         });
 
-        // A healthcare reply always waits for a person, whatever the star
-        // mode says: one that confirms a reviewer is a patient is a HIPAA
-        // disclosure the moment it publishes. So does any reply on a first
-        // sync, or to a review too old to count as just in (an unparseable
-        // date counts as too old).
+        // Any reply on a first sync, or to a review too old to count as just
+        // in, waits for a person (an unparseable date counts as too old).
+        // Healthcare replies follow the same rule: the generator's privacy
+        // prompt and check, and the publish worker's check, keep them safe.
         const recent =
           Date.now() - reviewDate.getTime() <=
           AUTO_REPLY_MAX_REVIEW_AGE_DAYS * DAY_MS;

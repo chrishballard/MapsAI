@@ -185,7 +185,6 @@ export default async function ReviewsPage({ searchParams }: ReviewsPageProps) {
             <BulkApproveButton
               profileId={profileId}
               draftCount={draftCount}
-              healthcare={selectedIsHealthcare}
             />
           )}
           {/* Sync is global — it sweeps every profile that still has review

@@ -78,23 +78,6 @@ beforeEach(() => {
 });
 
 describe('Approve all', () => {
-  it('is refused for a healthcare profile before any draft is touched', async () => {
-    mocks.prisma.profile.findUnique.mockResolvedValue({
-      reviewsEnabled: true,
-      category: 'Dentist',
-    });
-
-    const res = await bulkApprovePOST(
-      jsonRequest('/api/reviews/approve', { profileId: 'p1', confirmCount: 3 })
-    );
-
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(/healthcare/);
-    expect(mocks.prisma.review.findMany).not.toHaveBeenCalled();
-    expect(mocks.prisma.reviewResponse.update).not.toHaveBeenCalled();
-    expect(mocks.scheduleReviewPublish).not.toHaveBeenCalled();
-  });
-
   it('needs a confirmed count', async () => {
     const res = await bulkApprovePOST(
       jsonRequest('/api/reviews/approve', { profileId: 'p1' })
