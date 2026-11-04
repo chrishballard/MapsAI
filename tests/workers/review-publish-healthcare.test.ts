@@ -93,18 +93,36 @@ beforeEach(() => {
 });
 
 describe('review publish worker healthcare gate', () => {
-  it('reverts an auto-approved healthcare reply to DRAFTED', async () => {
+  it('publishes an auto-approved healthcare reply that passes', async () => {
     mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
       approved({ content: SAFE, autoApproved: true, category: 'Dentist' })
+    );
+    mocks.fetchSingleReview.mockResolvedValue({ reviewReply: null });
+
+    await mocks.processor!(job());
+
+    expect(mocks.publishReviewReply).toHaveBeenCalledWith(
+      'ga1',
+      'accounts/1/locations/1/reviews/r1',
+      SAFE
+    );
+  });
+
+  it('holds an auto-approved healthcare reply that fails the privacy check', async () => {
+    mocks.prisma.reviewResponse.findUniqueOrThrow.mockResolvedValue(
+      approved({
+        content: 'Thanks for visiting our office for your cleaning.',
+        autoApproved: true,
+        category: 'Dentist',
+      })
     );
 
     await mocks.processor!(job());
 
-    expect(mocks.fetchSingleReview).not.toHaveBeenCalled();
     expect(mocks.publishReviewReply).not.toHaveBeenCalled();
     expect(mocks.prisma.reviewResponse.update).toHaveBeenCalledWith({
       where: { id: 'resp1' },
-      data: { status: 'DRAFTED', errorMessage: null, autoApproved: false },
+      data: expect.objectContaining({ status: 'DRAFTED', autoApproved: false }),
     });
   });
 

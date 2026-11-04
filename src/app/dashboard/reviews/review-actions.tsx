@@ -313,8 +313,6 @@ export function SyncButton() {
 interface BulkApproveButtonProps {
   profileId: string;
   draftCount: number;
-  /** Healthcare profiles have no Approve all: each reply is read and approved on its own. */
-  healthcare?: boolean;
 }
 
 /**
@@ -326,25 +324,12 @@ interface BulkApproveButtonProps {
 export function BulkApproveButton({
   profileId,
   draftCount,
-  healthcare,
 }: BulkApproveButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (healthcare) {
-    return (
-      <span
-        className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 border border-zinc-200 rounded-md"
-        title="A reply that confirms someone is a patient, or repeats their visit, treatment or bill, can break HIPAA. Read and approve each reply on its own."
-      >
-        <ShieldAlert size={16} className="text-amber-600" />
-        Approve all is off for healthcare
-      </span>
-    );
-  }
 
   const confirmed = typed.trim() === String(draftCount);
 

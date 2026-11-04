@@ -11,10 +11,6 @@ import {
   REVIEWS_DISABLED_STATUS,
 } from "@/lib/reviews-enabled";
 import { bulkApprovableReviewsWhere } from "@/lib/review-bulk-approve";
-import {
-  HEALTHCARE_BULK_APPROVE_HELD_ERROR,
-  isHealthcareCategory,
-} from "@/lib/healthcare";
 import { earlierRepliesForProfile } from "@/lib/review-reply-history";
 import { findRepeatedReply } from "@/lib/review-reply-repeats";
 
@@ -50,15 +46,6 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: REVIEWS_DISABLED_ERROR },
       { status: REVIEWS_DISABLED_STATUS }
-    );
-  }
-
-  // A healthcare reply must be read before it publishes, so there is no
-  // bulk path for these profiles at all.
-  if (isHealthcareCategory(profile.category)) {
-    return NextResponse.json(
-      { error: HEALTHCARE_BULK_APPROVE_HELD_ERROR },
-      { status: 409 }
     );
   }
 

@@ -25,7 +25,7 @@ interface ReviewSettingsPanelProps {
   reviewsEnabled: boolean;
   reviewInstructions: string | null;
   replyModes: StarReplyModes;
-  /** Google category is a healthcare one: stricter replies, nothing auto-publishes. */
+  /** Google category is a healthcare one: replies follow the privacy rules. */
   healthcare?: boolean;
 }
 
@@ -194,10 +194,9 @@ export function ReviewSettingsPanel({
             <p className="text-xs text-amber-900">
               {profileName} is a healthcare business, so replies follow patient
               privacy rules: they never confirm a reviewer is a patient or
-              mention a visit, treatment, appointment, bill or insurance.
-              Nothing publishes without a person approving it: ratings set to
-              reply automatically are drafted for approval instead, and
-              Approve all is off.
+              mention a visit, treatment, appointment, bill or insurance. A
+              reply that fails that check goes back to a draft instead of
+              publishing.
             </p>
           </div>
         )}
